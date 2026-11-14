@@ -26,7 +26,12 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--data", default="data/havana.npz")
 
     args = parser.parse_args(argv)
-    print(f"havana {args.command}: not built yet")
+    if args.command == "prepare":
+        from havana.prepare import main as prepare
+
+        prepare(args.pbf, args.out)
+    else:
+        print(f"havana {args.command}: not built yet")
 
 
 if __name__ == "__main__":
