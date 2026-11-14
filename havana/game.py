@@ -40,6 +40,15 @@ class Game:
         engine.camera.far = FOG[1] + 100
         self.streamer = Streamer(engine, cell=CELL, build=build, radius=RADIUS, ready_radius=READY_RADIUS,
                                  workers="process")
+        if self.walls.landmarks.mesh is not None:  # drawn once, not streamed: they are few and seen from afar
+            from manifoldx.components import Material, Mesh, Transform
+            from manifoldx.resources import StandardMaterial
+
+            m = self.walls.landmarks.mesh
+            engine.spawn(Mesh({"positions": m.positions, "normals": m.normals, "colors": m.colors,
+                               "indices": m.indices}),
+                         Material(StandardMaterial("#ffffff", roughness=0.9, vertex_colors=True)),
+                         Transform(pos=(0, 0, 0)))
         self.model = build_car(CarParams())
         self.handles = spawn_car(engine, self.model)
         x, z, yaw = self.walls.nearest_road(*at)
