@@ -30,6 +30,10 @@ def main(argv: list[str] | None = None) -> None:
         from havana.prepare import main as prepare
 
         prepare(args.pbf, args.out)
+    elif args.command == "play":
+        from havana.game import main as play
+
+        play(args.data, at=args.at, shot=args.shot, frames=args.frames)
     else:
         print(f"havana {args.command}: not built yet")
 
