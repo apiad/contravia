@@ -2,7 +2,8 @@
 
 A stand-in until layer 6 reads the coastline. LINE is the road's sea side: the northernmost point, per 50 m
 of x, of the OSM ways named Malecón with highway=trunk, fetched once from Overpass. The wall stands GAP
-metres north of it.
+metres north of it. The sea sits SEA_LEVEL above the ground: closer, the depth buffer cannot tell them apart
+from a few hundred metres away.
 """
 
 from itertools import pairwise
@@ -12,7 +13,7 @@ import numpy as np
 from havana.landmarks.shapes import Piece, flat, prism
 
 NAME = "Malecón"
-GAP, THICK, HEIGHT, SEA_DEPTH = 8.0, 0.8, 1.0, 900.0
+GAP, THICK, HEIGHT, SEA_DEPTH, SEA_LEVEL = 8.0, 0.8, 1.0, 900.0, 0.3
 WALL, SEA = (0.85, 0.84, 0.80), (0.08, 0.28, 0.42)
 LINE = np.array([
     (-4075, -893), (-4025, -924), (-3975, -954), (-3925, -983), (-3875, -1018), (-3825, -1050),
@@ -40,5 +41,5 @@ def place(city, mb) -> Piece:
     sea = np.concatenate([wall - (0, THICK), (wall - (0, SEA_DEPTH))[::-1]])
     for a, b in pairwise(wall):
         prism(mb, [a, b, b - (0, THICK), a - (0, THICK)], 0, HEIGHT, WALL)
-        flat(mb, [a - (0, THICK), b - (0, THICK), b - (0, SEA_DEPTH), a - (0, SEA_DEPTH)], 0.04, SEA)
+        flat(mb, [a - (0, THICK), b - (0, THICK), b - (0, SEA_DEPTH), a - (0, SEA_DEPTH)], SEA_LEVEL, SEA)
     return Piece(clear=[sea], walls=[strip])
