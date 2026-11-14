@@ -5,6 +5,8 @@ of x, of the OSM ways named Malecón with highway=trunk, fetched once from Overp
 metres north of it.
 """
 
+from itertools import pairwise
+
 import numpy as np
 
 from havana.landmarks.shapes import Piece, flat, prism
@@ -36,7 +38,7 @@ def place(city, mb) -> Piece:
     wall = np.stack([LINE[:, 0], z - GAP], axis=1)
     strip = np.concatenate([wall, (wall - (0, THICK))[::-1]])
     sea = np.concatenate([wall - (0, THICK), (wall - (0, SEA_DEPTH))[::-1]])
-    for a, b in zip(wall[:-1], wall[1:]):
+    for a, b in pairwise(wall):
         prism(mb, [a, b, b - (0, THICK), a - (0, THICK)], 0, HEIGHT, WALL)
         flat(mb, [a - (0, THICK), b - (0, THICK), b - (0, SEA_DEPTH), a - (0, SEA_DEPTH)], 0.04, SEA)
     return Piece(clear=[sea], walls=[strip])
