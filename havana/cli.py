@@ -35,7 +35,9 @@ def main(argv: list[str] | None = None) -> None:
 
         play(args.data, at=args.at, shot=args.shot, frames=args.frames)
     else:
-        print(f"havana {args.command}: not built yet")
+        from havana.bench import main as bench
+
+        bench(args.data)
 
 
 if __name__ == "__main__":

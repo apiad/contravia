@@ -1,0 +1,11 @@
+{
+  "note": "Stops are approximate (lat, lon) points; the bench snaps each to the nearest road and routes between them on the road network.",
+  "legs": [
+    {"name": "Capitolio, Malecón, Línea, Vedado",
+     "stops": [[23.13528, -82.35972, "Capitolio"], [23.1437, -82.3575, "Malecón at Prado"],
+               [23.1432, -82.3700, "Malecón, Centro Habana"], [23.1442, -82.3812, "Hotel Nacional"],
+               [23.1405, -82.3900, "Línea"], [23.1360, -82.3870, "Vedado, Calle 23"]]},
+    {"name": "teleport to Alamar, 30 s", "teleport": true, "seconds": 30,
+     "stops": [[23.1660, -82.2740, "Alamar"], [23.1610, -82.2650, "Alamar, east"]]}
+  ]
+}
