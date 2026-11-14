@@ -1,0 +1,15 @@
+rules:
+  - name: "every havana subcommand is documented in AGENTS.md"
+    extract:
+      file: "havana/cli.py"
+      regex: 'add_parser\("(\w+)"'
+    require:
+      in: "AGENTS.md"
+      as: word
+  - name: "paths AGENTS.md names in backticks exist"
+    severity: warning
+    extract:
+      file: "AGENTS.md"
+      regex: '`((?:docs|havana|bench)/[\w./-]+\.\w+)`'
+    require:
+      exists: true
