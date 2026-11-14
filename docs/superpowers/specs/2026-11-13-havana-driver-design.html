@@ -110,7 +110,7 @@ svg text{font-family:var(--font-mono)}
 <div class="chrome">
   <span>havana-driver</span>
   <span class="tab">spec · a procedural Havana to drive</span>
-  <span class="st"><span class="pill acc">draft, wide not deep</span><span class="pill">2026-11-13</span></span>
+  <span class="st"><span class="pill acc">approved 2026-11-14</span><span class="pill">2026-11-13</span></span>
 </div>
 
 <div class="wrap">
@@ -163,6 +163,7 @@ svg text{font-family:var(--font-mono)}
 <tr><td>Live generation <span class="who">maintainer</span></td><td>Cells are built in a worker while you drive. No cache until generation cost shows.</td><td class="why">A cache is easy to add later; starting without one keeps the first layers simple.</td></tr>
 <tr><td>Repo <span class="who">maintainer</span></td><td>Private under <code>apiad</code> until it is good enough to show.</td><td class="why"></td></tr>
 <tr><td>Layer 0 <span class="who">maintainer</span></td><td>All Havana streets, flat, no textures, a sedan, random buildings, crude trees.</td><td class="why">The thinnest slice that drives the whole city.</td></tr>
+<tr><td>Filler blocks <span class="who">maintainer</span></td><td>City blocks with no OSM building get random boxes along their street front in layer 0.</td><td class="why">Streets never run through empty land where OSM lacks outlines; layer 3 replaces the filler with zone rules.</td></tr>
 <tr><td>Layer order after 0 <span class="who">agent</span></td><td>Elevation, traffic, zone rules, game loop, landmarks, atmosphere, cache.</td><td class="why">Elevation changes every mesh, so it goes before anything that sits on the ground.</td></tr>
 <tr><td>Extent <span class="who">agent</span></td><td>The OSM boundary of La Habana province.</td><td class="why">Matches "the whole of Havana"; geocoder's Havana build already covers it.</td></tr>
 <tr><td>Coordinates <span class="who">agent</span></td><td>Local metres, origin at the Capitolio, x east, z south, y up.</td><td class="why">float32 keeps millimetres within ±20 km, so no floating origin is needed.</td></tr>
@@ -231,6 +232,7 @@ svg text{font-family:var(--font-mono)}
 <ul>
   <li><b>Roads:</b> every drivable <code>highway</code> way as a polyline, with a width taken from its class (motorway 14 m, trunk and primary 10 m, secondary 8 m, tertiary and residential 6 m, service 4 m). Footways and paths are dropped.</li>
   <li><b>Buildings:</b> the outer ring of every <code>building</code> polygon, and its OSM id.</li>
+  <li><b>Blocks:</b> the faces of the road network (shapely <code>polygonize</code> over the road centrelines), kept when they are under 3 ha and do not overlap a park, wood, water or farmland polygon. A kept block with no building centroid inside is marked for filler.</li>
   <li><b>Trees:</b> <code>natural=tree</code> points, plus points scattered in parks, woods and grass areas, seeded by the area's OSM id.</li>
 </ul>
 <p>Every feature is assigned to the 200 m cell that holds its midpoint (road segments) or centroid (buildings, trees), and the file stores, per cell, the slice of each array that belongs to it. <code>prepare</code> ends with a short report: counts per kind, the largest cell, and the share of cells that have streets but no buildings. That last number measures OSM's building coverage in Havana, which nobody has checked yet.</p>
@@ -241,6 +243,7 @@ svg text{font-family:var(--font-mono)}
   <li>a ground quad for the cell, grey-green;</li>
   <li>a dark ribbon per road segment, a few centimetres above the ground, with a square patch at each joint to hide the gaps;</li>
   <li>each footprint extruded to a height drawn from 6 to 30 m, with a flat roof and a pastel colour, both seeded by the building's OSM id so a building looks the same on every drive;</li>
+  <li>in a filler block, boxes along its edge, set back by half the road width: a front of 8 to 15 m, a depth of 10 to 15 m, gaps of 0 to 3 m, seeded by the block's centroid;</li>
   <li>each tree as a brown box trunk under a green cone of six sides.</li>
 </ul>
 <p>Starting values, to be tuned on the laptop: radius 3 (a 7×7 block of drawn cells, about 700 m of view each way), ready radius 4, and fog that ends just inside the drawn edge.</p>
@@ -304,7 +307,6 @@ svg text{font-family:var(--font-mono)}
 
 <h2 id="open"><span class="n">09</span>Open questions</h2>
 <ul>
-  <li><b>Building coverage.</b> If OSM lacks footprints in large parts of Havana, layer 0 has streets with nothing beside them. The <code>prepare</code> report measures it. Proposal if it is poor: fill blocks with no footprints with random boxes along the street front, then refine in layer 3.</li>
   <li><b>Controls.</b> Keyboard now. Is a gamepad or wheel wanted later?</li>
   <li><b>When it goes public</b>, and whether it moves to <code>gia-uh</code> at that point.</li>
 </ul>
