@@ -47,3 +47,8 @@ def test_report_has_every_key():
     for k in ("roads", "segments", "buildings", "buildings_skipped", "blocks", "filler_blocks", "trees",
               "cells", "largest_cell", "cells_with_roads_no_buildings"):
         assert k in rep
+
+
+def test_features_outside_the_box_are_not_read():
+    raw = read_osm(FIX, box=(22.0, -81.0, 22.5, -80.5))   # a box far from the fixture
+    assert raw.roads == [] and raw.buildings == [] and raw.trees == [] and raw.green == []

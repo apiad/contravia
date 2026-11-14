@@ -22,6 +22,7 @@ WIDTHS = {
 for _k in ("motorway", "trunk", "primary", "secondary", "tertiary"):
     WIDTHS[f"{_k}_link"] = WIDTHS[_k]
 
+HAVANA_BOX = (22.90, -82.60, 23.25, -82.00)  # (south, west, north, east) degrees around the province
 MAX_SEGMENT = 50.0  # metres; longer segments are split so each piece lands in the cell it crosses
 MAX_BLOCK = 30_000.0  # m², 3 ha: bigger faces of the road network are not city blocks
 TREE_EVERY = 150.0  # m² of green area per scattered tree
@@ -50,15 +51,23 @@ def _tagged(tags, pairs) -> bool:
     return any(tags.get(k) == v for k, v in pairs)
 
 
-def read_osm(path, boundary: str = "La Habana") -> Raw:
-    """Read the features the rules need from an OSM file (.pbf or .osm)."""
+def read_osm(path, boundary: str = "La Habana", box=HAVANA_BOX) -> Raw:
+    """Read the features the rules need from an OSM file (.pbf or .osm).
+
+    Anything with no point inside `box` is dropped while reading, so a country-wide extract never sits in
+    memory as Python objects; build_city then clips to the province's real outline.
+    """
     import osmium
 
     raw = Raw()
+    s, w, n, e = box
+
+    def near(pts) -> bool:
+        return any(s <= lat <= n and w <= lon <= e for lat, lon in pts)
 
     class Handler(osmium.SimpleHandler):
         def node(self, n):
-            if n.tags.get("natural") == "tree":
+            if n.tags.get("natural") == "tree" and near([(n.location.lat, n.location.lon)]):
                 raw.trees.append((n.location.lat, n.location.lon))
 
         def way(self, w):
@@ -66,15 +75,17 @@ def read_osm(path, boundary: str = "La Habana") -> Raw:
             hw = tags.get("highway")
             if hw in WIDTHS:
                 pts = [(nd.lat, nd.lon) for nd in w.nodes if nd.location.valid()]
-                if len(pts) >= 2:
+                if len(pts) >= 2 and near(pts):
                     raw.roads.append((hw, pts))
             if "building" in tags and w.is_closed():
-                raw.buildings.append((w.id, [(nd.lat, nd.lon) for nd in w.nodes if nd.location.valid()]))
+                pts = [(nd.lat, nd.lon) for nd in w.nodes if nd.location.valid()]
+                if near(pts):
+                    raw.buildings.append((w.id, pts))
 
         def area(self, a):
             tags = a.tags
             rings = [[(n.lat, n.lon) for n in ring] for ring in a.outer_rings()]
-            if not rings:
+            if not rings or not near([p for r in rings for p in r]):
                 return
             if "building" in tags and not a.from_way():
                 raw.buildings.append((a.orig_id(), rings[0]))
