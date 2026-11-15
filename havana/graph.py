@@ -252,7 +252,7 @@ class Graph:
 
     def __init__(self, arrays: dict):
         self.a = arrays
-        if len(self):
+        if "g_poly" in arrays:
             poly, starts = arrays["g_poly"].astype(np.float64), arrays["g_poly_start"]
             seg = np.hypot(*np.diff(poly, axis=0).T)
             seg[starts[1:-1] - 1] = 0.0  # no length between the last point of one edge and the first of the next
