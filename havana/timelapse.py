@@ -20,8 +20,8 @@ import numpy as np
 from havana import sky
 from havana.weather import SkyConfig, Weather
 
-DOME = (0.0, 62.0, 0.0)  # the Capitolio's dome, local metres around the Capitolio
-STAND = (210.0, -40.0)  # a point on a street to the east of it
+AIM = (0.0, 70.0, 0.0)  # a little above the Capitolio's dome, so the frame holds more sky
+STAND = (150.0, 0.0)  # on the Prado, about 140 m east of the dome
 
 
 def score_day(w: Weather, d: date) -> float:
@@ -96,7 +96,7 @@ def main(data: str, out: str, day: str | None = None, start: str = "04:30", minu
     eye = np.array([x, float(np.asarray(game.surface.height(np.array([x]), np.array([z]))).ravel()[0]) + 1.7, z])
 
     def camera(q, dt):
-        engine.camera.set_pose(position=tuple(eye), target=DOME)
+        engine.camera.set_pose(position=tuple(eye), target=AIM)
         game.eye = eye
 
     engine.system(camera)
@@ -109,6 +109,9 @@ def main(data: str, out: str, day: str | None = None, start: str = "04:30", minu
         n += 1
     frames = Path(tempfile.mkdtemp(prefix="timelapse-", dir=os.path.dirname(os.path.abspath(out)) or "."))
     total = int(minutes / step)
+    import time
+
+    started = time.monotonic()
     for i in range(total):
         clock.t = t0 + timedelta(minutes=i * step)
         if game.layer:
@@ -117,7 +120,8 @@ def main(data: str, out: str, day: str | None = None, start: str = "04:30", minu
         img = engine.render_frame(supersample=1)
         Image.fromarray(img).save(frames / f"{i:05d}.png")
         if i % 60 == 0:
-            print({"frame": i, "of": total, **engine.state.sky}, flush=True)
+            print({"frame": i, "of": total, "s_per_frame": round((time.monotonic() - started) / (i + 1), 2),
+                   **engine.state.sky}, flush=True)
     game.streamer.close()
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(fps), "-i", str(frames / "%05d.png"),
                     "-pix_fmt", "yuv420p", "-vcodec", "libx264", "-crf", "20", out], check=True)

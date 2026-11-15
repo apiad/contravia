@@ -180,7 +180,7 @@ main.plan{max-width:980px;margin:0 auto}
 
 <h2 id="tasks"><span class="n">03</span>Tasks</h2>
 
-<details class="task" id="task-1" data-state="pending">
+<details class="task" id="task-1" data-state="done">
 <summary><span class="num">1</span><span><span class="ttl">Astronomy: sun, moon, sidereal time, stars, planets</span><span class="files">havana/sky.py · tests/test_sky.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -200,7 +200,7 @@ main.plan{max-width:980px;margin:0 auto}
 </div>
 </details>
 
-<details class="task" id="task-2" data-state="pending">
+<details class="task" id="task-2" data-state="done">
 <summary><span class="num">2</span><span><span class="ttl">Climate build: stars, Milky Way, ERA5 table</span><span class="files">havana/climate.py · havana/cli.py · havana/sky_data/ · tests/test_climate.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -220,7 +220,7 @@ main.plan{max-width:980px;margin:0 auto}
 </div>
 </details>
 
-<details class="task" id="task-3" data-state="pending">
+<details class="task" id="task-3" data-state="done">
 <summary><span class="num">3</span><span><span class="ttl">Weather chain and settings</span><span class="files">havana/weather.py · tests/test_weather.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -237,7 +237,7 @@ main.plan{max-width:980px;margin:0 auto}
 </div>
 </details>
 
-<details class="task" id="task-4" data-state="pending">
+<details class="task" id="task-4" data-state="done">
 <summary><span class="num">4</span><span><span class="ttl">Atmosphere: light, sky, fog, environment, shadows</span><span class="files">havana/atmosphere.py · tests/test_atmosphere.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -254,7 +254,7 @@ main.plan{max-width:980px;margin:0 auto}
 </div>
 </details>
 
-<details class="task" id="task-5" data-state="pending">
+<details class="task" id="task-5" data-state="done">
 <summary><span class="num">5</span><span><span class="ttl">Night sky: stars, planets, moon, Milky Way</span><span class="files">havana/nightsky.py · tests/test_nightsky.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -272,7 +272,7 @@ main.plan{max-width:980px;margin:0 auto}
 </div>
 </details>
 
-<details class="task" id="task-6" data-state="pending">
+<details class="task" id="task-6" data-state="done">
 <summary><span class="num">6</span><span><span class="ttl">Rain and wet roads</span><span class="files">havana/rain.py · havana/game.py · tests/test_rain.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <ol class="steps">
@@ -284,7 +284,7 @@ main.plan{max-width:980px;margin:0 auto}
 </div>
 </details>
 
-<details class="task" id="task-7" data-state="pending">
+<details class="task" id="task-7" data-state="done">
 <summary><span class="num">7</span><span><span class="ttl">Game wiring, CLI, events, state</span><span class="files">havana/game.py · havana/cli.py · havana/clock.py · tests/test_game_sky.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <ol class="steps">
@@ -297,7 +297,7 @@ main.plan{max-width:980px;margin:0 auto}
 </div>
 </details>
 
-<details class="task" id="task-8" data-state="pending">
+<details class="task" id="task-8" data-state="done">
 <summary><span class="num">8</span><span><span class="ttl">The Capitolio timelapse</span><span class="files">havana/timelapse.py · havana/cli.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <ol class="steps">
@@ -310,7 +310,7 @@ main.plan{max-width:980px;margin:0 auto}
 </div>
 </details>
 
-<details class="task" id="task-9" data-state="pending">
+<details class="task" id="task-9" data-state="doing">
 <summary><span class="num">9</span><span><span class="ttl">Docs, bench, PR</span><span class="files">AGENTS.md · README.md · bench/history.jsonl</span></span><span class="state">pending</span></summary>
 <div class="body">
 <ol class="steps">
@@ -325,6 +325,15 @@ main.plan{max-width:980px;margin:0 auto}
 <ul>
   <li><b>Sky data in the package, not in <code>data/</code>.</b> <code>data/</code> is ignored by git; the small built tables live in <code>havana/sky_data/</code> so the game has them offline from a clone.</li>
   <li><b>Star colours from spectral type.</b> Harvard's binary BSC5 has no B−V; the letter of the spectral type gives a colour that reads the same.</li>
+  <li><b>Rain spells are calibrated per month.</b> A chain that looks one hour back scattered dry-season rain over a third more days than the data; <code>havana/climate.py</code> <code>_calibrate</code> makes rain start less often and last longer until the chain's rain days match.</li>
+  <li><b>The sky is one colour, the horizon's.</b> manifoldx's sprite path uploads 16 bytes of material uniform (<code>render/passes/sprite.py</code>, <code>write_buffer</code> of row 0), so the sky sprites read the sky's colour from <code>globals.fog_color</code>, and the background equals the fog colour. The zenith colour only tints the ambient environments.</li>
+  <li><b>A palette of five ambient environments.</b> One environment precompute takes 16 s of CPU on the server (<code>EnvironmentMap._precompute</code>); the look picks one of five, cached on disk, and scales its intensity.</li>
+  <li><b>Shadows turn off through <code>engine._shadow_config = None</code>.</b> manifoldx has no public switch.</li>
+  <li><b>No wet roads.</b> Roads are vertex colours baked into each cell's merged mesh (<code>havana/cells.py</code>), so darkening them needs a rebuild of every cell; the rain shows through fog, light and streaks.</li>
+  <li><b>The Milky Way is 80 000 fine grey sprites.</b> Sprites are opaque and cannot add light, so large soft points made blotches; many small ones read as star clouds. The image's colour is dropped.</li>
+  <li><b>Sky domes at 650–675 m.</b> The far plane clips by depth, so a dome at 715 m was cut in a disc at the centre of the view.</li>
+  <li><b>The moon's phase is a sky-coloured disc over the lit one.</b> It draws crescents well and gibbous phases roughly; the moon is a few pixels across.</li>
+  <li><b>The timelapse picks a weather seed too.</b> No 2026 day of the default chain had an afternoon storm, a clear sunset and night and an early moonset together; the seed is a sky setting, and 18 July with seed 11 has them.</li>
 </ul>
 </main>
 

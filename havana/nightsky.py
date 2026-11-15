@@ -19,9 +19,9 @@ import numpy as np
 from havana import sky
 from havana.climate import SKY_DATA
 
-DOME = 700.0  # metres from the camera: inside the far plane (750) and past the fog
-MW_DOME = 715.0  # the Milky Way sits behind the stars
-NEAR_DOME = 690.0  # planets and the moon in front of the stars
+DOME = 660.0  # metres from the camera: well inside the far plane (750), which clips by depth, and past the fog
+MW_DOME = 675.0  # the Milky Way sits behind the stars
+NEAR_DOME = 650.0  # planets and the moon in front of the stars
 MOON_DEG = 0.26  # the moon's angular radius
 PX_DEG = 0.085  # about one pixel at 720 lines and the game's field of view
 KIND_MW, KIND_MOON, KIND_MOON_DARK = 16, 17, 18
