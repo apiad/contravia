@@ -122,6 +122,14 @@ class CityData:
             trees=self.a["trees"][t0:t1],
         )
 
+    def building(self, osm_id: int) -> np.ndarray | None:
+        """The footprint ring of one OSM building, or None when the data does not hold it."""
+        k = np.flatnonzero(self.a["building_ids"] == osm_id)
+        if not len(k):
+            return None
+        starts = self.a["building_starts"]
+        return self.a["building_verts"][starts[k[0]]:starts[k[0] + 1]].astype(float)
+
     def road_points(self) -> np.ndarray:
         """The midpoint of every road segment, (R, 2), for respawning and teleports."""
         r = self.a["roads"]

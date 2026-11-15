@@ -1,13 +1,15 @@
 """What the car can hit, and where it can be put back on a road.
 
 Walls are the edges of every footprint and filler box in the 3x3 cells around the car. The filler boxes
-come from the same rule the cells draw them with, so the car hits exactly what it sees.
+come from the same rule the cells draw them with, and the landmarks filter both the same way and add their
+own walls, so the car hits exactly what it sees.
 """
 
 import numpy as np
 
 from havana.citydata import CityData
 from havana.geo import CELL
+from havana.landmarks import Landmarks
 from havana.rules.buildings import filler_rings
 
 
@@ -21,6 +23,7 @@ class Walls:
 
     def __init__(self, city: CityData):
         self.city = city
+        self.landmarks = Landmarks(city)
         self._cache: dict[tuple[int, int], np.ndarray] = {}
         r = city.a["roads"]
         self._mid = (r[:, 0:2] + r[:, 2:4]) / 2
@@ -28,12 +31,11 @@ class Walls:
 
     def _cell(self, i: int, j: int) -> np.ndarray:
         if (i, j) not in self._cache:
-            c = self.city.cell(i, j)
+            c = self.landmarks.keep(i, j, self.city.cell(i, j))
             rings = list(c.buildings)
             for block, seed in zip(c.fillers, c.filler_seeds, strict=True):
                 rings += filler_rings(block, int(seed))
-            self._cache[(i, j)] = (np.concatenate([_edges(r) for r in rings]) if rings
-                                   else np.zeros((0, 2, 2), np.float32))
+            self._cache[(i, j)] = np.concatenate([_edges(r) for r in rings] + [self.landmarks.walls(i, j)])
         return self._cache[(i, j)]
 
     def near(self, x: float, z: float) -> np.ndarray:
