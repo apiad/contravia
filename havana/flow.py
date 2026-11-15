@@ -111,7 +111,8 @@ class Flow:
             self._shares, self._shares_key = self.shares(closed), key
         share = self._shares
 
-        demand = np.minimum(self.n * self.vfree / self.length, self.cap) * dt
+        # What an edge can send: the vehicles that reach its end this step, never more than it holds.
+        demand = np.minimum(self.n * np.minimum(1.0, self.vfree * dt / self.length), self.cap * dt)
         supply = np.where(closed, 0.0, np.maximum(self.jam - self.n, 0.0))
         want = demand[self.t_in] * share
         into = np.bincount(self.t_out, want, E)

@@ -123,3 +123,17 @@ def test_one_step_on_a_city_sized_graph_is_fast():
     ms = (time.perf_counter() - t0) / 20 * 1000
     print(f"flow step {ms:.1f} ms on {E} edges, {T} turns")
     assert ms < 40
+
+
+def test_short_edges_do_not_create_vehicles():
+    from graphs import make_graph
+
+    # A ring of 5 m edges: shorter than one second of driving at free speed.
+    ring = [(0, 0), (5, 0), (5, 5), (0, 5)]
+    g = make_graph(ring, [(0, 1), (1, 2), (2, 3), (3, 0)])
+    flow = Flow(g, TrafficConfig())
+    flow.demand = False
+    flow.n[:] = [0.3, 0.0, 0.0, 0.0]
+    for k in range(100):
+        flow.step(1.0, TUE_8 + timedelta(seconds=k))
+    assert flow.n.sum() == pytest.approx(0.3, rel=1e-6)
