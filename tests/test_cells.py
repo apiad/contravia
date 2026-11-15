@@ -12,7 +12,7 @@ def test_every_fixture_cell_builds(city_npz):
 
 def test_empty_cell_is_ground_only(city_npz):
     md = cells.build(500, 500)
-    assert len(md.positions) == 4 and len(md.indices) == 6
+    assert len(md.positions) == 21 * 21 and len(md.indices) == 3 * 2 * 20 * 20   # the ground grid alone
 
 
 def test_positions_are_relative_to_the_cell_corner(city_npz):
