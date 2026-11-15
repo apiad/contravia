@@ -13,7 +13,7 @@ prepare = ["osmium", "shapely", "tifffile", "imagecodecs"]
 dev = ["pytest", "ruff", "pillow", "osmium", "shapely", "tifffile", "imagecodecs"]
 
 [tool.uv.sources]
-manifold-gfx = { git = "https://github.com/gia-uh/manifoldx", branch = "place-car-tilt" }  # back to main once gia-uh/manifoldx#240 merges
+manifold-gfx = { git = "https://github.com/gia-uh/manifoldx", branch = "main" }
 
 [build-system]
 requires = ["hatchling"]

@@ -236,7 +236,7 @@ prepare = [
 
 [package.metadata]
 requires-dist = [
-    { name = "manifold-gfx", git = "https://github.com/gia-uh/manifoldx?branch=place-car-tilt" },
+    { name = "manifold-gfx", git = "https://github.com/gia-uh/manifoldx?branch=main" },
     { name = "numpy" },
 ]
 
@@ -312,7 +312,7 @@ wheels = [
 [[package]]
 name = "manifold-gfx"
 version = "0.10.0"
-source = { git = "https://github.com/gia-uh/manifoldx?branch=place-car-tilt#32837f7eb67141771cd6eb1061b633bd2861d2c7" }
+source = { git = "https://github.com/gia-uh/manifoldx?branch=main#9fa62615aeba0c24ece4f22771ee0d063a688723" }
 dependencies = [
     { name = "numpy" },
     { name = "rendercanvas" },
