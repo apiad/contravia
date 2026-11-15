@@ -13,6 +13,7 @@ import numpy as np
 
 from havana.citydata import CityData
 from havana.geo import HAVANA_BOX, cell_of, to_local
+from havana.graph import build_graph
 from havana.terrain import Terrain, clean, read_tiles
 
 # Road width in metres by OSM highway class; anything not listed is not drivable and is dropped.
@@ -22,6 +23,9 @@ WIDTHS = {
 }
 for _k in ("motorway", "trunk", "primary", "secondary", "tertiary"):
     WIDTHS[f"{_k}_link"] = WIDTHS[_k]
+
+ROAD_TAGS = ("oneway", "lanes", "maxspeed", "junction")  # what the traffic graph reads from a road
+CONTROLS = {"traffic_signals": "signal", "stop": "stop", "give_way": "give_way"}
 
 MAX_SEGMENT = 50.0  # metres; longer segments are split so each piece lands in the cell it crosses
 MAX_BLOCK = 30_000.0  # m², 3 ha: bigger faces of the road network are not city blocks
@@ -45,6 +49,10 @@ class Raw:
     not_built: list = field(default_factory=list)  # rings of areas that never get filler
     trees: list = field(default_factory=list)  # (lat, lon)
     boundary: list = field(default_factory=list)  # outer rings of the province
+    ways: list = field(default_factory=list)  # (way id, highway, node ids, [(lat, lon), ...], tags) per road
+    controls: dict = field(default_factory=dict)  # node id -> "signal", "stop" or "give_way"
+    restrictions: list = field(default_factory=list)  # (from way, via node, to way, kind)
+    municipios: list = field(default_factory=list)  # (name, outer ring) of admin_level 6 boundaries
 
 
 def _tagged(tags, pairs) -> bool:
@@ -69,14 +77,20 @@ def read_osm(path, boundary: str = "La Habana", box=HAVANA_BOX) -> Raw:
         def node(self, n):
             if n.tags.get("natural") == "tree" and near([(n.location.lat, n.location.lon)]):
                 raw.trees.append((n.location.lat, n.location.lon))
+            kind = CONTROLS.get(n.tags.get("highway"))
+            if kind and near([(n.location.lat, n.location.lon)]):
+                raw.controls[n.id] = kind
 
         def way(self, w):
             tags = w.tags
             hw = tags.get("highway")
             if hw in WIDTHS:
-                pts = [(nd.lat, nd.lon) for nd in w.nodes if nd.location.valid()]
+                valid = [nd for nd in w.nodes if nd.location.valid()]
+                pts = [(nd.lat, nd.lon) for nd in valid]
                 if len(pts) >= 2 and near(pts):
                     raw.roads.append((hw, pts))
+                    raw.ways.append((w.id, hw, [nd.ref for nd in valid], pts,
+                                     {k: tags.get(k) for k in ROAD_TAGS if k in tags}))
             if "building" in tags and w.is_closed():
                 pts = [(nd.lat, nd.lon) for nd in w.nodes if nd.location.valid()]
                 if near(pts):
@@ -96,6 +110,19 @@ def read_osm(path, boundary: str = "La Habana", box=HAVANA_BOX) -> Raw:
             if (tags.get("boundary") == "administrative" and tags.get("admin_level") == "4"
                     and tags.get("name") == boundary and not a.from_way()):
                 raw.boundary.extend(rings)
+            if (tags.get("boundary") == "administrative" and tags.get("admin_level") == "6"
+                    and not a.from_way() and "name" in tags):
+                raw.municipios.extend((tags["name"], r) for r in rings)
+
+        def relation(self, r):
+            if r.tags.get("type") != "restriction" or "restriction" not in r.tags:
+                return
+            got = {}
+            for m in r.members:
+                if m.role in ("from", "to") and m.type == "w" or m.role == "via" and m.type == "n":
+                    got[m.role] = m.ref
+            if len(got) == 3:
+                raw.restrictions.append((got["from"], got["via"], got["to"], r.tags["restriction"]))
 
     Handler().apply_file(str(path), locations=True)
     return raw
@@ -198,6 +225,9 @@ def build_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict
 
     city = CityData.from_features(roads, rings, np.array(ids, np.int64), fillers, np.array(seeds, np.int64),
                                   trees, terrain)
+    graph = build_graph(raw.ways, raw.controls, raw.restrictions, raw.municipios, rings,
+                        lambda lat, lon: to_local(lat, lon), WIDTHS, inside)
+    city.a.update(graph)
     road_cells = {tuple(c) for c in cell_of((roads[:, 0:2] + roads[:, 2:4]) / 2).tolist()}
     built_cells = {tuple(c) for c in cell_of(cents).tolist()}
     sizes = {tuple(c): 0 for c in city.cells().tolist()}
@@ -216,6 +246,9 @@ def build_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict
         "cells": len(city.cells()),
         "largest_cell": {"cell": list(largest[0]), "vertices": largest[1]},
         "cells_with_roads_no_buildings": round(len(road_cells - built_cells) / max(1, len(road_cells)), 3),
+        "edges": len(graph.get("g_from", ())),
+        "junctions": len(graph.get("g_junction", ())),
+        "turns": len(graph.get("g_turn_in", ())),
         "heights_m": [round(float(city.terrain.heights.min()), 1), round(float(city.terrain.heights.max()), 1)],
     }
     return city, report
