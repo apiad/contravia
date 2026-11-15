@@ -1,8 +1,10 @@
 """The night sky over Havana: the stars of the Yale catalogue, the planets, the moon and the Milky Way.
 
-Every point of the sky is a camera-facing sprite on a dome centred on the camera, just inside its far plane,
-so buildings hide what is behind them. The stars are fixed in the equatorial frame: once per frame one 3x3
-rotation from the local sidereal time turns the whole catalogue (havana.sky.equatorial_to_local).
+Every point of the sky is a camera-facing sprite on a dome centred on the camera, inside its far plane, so
+buildings hide what is behind them. The stars are fixed in the equatorial frame: one 3x3 rotation from the
+local sidereal time turns the whole catalogue (havana.sky.equatorial_to_local). That costs milliseconds for
+88 000 sprites, so it happens only at night, and only after 10 s of game time or 2 m of travel; the planets
+and the moon, seven sprites, follow the camera every frame.
 
 The sprites are drawn opaque and unlit, without fog. Their colour is the sky's colour plus their own light,
 which looks the same as adding light over the sky as long as the sky behind them is one colour, as the
@@ -173,30 +175,47 @@ class NightSky:
                 return np.broadcast_to(self.u, (n, 4)).copy()
 
         class SkyPoint(Component):
-            k: Float  # index into this object's arrays
+            k: Float  # index into the catalogue arrays
 
-        self.engine, self.SkyPoint = engine, SkyPoint
+        class SkyMover(Component):
+            k: Float  # 0-4 the planets, 5 the moon's lit disc, 6 its dark part
+
+        self.engine = engine
         self.material = NightSkyMaterial()
         self._load(when)
-        self.moving_values = np.zeros(7, np.float32)  # five planets, the moon's lit disc and its dark part
+        self.moving_values = np.zeros(7, np.float32)
         self.moving_radii = np.zeros(7)
-        self._dirty = True  # values and radii to upload: on the first frame, a new day and a moving body
-        n = len(self.v) + 7
-        self.pos = np.zeros((n, 3))
-        engine.spawn(PointCloud(), Material(self.material), Transform(pos=np.zeros((n, 3), np.float32)),
-                     ScalarValue(value=np.zeros(n, np.float32)), Radius(radius=np.zeros(n, np.float32)),
-                     SkyPoint(k=np.arange(n, dtype=float)), n=n)
+        self.moving_pos = np.zeros((7, 3))
+        nf = len(self.v)
+        self.pos = np.zeros((nf, 3))
+        self._fixed_dirty = True  # catalogue positions, values and radii to upload
+        self._last = None  # (time, eye) of the last turn of the catalogue
+        self._planets_at, self._planets = None, {}
+        self.stars_shown = 0
+        engine.spawn(PointCloud(), Material(self.material), Transform(pos=np.zeros((nf, 3), np.float32)),
+                     ScalarValue(value=np.zeros(nf, np.float32)), Radius(radius=np.zeros(nf, np.float32)),
+                     SkyPoint(k=np.arange(nf, dtype=float)), n=nf)
+        engine.spawn(PointCloud(), Material(self.material), Transform(pos=np.zeros((7, 3), np.float32)),
+                     ScalarValue(value=np.zeros(7, np.float32)), Radius(radius=np.zeros(7, np.float32)),
+                     SkyMover(k=np.arange(7, dtype=float)), n=7)
 
-        def place(q: mx.Query[Transform, ScalarValue, Radius, SkyPoint], dt: float):
+        def place_fixed(q: mx.Query[Transform, ScalarValue, Radius, SkyPoint], dt: float):
+            if not self._fixed_dirty:
+                return
+            self._fixed_dirty = False
             k = np.rint(q[SkyPoint].k.data[:, 0]).astype(np.int64)
             q[Transform].pos = self.pos[k].astype(np.float32)
-            if not self._dirty:
-                return
-            self._dirty = False
-            q[ScalarValue].value = np.concatenate([self.values, self.moving_values])[k][:, None]
-            q[Radius].radius = np.concatenate([self.radii, self.moving_radii])[k].astype(np.float32)[:, None]
+            q[ScalarValue].value = self.values[k][:, None]
+            q[Radius].radius = self.radii[k].astype(np.float32)[:, None]
 
-        engine.system(place)
+        def place_moving(q: mx.Query[Transform, ScalarValue, Radius, SkyMover], dt: float):
+            k = np.rint(q[SkyMover].k.data[:, 0]).astype(np.int64)
+            q[Transform].pos = self.moving_pos[k].astype(np.float32)
+            q[ScalarValue].value = self.moving_values[k][:, None]
+            q[Radius].radius = self.moving_radii[k].astype(np.float32)[:, None]
+
+        engine.system(place_fixed)
+        engine.system(place_moving)
 
     def _load(self, when: datetime) -> None:
         """The catalogue moved to `when`'s date by proper motion and precession."""
@@ -208,14 +227,25 @@ class NightSky:
         stars bright enough to show."""
         if when.date() != self.day:  # precession and proper motion move once a day
             self._load(when)
-            self._dirty = True
+            self._last = None
         eye = np.asarray(eye, float)
-        rot = sky.equatorial_to_local(when)
-        nf = len(self.v)
-        self.pos[:nf] = eye + (self.v @ rot.T) * self.domes[:, None]
-        ps = sky.planets(when)
-        for i, (name, p) in enumerate(ps.items()):
-            self.pos[nf + i] = eye + sky.direction(p.alt, p.az) * NEAR_DOME
+        showing = look.night > 0.0
+        moved = np.inf if self._last is None else float(np.linalg.norm(eye - self._last[1]))
+        stale = moved > 2.0 or abs((when - self._last[0]).total_seconds()) > 10.0
+        # At night the catalogue turns at most every 10 s of game time or 2 m of travel. By day it is hidden but
+        # must still keep its distance: sprites left behind a long drive would cover the camera.
+        if (showing and stale) or moved > 300.0:
+            rot = sky.equatorial_to_local(when)
+            self.pos[:] = eye + (self.v @ rot.T) * self.domes[:, None]
+            self._last, self._fixed_dirty = (when, eye.copy()), True
+            kind, mag = unpack(self.values)
+            self.stars_shown = int(((kind < KIND_MW) & (mag <= look.star_limit) & (self.pos[:, 1] > eye[1])).sum())
+        elif not showing:
+            self.stars_shown = 0
+        if self._planets_at is None or abs((when - self._planets_at).total_seconds()) > 10.0:
+            self._planets, self._planets_at = sky.planets(when), when
+        for i, (name, p) in enumerate(self._planets.items()):
+            self.moving_pos[i] = eye + sky.direction(p.alt, p.az) * NEAR_DOME
             self.moving_values[i] = pack(colour_bin(PLANET_BV[name]), p.mag)
             self.moving_radii[i] = star_radius(p.mag) * NEAR_DOME / DOME
         md = sky.direction(moon.alt, moon.az)
@@ -223,17 +253,12 @@ class NightSky:
         away = -(sd - md * (sd @ md))  # across the moon's face, away from the sun
         away /= max(np.linalg.norm(away), 1e-9)
         r = NEAR_DOME * np.radians(MOON_DEG)
-        self.pos[nf + 5] = eye + md * NEAR_DOME
-        self.pos[nf + 6] = eye + md * (NEAR_DOME - 1.0) + away * (2.0 * r * moon.lit)
+        self.moving_pos[5] = eye + md * NEAR_DOME
+        self.moving_pos[6] = eye + md * (NEAR_DOME - 1.0) + away * (2.0 * r * moon.lit)
         self.moving_values[5], self.moving_values[6] = pack(KIND_MOON, 0.0), pack(KIND_MOON_DARK, 0.0)
         self.moving_radii[5] = r
         self.moving_radii[6] = r * 1.02 if moon.lit < 0.97 else 0.0
-        key = (np.round(self.moving_values, 2).tobytes(), np.round(self.moving_radii, 2).tobytes())
-        if key != getattr(self, "_moving_key", None):
-            self._moving_key, self._dirty = key, True
         milky = float(np.clip((look.star_limit - 5.3) / 1.0, 0.0, 1.0)) * look.night
         moon_light = float(np.clip(1.0 - 0.6 * (1.0 - look.night), 0.25, 1.0)) if moon.alt > -1 else 0.0
         self.material.u[:] = (look.night, look.star_limit, milky, moon_light)
-        kind, mag = unpack(self.values)
-        up = self.pos[:nf, 1] > eye[1]
-        return int(((kind < KIND_MW) & (mag <= look.star_limit) & up).sum())
+        return self.stars_shown
