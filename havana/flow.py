@@ -37,6 +37,7 @@ class FlowView:
     speed: np.ndarray
     queue: np.ndarray
     when: datetime | None
+    arrived: np.ndarray  # vehicles sent into owned edges so far, cumulative; the car layer turns them into cars
 
 
 class Flow:
@@ -55,6 +56,10 @@ class Flow:
         self.t_w = a["g_turn_w"].astype(np.float64)
         self.n = np.zeros(len(graph))
         self.demand = True  # False: no vehicles start or park (tests of the moving part alone)
+        # Edges the car layer owns (near the player): the flow does not move their vehicles, and what it sends
+        # into them is counted in `arrived` for the car layer to place as cars.
+        self.owned = np.zeros(len(graph), bool)
+        self.arrived = np.zeros(len(graph))
         self.closures: list[tuple[np.ndarray, datetime]] = []
         classes = np.array([SOURCE_FACTOR[c] for c in CLASSES])[a["g_class"]]
         built = a["g_built"].astype(np.float64) * classes
@@ -113,6 +118,7 @@ class Flow:
 
         # What an edge can send: the vehicles that reach its end this step, never more than it holds.
         demand = np.minimum(self.n * np.minimum(1.0, self.vfree * dt / self.length), self.cap * dt)
+        demand[self.owned] = 0.0
         supply = np.where(closed, 0.0, np.maximum(self.jam - self.n, 0.0))
         want = demand[self.t_in] * share
         into = np.bincount(self.t_out, want, E)
@@ -123,7 +129,9 @@ class Flow:
         limited = np.flatnonzero((ratio[self.t_out] < 1.0) & (share > 0))
         np.minimum.at(fifo, self.t_in[limited], ratio[self.t_out[limited]])
         moved = want * fifo[self.t_in]
-        self.n += np.bincount(self.t_out, moved, E) - np.bincount(self.t_in, moved, E)
+        inflow = np.bincount(self.t_out, moved, E)
+        self.n += inflow - np.bincount(self.t_in, moved, E)
+        self.arrived += np.where(self.owned, inflow, 0.0)
 
         if self.demand:
             self._demand(dt, when, closed)
@@ -134,7 +142,7 @@ class Flow:
         target = sum(moving(self.config, when).values())
         hour = when.hour + when.minute / 60
         weight = self.source_weight * np.where(AFTERNOON[0] <= hour < AFTERNOON[1], self.attract, 1.0)
-        weight = np.where(closed, 0.0, weight)
+        weight = np.where(closed | self.owned, 0.0, weight)
         if weight.sum() > 0:
             room = np.maximum(self.jam - self.n, 0.0)
             self.n += np.minimum(target / trip_s * dt * weight / weight.sum(), room)
@@ -142,11 +150,11 @@ class Flow:
         total = self.n.sum()
         if total > 0:
             pull = pull * total / max(float((self.n * pull).sum()), 1e-12)
-        self.n -= np.where(closed, 0.0, self.n * pull * dt / trip_s)
+        self.n -= np.where(closed | self.owned, 0.0, self.n * pull * dt / trip_s)
 
     def view(self) -> FlowView:
         """A copy of the state for the car layer and the map: vehicles, speed and queue per edge."""
         fill = np.where(self.jam > 0, self.n / np.maximum(self.jam, 1e-12), 0.0)
         speed = np.maximum(WALKING, self.vfree * (1.0 - fill ** 2))
         queue = np.maximum(0.0, self.n - self.cap * self.length / self.vfree)
-        return FlowView(self.n.copy(), speed, queue, self.when)
+        return FlowView(self.n.copy(), speed, queue, self.when, self.arrived.copy())

@@ -28,6 +28,7 @@ PATIENCE = 8.0  # seconds a car waits at a junction before it goes anyway
 LOOK = 30.0  # metres before the end of an edge where a car starts asking to enter the junction
 NEAR = 25.0  # metres: a car this close to the junction on another approach counts as about to enter
 BOX = 6.0  # metres: a car this far into an edge leaving the junction is still inside it
+SPACING_QUEUE = 7.0  # metres between queued cars placed from the flow
 
 
 class Cars:
@@ -190,7 +191,7 @@ class Cars:
         """Advance dt seconds. t: seconds since midnight (signal phases). obstacles: (edge, lane, s[, v]) of
         things that are not cars, such as the player, each taken as a 4.5 m vehicle whose front is at s."""
         N = len(self)
-        if N == 0:
+        if N == 0 or dt <= 0:
             return
         L = self.length
         # Leaders: sort by (edge, lane, s); the next row in the same edge and lane is the car ahead.
@@ -264,3 +265,155 @@ class Cars:
         bx, bz = x - np.cos(heading) * L / 2, z - np.sin(heading) * L / 2
         pitch = np.arctan2(surface.height(fx, fz) - surface.height(bx, bz), L)
         return np.stack([x, y, z], axis=1), heading, pitch
+
+
+class TrafficLayer:
+    """Cars on the edges near the player, kept consistent with the flow layer.
+
+    On those edges the cars are the truth; everywhere else the flow is. A vehicle is never in both. Changes to
+    the flow run in its thread (runner.submit); the flow answers through `inbox`: which edges it handed over
+    and with how many vehicles, and how many vehicles it sent into edges the cars own.
+    """
+
+    MAX_ENTER = 200  # edges taken over per update, nearest first, so a teleport does not stall one frame
+
+    def __init__(self, graph: Graph, runner, radius: float = 400.0, seed: int = 0):
+        from collections import deque
+
+        from havana.geo import CELL
+
+        self.g, self.runner, self.radius = graph, runner, radius
+        self.cars = Cars(graph, seed)
+        E = len(graph)
+        self.centre = (graph.a["g_cell"].astype(np.float64) + 0.5) * CELL if E else np.zeros((0, 2))
+        self.owned = np.zeros(E, bool)  # edges the cars own or have asked for
+        self.carry = np.zeros(E)  # the fraction of a vehicle each owned edge holds on top of its cars
+        self.waiting = np.zeros(E)  # vehicles that arrived on an owned edge but have no room at its start yet
+        self.inbox = deque()
+        self.counts = {"spawned": 0, "removed": 0}
+
+    # Messages run in the flow's thread.
+    def _hand_over(self, edges):
+        def fn(flow):
+            flow.owned[edges] = True
+            view = flow.view()
+            self.inbox.append(("enter", edges, view.n[edges], view.queue[edges], view.speed[edges]))
+        return fn
+
+    def _take_arrivals(self, flow):
+        idx = np.flatnonzero(flow.owned & (flow.arrived >= 1.0))
+        if len(idx):
+            k = np.floor(flow.arrived[idx])
+            flow.arrived[idx] -= k
+            self.inbox.append(("arrive", idx, k))
+
+    def total(self) -> float:
+        """Every vehicle once: the flow's own edges, the cars, and what is in transit between the layers."""
+        flow = self.runner.flow
+        transit = sum(m[2].sum() for m in self.inbox)
+        return float(flow.n[~flow.owned].sum() + flow.arrived[flow.owned].sum() + len(self.cars)
+                     + self.carry.sum() + self.waiting.sum() + transit)
+
+    def _kinds(self, edge: int, k: int) -> np.ndarray:
+        from havana.rules.traffic import KINDS, moving
+
+        when = self.runner.clock.now()
+        share = np.array([v for v in moving(self.runner.flow.config, when).values()], float)
+        p = share / share.sum() if share.sum() > 0 else np.full(len(KINDS), 1 / len(KINDS))
+        rng = np.random.default_rng(edge * 1_000_003 + when.hour * 60 + when.minute)
+        return rng.choice(len(KINDS), size=k, p=p)
+
+    def _enter(self, edges, n, queue, speed) -> None:
+        for e, ne, qe, ve in zip(edges.tolist(), n.tolist(), queue.tolist(), speed.tolist()):
+            if not self.owned[e]:  # left again before the flow answered: give the vehicles back
+                self.runner.submit(lambda flow, e=e, ne=ne: self._give_back(flow, [e], [ne]))
+                continue
+            k = int(np.floor(ne))
+            self.carry[e] += ne - k
+            if k == 0:
+                continue
+            q = min(k, int(np.floor(qe)))
+            length = self.cars.len[e]
+            s_queue = length - 0.5 - SPACING_QUEUE * np.arange(q)
+            free = k - q
+            room = max(length - SPACING_QUEUE * q, 0.0)
+            s_free = (np.arange(free) + 0.5) * room / max(free, 1)
+            s = np.clip(np.r_[s_queue, s_free], 0.0, length)
+            v = np.r_[np.zeros(q), np.full(free, ve)]
+            self.cars.add(np.full(k, e), s, v, self._kinds(e, k))
+            self.counts["spawned"] += k
+
+    def _arrive(self, edges, k) -> None:
+        self.waiting[edges] += k
+        for e in np.flatnonzero(self.waiting >= 1.0).tolist():
+            if not self.owned[e]:
+                continue
+            on = self.cars.edge == e
+            if on.any() and self.cars.s[on].min() < SPACING_QUEUE:
+                continue  # no room at the start yet
+            self.waiting[e] -= 1
+            self.cars.add([e], [0.0], [self.cars.vfree[e] * 0.5], self._kinds(e, 1))
+            self.counts["spawned"] += 1
+
+    @staticmethod
+    def _give_back(flow, edges, counts):
+        edges = np.asarray(edges, np.int64)
+        flow.n[edges] = np.asarray(counts, float) + flow.arrived[edges]
+        flow.arrived[edges] = 0.0
+        flow.owned[edges] = False
+
+    def update(self, x: float, z: float, dt: float, obstacles: list) -> None:
+        """One frame: hand edges over as the player moves, place arriving vehicles, drive, and report counts."""
+        E = len(self.g)
+        if E == 0:
+            return
+        while self.inbox:
+            msg = self.inbox.popleft()
+            if msg[0] == "enter":
+                self._enter(*msg[1:])
+            else:
+                self._arrive(*msg[1:])
+        want = np.hypot(*(self.centre - (x, z)).T) <= self.radius
+
+        leaving = np.flatnonzero(self.owned & ~want)
+        if len(leaving):
+            on = np.isin(self.cars.edge, leaving)
+            counts = (np.bincount(self.cars.edge[on], minlength=E)[leaving] + self.carry[leaving]
+                      + self.waiting[leaving])
+            self.cars.remove(on)
+            self.counts["removed"] += int(on.sum())
+            self.carry[leaving] = 0.0
+            self.waiting[leaving] = 0.0
+            self.owned[leaving] = False
+            self.runner.submit(lambda flow, e=leaving, c=counts: self._give_back(flow, e, c))
+
+        entering = np.flatnonzero(want & ~self.owned)
+        if len(entering):
+            d = np.hypot(*(self.centre[entering] - (x, z)).T)
+            entering = entering[np.argsort(d)][: self.MAX_ENTER]
+            self.owned[entering] = True
+            self.runner.submit(self._hand_over(entering))
+
+        when = self.runner.clock.now()
+        t = when.hour * 3600 + when.minute * 60 + when.second + when.microsecond / 1e6
+        self.cars.step(dt, t, obstacles)
+
+        out = ~self.owned[self.cars.edge]
+        if out.any():
+            gone = self.cars.edge[out]
+            self.cars.remove(out)
+            self.counts["removed"] += len(gone)
+            self.runner.submit(lambda flow, g=gone: np.add.at(flow.n, g, 1.0))
+
+        owned = np.flatnonzero(self.owned)
+        counts = np.bincount(self.cars.edge, minlength=E)[owned] + self.carry[owned] + self.waiting[owned]
+
+        def report(flow, idx=owned, c=counts):
+            mine = flow.owned[idx]
+            flow.n[idx[mine]] = c[mine] + flow.arrived[idx[mine]]
+            self._take_arrivals(flow)
+
+        self.runner.submit(report)
+
+    def stats(self) -> dict:
+        return {"cars": len(self.cars), "edges": int(self.owned.sum()), **self.counts}
