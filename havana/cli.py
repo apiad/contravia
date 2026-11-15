@@ -15,6 +15,7 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("prepare", help="turn a Cuba OSM extract into data/havana.npz")
     p.add_argument("pbf")
     p.add_argument("--out", default="data/havana.npz")
+    p.add_argument("--dem", help="folder with the Copernicus GLO-30 tiles; without it the city is flat")
 
     p = sub.add_parser("play", help="drive the city")
     p.add_argument("--data", default="data/havana.npz")
@@ -29,7 +30,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "prepare":
         from havana.prepare import main as prepare
 
-        prepare(args.pbf, args.out)
+        prepare(args.pbf, args.out, dem=args.dem)
     elif args.command == "play":
         from havana.game import main as play
 

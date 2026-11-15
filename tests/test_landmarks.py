@@ -64,3 +64,19 @@ def test_every_landmark_builds_when_its_footprints_are_there():
     lm = Landmarks(city_with(rings))
     assert lm.names == [m.NAME for m in MODULES]
     assert len(lm.mesh.indices) > 0 and np.isfinite(lm.mesh.positions).all()
+
+
+def test_landmarks_stand_on_the_terrain():
+    from havana.terrain import Terrain, seat
+
+    _, c = np.mgrid[0:400, 0:600]
+    t = Terrain(0.02 * (-3000 + 10.0 * c) + 60, (-3000, -1000), (10, 10))      # rises 2 m per 100 m eastward
+    ids = [capitolio.OSM_ID, plaza.TOWER, plaza.BASE]
+    rings = [square((0.0, 0.0), 40), square((-2744.0, 1397.0), 14), square((-2742.0, 1398.0), 42)]
+    city = CityData.from_features(np.zeros((0, 5)), rings, np.array(ids), [], np.zeros(0), np.zeros((0, 2)), t)
+    lm = Landmarks(city)
+    p = lm.mesh.positions
+    cap = p[(np.abs(p[:, 0]) < 45) & (np.abs(p[:, 2]) < 45)]
+    assert np.isclose(cap[:, 1].min(), seat(rings[0], t), atol=1e-3)
+    paving = p[np.all(np.isclose(lm.mesh.colors, plaza.PAVE), axis=1)]
+    assert len(paving) and np.allclose(paving[:, 1], t.height(paving[:, 0], paving[:, 2]) + plaza.PAVING_LIFT, atol=1e-3)

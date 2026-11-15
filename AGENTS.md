@@ -6,6 +6,9 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
 - The design is `docs/superpowers/specs/2026-11-13-havana-driver-design.html`; plans are in `docs/superpowers/plans/`.
 - `havana prepare <cuba-latest.osm.pbf>` writes `data/havana.npz`; `havana play` drives; `havana bench` drives a
   fixed route and appends its numbers to `bench/history.jsonl`.
+- `havana prepare ... --dem DIR` adds the ground's heights from the Copernicus GLO-30 tiles
+  `Copernicus_DSM_COG_10_N22_00_W083_00_DEM` and `..._N23_00_W083_00_DEM`, each fetched with `curl -L` from
+  `https://copernicus-dem-30m.s3.amazonaws.com/<name>/<name>.tif`. Without it the city is flat.
 - The game grows in layers, and every layer covers the whole city. Never detail one district ahead of the rest.
 - Same inputs, same city: every random draw is seeded from an OSM id or a block centroid.
 - `data/` is never committed: no OSM extract, no npz.

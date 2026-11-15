@@ -183,7 +183,7 @@ main.plan{max-width:980px;margin:0 auto}
 
 <h2 id="tasks"><span class="n">03</span>Tasks</h2>
 
-<details class="task" id="task-1" data-state="pending">
+<details class="task" id="task-1" data-state="done">
 <summary><span class="num">1</span><span><span class="ttl">manifoldx: place_car takes pitch and roll</span><span class="files">repos/manifoldx · src/manifoldx/modeling/assets/car.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -198,7 +198,7 @@ main.plan{max-width:980px;margin:0 auto}
 </div>
 </details>
 
-<details class="task" id="task-2" data-state="pending">
+<details class="task" id="task-2" data-state="done">
 <summary><span class="num">2</span><span><span class="ttl">Terrain: heights, cleaning, tiles</span><span class="files">havana/terrain.py · havana/citydata.py · pyproject.toml</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -239,7 +239,7 @@ def test_old_data_without_heights_is_flat(city):
 </div>
 </details>
 
-<details class="task" id="task-3" data-state="pending">
+<details class="task" id="task-3" data-state="done">
 <summary><span class="num">3</span><span><span class="ttl">prepare --dem</span><span class="files">havana/prepare.py · havana/cli.py · AGENTS.md</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -254,7 +254,7 @@ def test_old_data_without_heights_is_flat(city):
 </div>
 </details>
 
-<details class="task" id="task-4" data-state="pending">
+<details class="task" id="task-4" data-state="done">
 <summary><span class="num">4</span><span><span class="ttl">Ground grid and draped roads</span><span class="files">havana/rules/ground.py · havana/rules/roads.py · havana/cells.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -268,7 +268,7 @@ def test_old_data_without_heights_is_flat(city):
 </div>
 </details>
 
-<details class="task" id="task-5" data-state="pending">
+<details class="task" id="task-5" data-state="done">
 <summary><span class="num">5</span><span><span class="ttl">Seat buildings, filler, trees and landmarks</span><span class="files">havana/rules/buildings.py · havana/rules/trees.py · havana/landmarks/* · havana/mesh.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -283,7 +283,7 @@ def test_old_data_without_heights_is_flat(city):
 </div>
 </details>
 
-<details class="task" id="task-6" data-state="pending">
+<details class="task" id="task-6" data-state="done">
 <summary><span class="num">6</span><span><span class="ttl">Car and camera on the terrain</span><span class="files">havana/car.py · havana/camera.py · havana/game.py · pyproject.toml</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -299,7 +299,7 @@ def test_old_data_without_heights_is_flat(city):
 </div>
 </details>
 
-<details class="task" id="task-7" data-state="pending">
+<details class="task" id="task-7" data-state="done">
 <summary><span class="num">7</span><span><span class="ttl">Real data, measurements, shots, PR</span><span class="files">data/havana.npz (ignored) · issue · PR</span></span><span class="state">pending</span></summary>
 <div class="body">
 <ol class="steps">
@@ -312,7 +312,7 @@ def test_old_data_without_heights_is_flat(city):
 </div>
 </details>
 
-<details class="task" id="task-8" data-state="pending">
+<details class="task" id="task-8" data-state="done">
 <summary><span class="num">8</span><span><span class="ttl">Flyby video</span><span class="files">.playground/havana-flyby/ (throwaway)</span></span><span class="state">pending</span></summary>
 <div class="body">
 <ol class="steps">
@@ -326,6 +326,9 @@ def test_old_data_without_heights_is_flat(city):
 
 <h2 id="departs"><span class="n">04</span>Where this plan departs from the spec</h2>
 <ul>
+  <li><b>Narrow hills lose part of their top.</b> The spec's test says a hill 300 m wide keeps its height within 10 %. Measured on Gaussian hills (<code>tests/test_terrain.py</code>), the cleaning keeps 61 % of the peak at σ = 90 m, 83 % at 150 m, 93 % at 240 m and 97 % at 360 m. The test uses a hill about 500 m across (σ = 240 m). Hills of a city block or two come out lower and rounder.</li>
+  <li><b>Each landmark part seats itself.</b> Task 5 lifted a whole landmark to the lowest point under its walls (<code>rigid</code>, <code>MeshBuilder.extend</code>). The Plaza spans 400 m and the Morro sits on a hill, so one lift buried half their parts. Instead each module calls <code>seat</code> for each part on <code>city.terrain</code>; the Morro's walls rise from its lowest ground to 14 m above its highest; the Plaza drapes its own paving with <code>shapes.drape</code>. <code>Piece</code> is unchanged and <code>extend</code> was not needed.</li>
+  <li><b>Roads are level across, not draped.</b> The spec drapes each road corner on the ground, so on a side slope roads tilted sideways and the car rolled (8° on a 14.6 % cross slope in Vedado). Real streets are cut and filled to stay level across. Each 10 m cut now takes the highest ground under the left edge, centre and right edge, a skirt drops to the ground where the road stands more than 0.2 m clear, and <code>havana/surface.py</code> gives the wheels the road's height on a road, so the car only pitches there. The steepest cross slope on a real road is 22.5 % (a 2.25 m skirt); 1,835 of 177,368 segments pass 10 %. Built as arrays per cell, the road rule takes 3 ms per city cell against 4–5 ms for the draped one.</li>
   <li><b>The Malecón's sea is not draped.</b> The spec drapes it like the paving. It lies where the cleaned heights are 0, so it stays flat at its 0.3 m floor; near the wall, the 30 m blur raises the land a little above it, which reads as rocks until layer 6 brings the coastline.</li>
 </ul>
 </main>

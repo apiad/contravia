@@ -3,7 +3,7 @@
 `havana prepare` writes one CityData to an .npz file and the game reads it back. Each kind of feature is
 stored as one flat array sorted by cell, with an offset array saying where each cell's rows begin, so
 asking for a cell is two lookups and a slice. Rings (footprints and blocks) are stored as one vertex
-array plus the index where each ring starts.
+array plus the index where each ring starts. The cleaned height grid travels in the same file.
 """
 
 from dataclasses import dataclass, field
@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 
 from havana.geo import cell_of
+from havana.terrain import Terrain
 
 
 @dataclass
@@ -49,7 +50,8 @@ class CityData:
         self._index = {tuple(c): k for k, c in enumerate(np.asarray(arrays["cells"]).tolist())}
 
     @classmethod
-    def from_features(cls, roads, buildings, building_ids, fillers, filler_seeds, trees) -> "CityData":
+    def from_features(cls, roads, buildings, building_ids, fillers, filler_seeds, trees,
+                      terrain: Terrain | None = None) -> "CityData":
         """Assign each feature to the cell of its midpoint or centroid, sort by cell and build offsets."""
         roads = np.asarray(roads, np.float32).reshape(-1, 5)
         trees = np.asarray(trees, np.float32).reshape(-1, 2)
@@ -79,6 +81,10 @@ class CityData:
         out["filler_seeds"] = np.asarray(filler_seeds, np.int64)[o]
         o = order_and_offsets("tree", keys["tree"])
         out["trees"] = trees[o]
+        terrain = terrain or Terrain.flat()
+        out["heights"] = terrain.heights
+        out["heights_origin"] = np.array(terrain.origin)
+        out["heights_step"] = np.array(terrain.step)
         return cls(out)
 
     def save(self, path) -> None:
@@ -91,6 +97,15 @@ class CityData:
         """Read a file written by save()."""
         with np.load(path) as f:
             return cls({k: f[k] for k in f.files})
+
+    @property
+    def terrain(self) -> Terrain:
+        """The ground's heights; flat for data prepared before layer 1."""
+        if "heights" not in self.a:
+            return Terrain.flat()
+        if not hasattr(self, "_terrain"):
+            self._terrain = Terrain(self.a["heights"], self.a["heights_origin"], self.a["heights_step"])
+        return self._terrain
 
     def cells(self) -> np.ndarray:
         """The (K, 2) cells that hold at least one feature."""

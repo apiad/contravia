@@ -1,8 +1,9 @@
-"""The car: an arcade bicycle model on flat ground, and collision with walls in 2D.
+"""The car: an arcade bicycle model on the terrain, and collision with walls in 2D.
 
 The bicycle model treats the car as one front and one back wheel a wheelbase apart. Turning the front
 wheel by an angle makes the car turn at speed * tan(angle) / wheelbase radians per second. That is all the
-physics layer 0 needs: no suspension, no tyre grip, no mass.
+physics the game needs: no suspension, no tyre grip, no mass. On the terrain, the car's height, pitch and roll
+come from the ground under its four wheels, and gravity along the slope slows it uphill and speeds it down.
 """
 
 import math
@@ -11,6 +12,8 @@ from dataclasses import dataclass, replace
 import numpy as np
 
 WHEELBASE = 2.6
+TRACK = 1.53  # metres between the left and right wheels
+G = 9.81  # m/s²
 LENGTH, WIDTH = 4.5, 1.8
 TOP_SPEED, REVERSE_SPEED = 45.0, 8.0  # m/s
 ACCEL, BRAKE = 6.0, 12.0  # m/s²
@@ -28,6 +31,9 @@ class CarState:
     z: float
     yaw: float
     speed: float
+    y: float = 0.0  # height of the ground under the car
+    pitch: float = 0.0  # radians, positive with the nose up
+    roll: float = 0.0  # radians, positive with the right side down
 
 
 @dataclass
@@ -88,8 +94,27 @@ def _hit(s: CarState, walls: np.ndarray) -> CarState:
     return s
 
 
-def step(s: CarState, c: Controls, dt: float, walls: np.ndarray) -> CarState:
-    """Advance the car by dt seconds under the controls, stopping at the walls given as (W, 2, 2) segments."""
+def settle(s: CarState, terrain) -> CarState:
+    """The car resting on the terrain: height, pitch and roll from the ground under its four wheels.
+
+    Facing yaw, the car's right is (-sin yaw, cos yaw): z points south, so facing east the right is south.
+    """
+    h = np.array([math.cos(s.yaw), math.sin(s.yaw)])
+    r = np.array([-h[1], h[0]])
+    p = np.array([s.x, s.z])
+    wheels = np.array([p + h * WHEELBASE / 2 + r * sign * TRACK / 2 for sign in (-1, 1)]
+                      + [p - h * WHEELBASE / 2 + r * sign * TRACK / 2 for sign in (-1, 1)])  # fl, fr, rl, rr
+    fl, fr, rl, rr = terrain.height(wheels[:, 0], wheels[:, 1])
+    return replace(s, y=float((fl + fr + rl + rr) / 4),
+                   pitch=math.atan2((fl + fr) / 2 - (rl + rr) / 2, WHEELBASE),
+                   roll=math.atan2((fl + rl) / 2 - (fr + rr) / 2, TRACK))
+
+
+def step(s: CarState, c: Controls, dt: float, walls: np.ndarray, terrain=None) -> CarState:
+    """Advance the car by dt seconds under the controls, stopping at the walls given as (W, 2, 2) segments.
+
+    With a terrain, gravity along the slope changes the speed and the car ends resting on the ground.
+    """
     v = s.speed
     if c.throttle > 0 and v >= -0.1:
         v += ACCEL * c.throttle * dt
@@ -103,6 +128,7 @@ def step(s: CarState, c: Controls, dt: float, walls: np.ndarray) -> CarState:
     if c.handbrake:
         v = math.copysign(max(0.0, abs(v) - HANDBRAKE * dt), v)
     v = math.copysign(max(0.0, abs(v) - _drag(v) * dt), v) if c.throttle == 0 and c.brake == 0 else v
+    v -= G * math.sin(s.pitch) * dt
     v = min(TOP_SPEED, max(-REVERSE_SPEED, v))
 
     fast = min(abs(v) / TOP_SPEED, 1.0)
@@ -116,4 +142,4 @@ def step(s: CarState, c: Controls, dt: float, walls: np.ndarray) -> CarState:
         dist = s.speed * dt / n
         s = replace(s, yaw=yaw, x=s.x + math.cos(yaw) * dist, z=s.z + math.sin(yaw) * dist)
         s = _hit(s, walls)
-    return s
+    return settle(s, terrain) if terrain is not None else s

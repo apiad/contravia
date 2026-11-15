@@ -73,6 +73,35 @@ def flat(mb, ring, y: float, color) -> None:
     mb.add([(x, y, z) for x, z in ring], [(0, 1, 0)] * len(ring), color, triangulate(ring))
 
 
+def inside(points, ring) -> np.ndarray:
+    """Even-odd rule for many points at once: a (P,) bool array, True where a point is inside the ring."""
+    p = np.asarray(points, float).reshape(-1, 2)
+    ring = np.asarray(ring, float)
+    x, z = p[:, 0:1], p[:, 1:2]
+    x0, z0 = ring[:, 0], ring[:, 1]
+    x1, z1 = np.roll(ring, 1, axis=0).T
+    crosses = (z0 > z) != (z1 > z)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        at = x0 + (z - z0) * (x1 - x0) / (z1 - z0)
+    return (crosses & (x < at)).sum(axis=1) % 2 == 1
+
+
+def drape(mb, ring, terrain, lift: float, color, step: float = 10.0) -> None:
+    """Cover a ring with squares of side step that follow the terrain, lift metres above it: paving."""
+    ring = np.asarray(ring, float)
+    lo, hi = ring.min(axis=0), ring.max(axis=0)
+    x, z = np.meshgrid(np.arange(lo[0], hi[0], step), np.arange(lo[1], hi[1], step))
+    corners = np.stack([x.ravel(), z.ravel()], axis=1)
+    corners = corners[inside(corners + step / 2, ring)]
+    if not len(corners):
+        return
+    quads = (corners[:, None, :] + np.array([(0, 0), (step, 0), (step, step), (0, step)])[None]).reshape(-1, 2)
+    y = terrain.height(quads[:, 0], quads[:, 1]) + lift
+    base = 4 * np.arange(len(corners))[:, None]
+    mb.add(np.stack([quads[:, 0], y, quads[:, 1]], axis=1), np.tile((0.0, 1.0, 0.0), (len(quads), 1)), color,
+           np.concatenate([base + (0, 1, 2), base + (0, 2, 3)]))
+
+
 def frame(ring):
     """The oriented box of a footprint: centre, long axis u, short axis v and the half sizes along each."""
     ring = np.asarray(ring, float)

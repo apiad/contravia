@@ -9,6 +9,7 @@ import numpy as np
 
 ORIGIN = (23.13528, -82.35972)  # the Capitolio, as (lat, lon)
 CELL = 200.0  # the side of a streamed cell, in metres
+HAVANA_BOX = (22.90, -82.60, 23.25, -82.00)  # (south, west, north, east) degrees around the province
 
 _M_PER_DEG_LAT = 110_574.0
 _M_PER_DEG_LON = 111_320.0 * np.cos(np.radians(ORIGIN[0]))

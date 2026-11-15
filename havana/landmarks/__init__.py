@@ -12,22 +12,10 @@ import numpy as np
 from havana.citydata import Cell, CityData
 from havana.geo import CELL, cell_of
 from havana.landmarks import capitolio, focsa, gran_teatro, habana_libre, malecon, morro, nacional, plaza
+from havana.landmarks.shapes import inside
 from havana.mesh import MeshBuilder
 
 MODULES = (capitolio, gran_teatro, morro, nacional, focsa, habana_libre, plaza, malecon)
-
-
-def inside(points, ring) -> np.ndarray:
-    """Even-odd rule for many points at once: a (P,) bool array, True where a point is inside the ring."""
-    p = np.asarray(points, float).reshape(-1, 2)
-    ring = np.asarray(ring, float)
-    x, z = p[:, 0:1], p[:, 1:2]
-    x0, z0 = ring[:, 0], ring[:, 1]
-    x1, z1 = np.roll(ring, 1, axis=0).T
-    crosses = (z0 > z) != (z1 > z)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        at = x0 + (z - z0) * (x1 - x0) / (z1 - z0)
-    return (crosses & (x < at)).sum(axis=1) % 2 == 1
 
 
 class Landmarks:

@@ -43,12 +43,13 @@ def _template():
     return tuple(parts)
 
 
-def trees(mb, xz) -> None:
-    """Add a tree standing at each (x, z) of the (N, 2) array xz."""
+def trees(mb, xz, y=None) -> None:
+    """Add a tree standing at each (x, z) of the (N, 2) array xz, on the ground heights y (0 when None)."""
     xz = np.asarray(xz, float).reshape(-1, 2)
     if not len(xz):
         return
-    shift = np.stack([xz[:, 0], np.zeros(len(xz)), xz[:, 1]], axis=1)[:, None, :]
+    y = np.zeros(len(xz)) if y is None else np.asarray(y, float)
+    shift = np.stack([xz[:, 0], y, xz[:, 1]], axis=1)[:, None, :]
     for (pos, nrm, tri), color in zip(_template(), (TRUNK, LEAVES), strict=True):
         n, v = len(xz), len(pos)
         mb.add((pos[None] + shift).reshape(-1, 3), np.tile(nrm, (n, 1)), color,

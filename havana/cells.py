@@ -12,9 +12,9 @@ from havana.citydata import CityData
 from havana.geo import CELL
 from havana.landmarks import Landmarks
 from havana.mesh import MeshBuilder
-from havana.rules import buildings, roads, trees
+from havana.rules import buildings, ground, roads, trees
+from havana.terrain import seat
 
-GROUND = (0.32, 0.36, 0.30)
 SKIPPED_ROOFS = 0  # footprints drawn as walls only in this process, because their roof could not be cut
 
 _city: CityData | None = None
@@ -44,13 +44,13 @@ def build(i: int, j: int):
     c = landmarks().keep(i, j, city().cell(i, j))
     x0, z0 = i * CELL, j * CELL
     mb = MeshBuilder()
-    mb.add([(x0, 0, z0), (x0 + CELL, 0, z0), (x0 + CELL, 0, z0 + CELL), (x0, 0, z0 + CELL)],
-           [(0, 1, 0)] * 4, GROUND, [(0, 1, 2), (0, 2, 3)])
-    roads.ribbon(mb, c.roads)
+    terrain = city().terrain
+    ground.ground(mb, i, j, terrain)
+    roads.ribbon(mb, c.roads, terrain)
     for ring, osm_id in zip(c.buildings, c.building_ids, strict=True):
-        if not buildings.box(mb, ring, int(osm_id)):
+        if not buildings.box(mb, ring, int(osm_id), base=seat(ring, terrain)):
             SKIPPED_ROOFS += 1
     for block, seed in zip(c.fillers, c.filler_seeds, strict=True):
-        buildings.filler(mb, block, int(seed))
-    trees.trees(mb, c.trees)
+        buildings.filler(mb, block, int(seed), terrain)
+    trees.trees(mb, c.trees, terrain.height(c.trees[:, 0], c.trees[:, 1]))
     return mb.to_meshdata(x0, z0)
