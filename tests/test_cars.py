@@ -106,6 +106,6 @@ def test_cars_take_height_and_pitch_from_the_edge_profile():
     a["g_poly_y"] = (a["g_poly"][:, 0] * 0.1).astype(np.float32)  # rises 1 m every 10 m going east
     cars = Cars(g, seed=1)
     cars.add([0], [100.0], [0.0], [KIND])
-    xyz, heading, pitch = cars.world()
+    xyz, _heading, pitch = cars.world()
     assert xyz[0, 1] == pytest.approx((100.0 - 4.5 / 2) * 0.1, abs=1e-3)
     assert pitch[0] == pytest.approx(np.arctan(0.1), abs=1e-3)
