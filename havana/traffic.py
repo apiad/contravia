@@ -28,6 +28,7 @@ CYCLE = 2 * (GREEN + AMBER)
 PATIENCE = 8.0  # seconds a car waits at a junction before it goes anyway
 LOOK = 30.0  # metres before the end of an edge where a car starts asking to enter the junction
 NEAR = 25.0  # metres: a car this close to the junction on another approach counts as about to enter
+ARRIVING = 3.0  # seconds: a moving car this close in time to the junction is about to enter it
 BOX = 6.0  # metres: a car this far into an edge leaving the junction is still inside it
 SPACING_QUEUE = 7.0  # metres between queued cars placed from the flow
 
@@ -173,7 +174,12 @@ class Cars:
         # About to enter: heads of the other approaches within NEAR of the junction that have priority.
         others = self.into_node[j]
         others = others[others != e]
-        near = np.flatnonzero(np.isin(self.edge, others) & (self.len[self.edge] - self.s < NEAR) & ~self.stopped)
+        to_end = self.len[self.edge] - self.s
+        arriving = (self.v > 1.0) & (to_end / np.maximum(self.v, 1e-3) < ARRIVING)
+        # Only cars that will be in the junction soon, or were let through, count: a car waiting at its own line
+        # does not block anyone, or every approach would wait for every other.
+        near = np.flatnonzero(np.isin(self.edge, others) & (to_end < NEAR) & ~self.stopped
+                              & (arriving | self.cleared))
         if not len(near):
             return True
         me = self.end_dir[e]

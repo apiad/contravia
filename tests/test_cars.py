@@ -77,3 +77,23 @@ def test_a_car_takes_its_next_edge_and_draws_another():
     assert cars.edge[0] == first_next
     turns_out = g.a["g_turn_out"][g.a["g_turn_in"] == first_next]
     assert cars.next_edge[0] in turns_out
+
+
+def test_a_junction_keeps_up_with_steady_arrivals():
+    g = four_way(arm=150.0)
+    cars = Cars(g, seed=5)
+    approaches = [e for e in range(len(g)) if g.a["g_to"][e] == 0]
+    added = 0
+    dt = 0.1
+    for k in range(int(180 / dt)):
+        t = k * dt
+        if k % int(8 / dt) == 0:  # one car per approach every 8 s: 1800 an hour into the junction
+            for e in approaches:
+                on = cars.edge == e
+                if not on.any() or cars.s[on].min() > 10:
+                    cars.add([e], [0.0], [8.0], [KIND])
+                    added += 1
+        cars.step(dt, t, [])
+        cars.remove(np.isin(cars.edge, approaches, invert=True) & (cars.s > 100))  # gone down an exit
+    waiting = int(np.isin(cars.edge, approaches).sum())
+    assert waiting <= 12, f"{waiting} of {added} still on the approaches"
