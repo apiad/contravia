@@ -132,7 +132,7 @@ svg text{font-family:var(--font-mono)}
   <a href="#try">Try the two layers</a>
   <a href="#graph">Road graph</a>
   <a href="#flow">Flow layer</a>
-  <a href="#demand">Demand by zone and hour</a>
+  <a href="#demand">Demand by zone, hour and day</a>
   <a href="#cars">Car layer</a>
   <a href="#coupling">Between the layers</a>
   <a href="#events">Events: closing a street</a>
@@ -174,6 +174,8 @@ svg text{font-family:var(--font-mono)}
 <tr><td>Car model <span class="who">agent</span></td><td>Kinematic agents on lanes: the intelligent driver model for following, gaps at junctions, signals on OSM's signal nodes. Not physics bodies.</td><td class="why">Hundreds of cars with full physics do not fit a frame. A car the player hits stops and blocks its lane; that is enough for a demo.</td></tr>
 <tr><td>Player crash <span class="who">agent</span></td><td>A hard crash between the player and a traffic car opens an accident on that edge in the flow layer.</td><td class="why">The event then comes from play, not only from a dev command.</td></tr>
 <tr><td>Vehicle mix <span class="who">agent</span></td><td>Sedan, old American car, bus and motorbike, as parameter sets of manifoldx's parametric car; the mix per zone and hour is a rule.</td><td class="why">Havana's traffic reads as its mix more than its volume. New meshes stay out until layer 5's asset tool.</td></tr>
+<tr><td>Clock <span class="who">maintainer</span></td><td>The game runs on the machine's local clock, in real time: at 08:10 on a Monday you drive in Monday's 08:10 traffic, and an accident lasts its real two hours.</td><td class="why">Weather and season will later come from the same clock.</td></tr>
+<tr><td>Day of week <span class="who">maintainer</span></td><td>Demand has a curve per day type: weekday, Friday, Saturday, Sunday.</td><td class="why">Weekends move differently from workdays.</td></tr>
 </tbody>
 </table>
 
@@ -196,7 +198,7 @@ svg text{font-family:var(--font-mono)}
     <path d="M695 143 C695 90 560 70 535 60"/>
   </g>
 </svg>
-<p>Three new modules. <code>havana/graph.py</code> holds the directed road graph built in prepare. <code>havana/flow.py</code> is the flow layer, and <code>havana/traffic.py</code> the car layer. The numbers students tune (demand per zone, hour curve, vehicle mix, turn weights) go in <code>havana/rules/traffic.py</code>. The game loop owns the clock and passes the game hour to both layers.</p>
+<p>Three new modules. <code>havana/graph.py</code> holds the directed road graph built in prepare. <code>havana/flow.py</code> is the flow layer, and <code>havana/traffic.py</code> the car layer. The numbers students tune (demand per zone, hour curve, vehicle mix, turn weights) go in <code>havana/rules/traffic.py</code>. The game loop reads the machine's local clock and passes the day and the time to both layers.</p>
 
 <h2 id="try"><span class="n">04</span>Try the two layers</h2>
 <p><span class="try">try it</span>A toy grid of streets, not Havana. The flow layer colours every street by how full it is; inside the circle the car layer draws one dot per car it takes from that street. Drag the circle to move the player, change the hour, and close a street to watch the queue grow back from it. The toy runs the same link-queue step as the spec, with made-up numbers.</p>
@@ -232,17 +234,59 @@ svg text{font-family:var(--font-mono)}
   <li><b>Move.</b> Subtract what left, add what arrived, add the cars entering from the street's houses and subtract those parking, both from the demand rule.</li>
   <li><b>Publish.</b> For each edge: count, mean speed (free speed falling to walking pace as <code>n</code> nears <code>jam</code>), and queue length, the stopped part at its end.</li>
 </ol>
-<p>It runs in a thread of the game process, once per game second, and writes the published arrays into a double buffer the car layer reads without a lock. The spike's 16 ms per step leaves the frame alone; at the 60× time warp used for testing (one game minute per second) it is about one core. The province starts from a warm-up of 30 game minutes at the start hour, done at load in about half a second.</p>
+<p>It runs in a thread of the game process, once per game second, and writes the published arrays into a double buffer the car layer reads without a lock. The spike's 16 ms per step leaves the frame alone. Tests and the dev channel can run it faster than real time (60× is about one core); play never does. At start the province warms up for 30 simulated minutes ending at the current clock time, which takes about half a second.</p>
 
-<h2 id="demand"><span class="n">07</span>Demand by zone and hour</h2>
-<p>Every edge gets a source rate (cars starting there per hour) and a sink rate (the share of passing cars that park there), both in <code>havana/rules/traffic.py</code>:</p>
+<h2 id="demand"><span class="n">07</span>Demand by zone, hour and day</h2>
+<p>There are no hourly traffic counts for Havana that we could find, so the level comes from an estimate built on published figures, and the shape of the day from the reported peaks and common traffic patterns. Every number below is a default in <code>havana/rules/traffic.py</code>.</p>
+<h3>How many vehicles move in a day</h3>
+<table class="tbl">
+<thead><tr><th>input</th><th>value</th><th class="why">source</th></tr></thead>
+<tbody>
+<tr><td>Population</td><td>1.81 million (2023, effective population)</td><td class="why">ONEI provincial yearbook 2023: 1 814 207 people on 728 km². It was 2 132 183 at the end of 2020.</td></tr>
+<tr><td>Trips</td><td>2.3 trips per person per day, 6.2 km on average</td><td class="why">Havana mobility study of 2014, quoted by the city's sustainable mobility plan (PMUS, 2022).</td></tr>
+<tr><td>Modal split</td><td>walking 46.2%, public transport 43.6%, private vehicle 6.0%, motorbikes and tricycles 3.2%, bicycle 1.1%</td><td class="why">PMUS 2022, from the 2019 public transport programme.</td></tr>
+<tr><td>Fleet</td><td>about 199 200 vehicles; 68.8 vehicles per 1000 inhabitants</td><td class="why">PMUS 2022. The two figures disagree with each other for 1.8–2.1 million people; the plan gives no year for either.</td></tr>
+<tr><td>Roads</td><td>over 3500 km; level of service at peak hour "very good", far under capacity</td><td class="why">PMUS 2022. OSM's drivable ways in the city file add up to 5463 km, service roads included.</td></tr>
+</tbody>
+</table>
+<p>From these, assuming 1.5 people per private car, 1.2 per motorbike, a quarter of public transport trips made in shared taxis (almendrones) at 4 passengers, buses as a few thousand trips, and freight and state vehicles adding a quarter on top:</p>
+<div class="stats">
+  <div class="stat"><div class="v">~490 000</div><div class="k">vehicle trips on a weekday (range 300 000–600 000); 166 000 cars, 111 000 motorbikes, 113 000 shared taxis</div></div>
+  <div class="stat"><div class="v">~10 000</div><div class="k">vehicles moving at once in the province at 08:00 on a weekday, with trips of about 15 minutes</div></div>
+  <div class="stat"><div class="v">~3 / km</div><div class="k">moving vehicles per km of street at that peak, on average</div></div>
+  <div class="stat"><div class="v">~70</div><div class="k">moving vehicles within 400 m of the Capitolio at that peak (12.3 km of street, twice the average density)</div></div>
+</div>
+<p>The fleet gives a cross-check: 199 200 vehicles, most of them working, at about 2.5 trips a day is about 400 000 trips. These are moving vehicles; parked cars along the kerb are a non-goal of this layer.</p>
+<h3>Hour and day</h3>
+<p>The share of a weekday's trips that start in each hour. The peaks at 7–9 and 16–18 match the hours reported for Havana; the rest of the shape is an assumption.</p>
+<table class="tbl">
+<thead><tr><th>hours</th><th>share per hour, weekday</th></tr></thead>
+<tbody>
+<tr><td>00–05</td><td>0.8 · 0.5 · 0.4 · 0.3 · 0.5 %</td></tr>
+<tr><td>05–09</td><td>1.5 · 4.0 · 7.5 · 8.5 %</td></tr>
+<tr><td>09–16</td><td>6.5 · 5.5 · 5.5 · 5.8 · 5.8 · 5.5 · 6.0 %</td></tr>
+<tr><td>16–20</td><td>7.5 · 8.0 · 6.5 · 4.5 %</td></tr>
+<tr><td>20–24</td><td>3.5 · 2.6 · 1.8 · 1.0 %</td></tr>
+</tbody>
+</table>
+<table class="tbl">
+<thead><tr><th>day</th><th>daily total</th><th class="why">shape (assumed, no Havana data)</th></tr></thead>
+<tbody>
+<tr><td>Monday–Thursday</td><td>100%</td><td class="why">The weekday curve above.</td></tr>
+<tr><td>Friday</td><td>105%</td><td class="why">Same morning; the evening stays busy until 22:00.</td></tr>
+<tr><td>Saturday</td><td>80%</td><td class="why">No morning peak; a broad hump from 10:00 to 13:00 and a busy evening.</td></tr>
+<tr><td>Sunday</td><td>60%</td><td class="why">Flat and late: little before 09:00, most from 10:00 to 18:00.</td></tr>
+</tbody>
+</table>
+<h3>Where on the map</h3>
 <ul>
-  <li><b>Built area.</b> The footprint area of the buildings within 100 m of the edge, which the city file already has. More homes and offices, more cars starting and parking.</li>
+  <li><b>Built area.</b> Each edge gets a source rate (vehicles starting there) and a sink rate (the share of passing vehicles that stop there) from the footprint area of the buildings within 100 m, which the city file already has.</li>
+  <li><b>Municipio.</b> The morning peak sends more trips toward Plaza de la Revolución and La Lisa, which attract the most, and the afternoon one back out; Playa and Plaza generate the most (11% each), per the 2014 study.</li>
   <li><b>Street class.</b> Primary and trunk roads carry through traffic and have few sources of their own; residential streets have many sources and little capacity.</li>
-  <li><b>Hour curve.</b> 24 numbers, the share of the daily traffic per hour: low from midnight to five, a peak from seven to nine, a flatter day, a second peak from four to six in the afternoon. The morning peak leans toward the centre (Centro Habana, Habana Vieja, Vedado) and the afternoon one outward, by scaling sources and sinks by municipio.</li>
   <li><b>Turn weights.</b> A turn onto a bigger street weighs more than one onto a smaller one, so traffic collects on avenues as it does.</li>
-  <li><b>Overall level.</b> One number scales everything. It is set by eye against the open question in <a href="#open">16</a>.</li>
+  <li><b>Overall level.</b> One number scales everything; 1.0 is the estimate above.</li>
 </ul>
+<p>Sources: <a href="https://www.mobiliseyourcity.net/sites/default/files/2024-04/Plan%20de%20Movilidad%20Urbana%20Sostenible%20de%20La%20Habana-Clean%2012%2008%202022.pdf">Plan de Movilidad Urbana Sostenible La Habana (2022)</a>, pages 30–32; <a href="https://cubamemorias.com/wp-content/uploads/2025/04/aep-la-habana-2023.pdf">ONEI, Anuario Estadístico La Habana 2023</a> (population 1 814 207); <a href="https://www.cubaconecta.com/curiosidades/articulos/2017-11-06-u34-e42-horario-pico-habana">peak hours in Havana</a>.</p>
 
 <h2 id="cars"><span class="n">08</span>Car layer</h2>
 <p>Cars exist only on the edges whose cells are within 400 m of the player; that set changes as the player moves. Each car is a row in arrays, not an object: edge, distance along it, lane, speed, vehicle type, the turn it takes at the end, and a seed. One frame:</p>
@@ -287,7 +331,7 @@ svg text{font-family:var(--font-mono)}
 <ul>
   <li><b>Graph.</b> On a small OSM fixture: a one-way street gives one edge, a two-way street two, no U-turn turns, a car park is dropped.</li>
   <li><b>Flow.</b> Cars are conserved (total change equals sources minus sinks); no edge goes over <code>jam</code> or below 0; closing an edge fills the edges before it within a computable time; reopening drains it.</li>
-  <li><b>Demand.</b> At 03:00 the province has under a fifth of the cars it has at 08:00.</li>
+  <li><b>Demand.</b> With the default level, the province has about 10 000 cars moving at 08:00 on a Tuesday and under 500 at 03:00; Sunday at 08:00 has under half of Tuesday's.</li>
   <li><b>Car layer.</b> Two cars in a lane never overlap; a stopped car ahead brings the one behind to a stop before contact; a four-way junction with cars on every approach empties.</li>
   <li><b>Coupling.</b> Moving the circle across a grid and back leaves the total count unchanged; an edge's count read on entry equals the cars placed.</li>
   <li><b>Event.</b> A closure on a real street of the fixture makes a queue on the edges before it, and the car layer places it as stopped cars.</li>
@@ -297,7 +341,7 @@ svg text{font-family:var(--font-mono)}
 <ul>
   <li>Driving at 08:00 from the Capitolio up Paseo to the Plaza meets traffic on every street, denser on avenues, and none of it pops in view.</li>
   <li>At 03:00 the same drive meets a few cars.</li>
-  <li>A closure on the Malecón made by command, then a two-game-hour wait at 60×, shows a queue of stopped cars back from it when the player drives there, and a car that crashed there is still there.</li>
+  <li>A closure on the Malecón made by command, then two simulated hours at 60× through the dev channel, shows a queue of stopped cars back from it when the player drives there, and a car that crashed there is still there.</li>
   <li>The bench numbers are in <code>bench/history.jsonl</code> and meet the targets, or the limit found is a manifoldx issue with a benchmark.</li>
   <li><code>rift check</code> passes.</li>
 </ul>
@@ -313,8 +357,7 @@ svg text{font-family:var(--font-mono)}
 
 <h2 id="open"><span class="n">16</span>Open questions</h2>
 <ul>
-  <li><span class="who q">question</span> Overall level: a few cars per street, as Havana is today, or full streets that load manifoldx harder? The scale is one number; this sets its default.</li>
-  <li><span class="who q">question</span> The game clock: real time (an accident lasts two real hours), or a faster day, for instance one game hour per two real minutes?</li>
+  <li><span class="who q">question</span> Overall level: the estimate in <a href="#demand">07</a> gives about 70 cars moving within 400 m of the Capitolio at the morning peak. Keep that as the default, or default to a multiple of it that loads manifoldx harder, with the real level one setting away?</li>
   <li><span class="who q">question</span> Should a player crash open an accident by default, or only the dev command until layer 4?</li>
 </ul>
 </main>
