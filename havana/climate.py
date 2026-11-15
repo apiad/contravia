@@ -4,7 +4,7 @@ Three files land in havana/sky_data/, kept in git:
 
 - stars.npy: the Yale Bright Star Catalogue (BSC5, public domain), stars down to magnitude 6.5.
 - milkyway.npy: points sampled from NASA's Deep Star Maps 2020 Milky Way image (SVS 4851), weighted by
-  brightness, with their colour.
+  brightness.
 - climate.json: a weather chain for Havana, learnt from ERA5's hourly cloud cover and rain for 1991-2020
   (Open-Meteo's archive), with each month's rain days corrected toward the Casablanca gauge (WMO 78325,
   NOAA GHCN-Daily) where the gauge has enough months.
@@ -73,14 +73,15 @@ def read_bsc5(data: bytes, faintest: float = 6.5) -> np.ndarray:
     return out
 
 
-MW_DTYPE = np.dtype([("ra", "f4"), ("dec", "f4"), ("r", "f4"), ("g", "f4"), ("b", "f4"), ("w", "f4")])
+MW_DTYPE = np.dtype([("ra", "f4"), ("dec", "f4"), ("w", "f2")])
 
 
-def sample_milky_way(rgb: np.ndarray, n: int = 25_000, seed: int = 0) -> np.ndarray:
+def sample_milky_way(rgb: np.ndarray, n: int = 80_000, seed: int = 0) -> np.ndarray:
     """Points drawn from an equirectangular celestial image, as often as each pixel is brighter than the
     image's median. RA 0 is at the centre and grows to the left, as in NASA's Deep Star Maps.
 
-    Each point keeps its pixel's colour (0-1) and a weight `w`, its brightness over the median.
+    Each point keeps a weight `w`, its pixel's brightness over the median, from 0 to 1. Many small faint
+    points read as the Milky Way's star clouds; the sprites cannot add their light, so density does the work.
     """
     rgb = np.asarray(rgb, np.float32) / 255.0
     h, w = rgb.shape[:2]
@@ -94,7 +95,6 @@ def sample_milky_way(rgb: np.ndarray, n: int = 25_000, seed: int = 0) -> np.ndar
     out = np.zeros(n, MW_DTYPE)
     out["ra"] = (180.0 - u * 360.0) % 360.0
     out["dec"] = 90.0 - v * 180.0
-    out["r"], out["g"], out["b"] = rgb[row, col, 0], rgb[row, col, 1], rgb[row, col, 2]
     out["w"] = excess.ravel()[idx] / excess.max()
     return out
 

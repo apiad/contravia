@@ -27,7 +27,7 @@ def test_milky_way_samples_land_on_the_bright_pixel():
     img[1, 6] = 250  # column 6 of 8: u = 0.8125 -> RA = 180 - 292.5 = -112.5 -> 247.5; row 1 of 4: Dec 22.5..45
     pts = sample_milky_way(img, n=200)
     assert np.all((pts["ra"] > 225) & (pts["ra"] < 270)) and np.all((pts["dec"] > 0) & (pts["dec"] < 45))
-    assert pts["r"].min() > 0.9
+    assert pts["w"].min() > 0.9
 
 
 def _hours(years=2):
