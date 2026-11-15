@@ -12,7 +12,7 @@ import time
 import numpy as np
 
 from havana.camera import chase
-from havana.car import CarState, Controls, step
+from havana.car import CarState, Controls, settle, step
 from havana.citydata import CityData
 from havana.geo import CELL
 from havana.walls import Walls
@@ -32,7 +32,7 @@ class Game:
 
         from havana.cells import build
 
-        self.engine, self.city, self.walls = engine, city, Walls(city)
+        self.engine, self.city, self.walls, self.terrain = engine, city, Walls(city), city.terrain
         engine.background_color = SKY
         engine.fog_enabled, engine.fog_start, engine.fog_end, engine.fog_color = True, *FOG, SKY
         engine.set_sun(DirectionalLight(color="#fff3dd", intensity=3.0, direction=(-0.5, -0.8, -0.35)))
@@ -51,9 +51,7 @@ class Game:
                          Transform(pos=(0, 0, 0)))
         self.model = build_car(CarParams())
         self.handles = spawn_car(engine, self.model)
-        x, z, yaw = self.walls.nearest_road(*at)
-        self.car = CarState(x, z, yaw, 0.0)
-        self.eye = np.array([x, 3.0, z])
+        self.teleport(*at)
         self.frame_ms = 0.0
         self._last = time.perf_counter()
         self._rng = np.random.default_rng()
@@ -72,8 +70,8 @@ class Game:
     def teleport(self, x: float, z: float) -> None:
         """Put the car on the road nearest (x, z), stopped."""
         x, z, yaw = self.walls.nearest_road(x, z)
-        self.car = CarState(x, z, yaw, 0.0)
-        self.eye = np.array([x, 3.0, z])
+        self.car = settle(CarState(x, z, yaw, 0.0), self.terrain)
+        self.eye = np.array([x, self.car.y + 3.0, z])
 
     def waiting(self) -> int:
         """Cells inside the drawn radius that are not drawn yet."""
@@ -93,16 +91,19 @@ class Game:
             x, z, _ = self.walls.random_road(self._rng)
             self.teleport(x, z)
         c = self.autopilot(self.car) if self.autopilot else self.controls()
-        self.car = step(self.car, c, min(dt, 0.05), self.walls.near(self.car.x, self.car.z))
+        self.car = step(self.car, c, min(dt, 0.05), self.walls.near(self.car.x, self.car.z), self.terrain)
         # manifoldx turns +x toward -z for a positive yaw; the game turns it toward +z.
-        place_car(self.handles, self.model, at=(self.car.x, 0.0, self.car.z), yaw=-self.car.yaw)
-        self.eye, target = chase(self.eye, self.car, min(dt, 0.05))
+        place_car(self.handles, self.model, at=(self.car.x, self.car.y, self.car.z), yaw=-self.car.yaw,
+                  pitch=self.car.pitch, roll=self.car.roll)
+        self.eye, target = chase(self.eye, self.car, min(dt, 0.05), self.terrain)
         self.engine.camera.set_pose(position=tuple(self.eye), target=tuple(target))
         self.streamer.focus(self.car.x, self.car.z)
         st = self.engine.state
         st.pos = [round(self.car.x, 1), round(self.car.z, 1)]
         st.cell = [math.floor(self.car.x / CELL), math.floor(self.car.z / CELL)]
         st.speed_kmh = round(abs(self.car.speed) * 3.6, 1)
+        st.y = round(self.car.y, 1)
+        st.grade = round(math.tan(self.car.pitch) * 100, 1)  # percent, positive uphill
         st.frame_ms = round(self.frame_ms, 2)
         st.cells_built = self.streamer.stats()["built"]
         st.cells_waiting = self.waiting()
