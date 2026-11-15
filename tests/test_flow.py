@@ -63,7 +63,7 @@ def test_closing_an_edge_blocks_and_fills_its_approaches(graph):
     before_closed, before_app = flow.n[closed], flow.n[app].sum()
     flow.close([closed], until=TUE_8 + timedelta(minutes=40))
     run(flow, 300)
-    assert flow.n[closed] < before_closed  # it empties and nothing enters
+    assert flow.n[closed] == pytest.approx(before_closed)  # nothing leaves and nothing enters
     assert flow.n[app].sum() >= before_app  # blocked: they do not drain
     assert flow.view().queue[app].sum() > 0
     filled = flow.n[app].sum()
@@ -137,3 +137,14 @@ def test_short_edges_do_not_create_vehicles():
     for k in range(100):
         flow.step(1.0, TUE_8 + timedelta(seconds=k))
     assert flow.n.sum() == pytest.approx(0.3, rel=1e-6)
+
+
+def test_a_closed_edge_keeps_its_vehicles(graph):
+    flow = Flow(graph, cfg_for(40))
+    flow.demand = False
+    flow.n[:] = 0.5 * flow.jam
+    closed = int(np.argmax(graph.a["g_len"]))
+    held = flow.n[closed]
+    flow.close([closed], until=TUE_8 + timedelta(minutes=40))
+    run(flow, 120)
+    assert flow.n[closed] == pytest.approx(held)

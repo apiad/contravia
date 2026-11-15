@@ -50,7 +50,7 @@ def test_an_edge_entering_range_gets_the_flow_vehicles(graph):
     runner.tick()
     layer.update(100.0, 100.0, 0.0, [])
     for e in np.flatnonzero(layer.owned):
-        assert (layer.cars.edge == e).sum() == expected[e]
+        assert (layer.cars.edge == e).sum() in (expected[e], expected[e] + 1)  # rounded at random
     queued = layer.cars.v == 0
     assert queued.any()
 
@@ -131,3 +131,15 @@ def test_locate_finds_the_edge_and_direction_of_a_vehicle(graph):
     got = layer.locate(float(x[0]), float(z[0]), float(heading[0]))
     assert got is not None and got[0] == e and got[2] == pytest.approx(30.0, abs=1.0)
     assert layer.locate(float(x[0]) + 500, float(z[0]) + 500, float(heading[0])) is None
+
+
+def test_edges_with_fractions_of_a_vehicle_still_get_cars(graph):
+    _clock, flow, runner, layer = setup(graph, fill=0.0)
+    flow.n[:] = 0.3  # less than one vehicle on every edge, as on most streets of Havana
+    before = layer.total()
+    layer.update(100.0, 100.0, 0.0, [])
+    runner.tick()
+    layer.update(100.0, 100.0, 0.0, [])
+    owned = int(layer.owned.sum())
+    assert len(layer.cars) >= 0.3 * owned / 3  # about 0.3 per edge, not zero
+    assert layer.total() == pytest.approx(before, abs=1e-6)

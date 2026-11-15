@@ -295,6 +295,8 @@ class TrafficLayer:
         self.closed_until: dict[int, object] = {}  # edge -> datetime when its accident clears
         self.stored: dict[int, list] = {}  # edge -> [(s, lane, kind)] of accident cars while the edge is away
         self.kind_width = np.array([WIDTH[k] for k in KINDS])
+        self._rng = np.random.default_rng(seed + 1)
+        self.debt = 0.0  # vehicles owed to the flow by rounding (never handed over as a negative count)
 
     # Messages run in the flow's thread.
     def _hand_over(self, edges):
@@ -317,7 +319,7 @@ class TrafficLayer:
         transit = sum(m[2].sum() for m in self.inbox)
         return float(flow.n[~flow.owned].sum() + flow.arrived[flow.owned].sum() + len(self.cars)
                      + self.carry.sum() + self.waiting.sum() + transit
-                     + sum(len(v) for v in self.stored.values()))
+                     + sum(len(v) for v in self.stored.values()) + self.debt)
 
     def _kinds(self, edge: int, k: int) -> np.ndarray:
         from havana.rules.traffic import KINDS, moving
@@ -338,7 +340,10 @@ class TrafficLayer:
                 self.cars.add([e] * len(kept), [c[0] for c in kept], [0.0] * len(kept), [c[2] for c in kept])
                 self.cars.stopped[-len(kept):] = True
                 self.cars.lane[-len(kept):] = [c[1] for c in kept]
-            k = int(np.floor(ne))
+            # Most streets hold a fraction of a vehicle: round at random so a block with 0.2 gets a car one time
+            # in five, and keep the difference (which may be negative) so the total stays exact.
+            frac = ne - np.floor(ne)
+            k = int(np.floor(ne)) + int(self._rng.random() < frac)
             self.carry[e] += ne - k
             if k == 0:
                 continue
@@ -364,6 +369,16 @@ class TrafficLayer:
             self.waiting[e] -= 1
             self.cars.add([e], [0.0], [self.cars.vfree[e] * 0.5], self._kinds(e, 1))
             self.counts["spawned"] += 1
+
+    def _settle(self, counts: np.ndarray) -> np.ndarray:
+        """Counts to give back, none negative, with what rounding owes taken from them or kept as debt."""
+        total = float(counts.sum()) + self.debt
+        positive = np.maximum(counts, 0.0)
+        if total <= 0 or positive.sum() == 0:
+            self.debt = total if positive.sum() == 0 or total <= 0 else 0.0
+            return np.zeros_like(counts) if total <= 0 else positive
+        self.debt = 0.0
+        return positive * (total / positive.sum())
 
     @staticmethod
     def _give_back(flow, edges, counts):
@@ -400,6 +415,7 @@ class TrafficLayer:
             self.counts["removed"] += int(on.sum())
             self.carry[leaving] = 0.0
             self.waiting[leaving] = 0.0
+            counts = self._settle(counts)
             self.owned[leaving] = False
             self.runner.submit(lambda flow, e=leaving, c=counts: self._give_back(flow, e, c))
 

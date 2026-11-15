@@ -118,7 +118,7 @@ class Flow:
 
         # What an edge can send: the vehicles that reach its end this step, never more than it holds.
         demand = np.minimum(self.n * np.minimum(1.0, self.vfree * dt / self.length), self.cap * dt)
-        demand[self.owned] = 0.0
+        demand[self.owned | closed] = 0.0  # the car layer moves owned edges; a closed one holds still
         supply = np.where(closed, 0.0, np.maximum(self.jam - self.n, 0.0))
         want = demand[self.t_in] * share
         into = np.bincount(self.t_out, want, E)
