@@ -21,27 +21,37 @@ from havana.surface import Surface
 from havana.walls import Walls
 
 RADIUS, READY_RADIUS = 3, 4
-FOG = (350.0, 650.0)
-SKY = (0.62, 0.72, 0.80)
+FAR = 750.0  # the camera's far plane: past the clear-weather fog's end
 
 
 class Game:
     """One drive: the engine, the streamed city, the car and the camera."""
 
-    def __init__(self, engine, city: CityData, at: tuple[float, float] = (0.0, 0.0), traffic=None, clock=None):
+    def __init__(self, engine, city: CityData, at: tuple[float, float] = (0.0, 0.0), traffic=None, clock=None,
+                 sky=None):
         from manifoldx.modeling.assets.car import CarParams, build_car, spawn_car
-        from manifoldx.resources import DirectionalLight
         from manifoldx.streaming import Streamer
 
+        from havana.atmosphere import Atmosphere
         from havana.cells import build
+        from havana.clock import Clock
+        from havana.weather import SkyConfig, Weather
 
         self.engine, self.city, self.walls, self.terrain = engine, city, Walls(city), city.terrain
         self.surface = Surface(city, self.terrain)  # what the wheels stand on: roads level across
-        engine.background_color = SKY
-        engine.fog_enabled, engine.fog_start, engine.fog_end, engine.fog_color = True, *FOG, SKY
-        engine.set_sun(DirectionalLight(color="#fff3dd", intensity=3.0, direction=(-0.5, -0.8, -0.35)))
-        engine.set_environment("neutral")  # fill light, so walls facing away from the sun are not black
-        engine.camera.far = FOG[1] + 100
+        self.clock = clock or Clock()
+        self.weather = Weather(config=sky or SkyConfig())
+        self.atmosphere = Atmosphere(engine)
+        self.atmosphere.prepare()
+        from havana.nightsky import NightSky
+
+        self.nightsky = NightSky(engine, self.clock.now())
+        from havana.rain import Rain
+
+        self.rain = Rain(engine)
+        self._dt = 0.0
+        self.stars_shown = 0
+        engine.camera.far = FAR
         self.streamer = Streamer(engine, cell=CELL, build=build, radius=RADIUS, ready_radius=READY_RADIUS,
                                  workers="process")
         if self.walls.landmarks.mesh is not None:  # drawn once, not streamed: they are few and seen from afar
@@ -61,22 +71,24 @@ class Game:
         self._rng = np.random.default_rng()
         self.autopilot = None  # bench.py sets a function (car) -> Controls
 
-        self._start_traffic(traffic, clock)
+        self._start_traffic(traffic)
+        self.sky_ms, self._sky_state_at = 0.0, 0.0
         engine.system(self._frame)
         engine.on("teleport")(lambda p: self.teleport(float(p["x"]), float(p["z"])))
         engine.on("traffic_config")(self.configure_traffic)
         engine.on("close")(self.close_street)
+        engine.on("sky_config")(self.configure_sky)
+        engine.on("weather")(self.force_weather)
 
-    def _start_traffic(self, config, clock) -> None:
+    def _start_traffic(self, config) -> None:
         """The flow layer over the whole graph, warmed up to now, and the cars around the player."""
-        from havana.clock import Clock, FlowRunner
+        from havana.clock import FlowRunner
         from havana.flow import Flow
         from havana.rules.traffic import TrafficConfig
         from havana.traffic import TrafficLayer
         from havana.vehicles import Fleet
 
         self.traffic_config = config or TrafficConfig()
-        self.clock = clock or Clock()
         self.layer, self._state_at, self.traffic_ms = None, 0.0, 0.0
         self.engine.state.traffic = {"error": None}
         graph = self.city.graph
@@ -109,6 +121,22 @@ class Game:
             self.runner.submit(lambda flow: flow.configure(cfg))
         self.engine.state.traffic = {**self.engine.state.traffic, "error": None}
         self._state_at = 0.0  # report the new numbers on the next frame
+
+    def configure_sky(self, changes: dict) -> None:
+        """Change sky settings while playing; refused settings leave the old ones and say why in state."""
+        try:
+            self.weather.configure(self.weather.config.updated(**(changes or {})))
+            self.sky_error = None
+        except (ValueError, TypeError) as e:
+            self.sky_error = str(e)
+        self._sky_state_at = 0.0
+
+    def force_weather(self, p: dict) -> None:
+        """Hold a weather state ("storm", "clear"...) for `minutes` of game time (30 by default)."""
+        from datetime import timedelta
+
+        until = self.clock.now() + timedelta(minutes=float(p.get("minutes", 30)))
+        self.configure_sky({"force": p.get("state"), "force_until": until})
 
     def close_street(self, p: dict) -> None:
         """Close the edge `edge`, or the one nearest (x, z), for `minutes` (40 by default)."""
@@ -148,6 +176,7 @@ class Game:
 
         now = time.perf_counter()
         self.frame_ms, self._last = (now - self._last) * 1000, now
+        self._dt = min(dt, 0.05)
         inp = self.engine.input
         if inp.just_pressed("r"):
             self.teleport(self.car.x, self.car.z)
@@ -170,6 +199,9 @@ class Game:
         self.eye, target = chase(self.eye, self.car, min(dt, 0.05), self.terrain)
         self.engine.camera.set_pose(position=tuple(self.eye), target=tuple(target))
         self.streamer.focus(self.car.x, self.car.z)
+        t_sky = time.perf_counter()
+        self._sky()
+        self.sky_ms = (time.perf_counter() - t_sky) * 1000
         st = self.engine.state
         st.pos = [round(self.car.x, 1), round(self.car.z, 1)]
         st.cell = [math.floor(self.car.x / CELL), math.floor(self.car.z / CELL)]
@@ -179,6 +211,29 @@ class Game:
         st.frame_ms = round(self.frame_ms, 2)
         st.cells_built = self.streamer.stats()["built"]
         st.cells_waiting = self.waiting()
+
+    def _sky(self) -> None:
+        """Sun, moon and weather at the clock's time, handed to the engine."""
+        from havana import sky
+        from havana.atmosphere import look, sun_and_moon_text
+
+        when = self.clock.now()
+        sun, moon, now = sky.sun(when), sky.moon(when), self.weather.at(when)
+        self.look = look(sun, moon, now, self.weather.config)
+        self.atmosphere.apply(self.look, self.eye)
+        self.stars_shown = self.nightsky.update(when, self.eye, self.look, moon, sun)
+        self.rain.update(self._dt, self.eye, now.rain, tuple(1.4 * v for v in self.look.horizon))
+        t = time.perf_counter()
+        if t - self._sky_state_at > 0.5:
+            self._sky_state_at = t
+            self.engine.state.sky = {
+                "time": when.strftime("%Y-%m-%d %H:%M"), **sun_and_moon_text(sun, moon), "weather": now.state,
+                "cloud": round(now.cloud, 2), "rain": round(now.rain, 2), "wet": round(now.wet, 2),
+                "environment": self.atmosphere.env_key, "shadows": self.look.shadows,
+                "star_limit": round(self.look.star_limit, 1), "stars_shown": self.stars_shown,
+                "sky_ms": round(self.sky_ms, 2),
+                "error": getattr(self, "sky_error", None),
+            }
 
     def _traffic(self, before, dt: float) -> None:
         """Drive the cars around the player, draw them, and turn a hard hit into an accident."""
@@ -218,7 +273,7 @@ class Game:
 
 
 def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, size=(1280, 720),
-         traffic: str | None = None, when: str | None = None, warp: float = 1.0) -> None:
+         traffic: str | None = None, when: str | None = None, warp: float = 1.0, sky: str | None = None) -> None:
     """Open a window and drive, or with `shot`, render offscreen until the city is drawn and save a PNG.
 
     traffic: a JSON file of demand settings. when ("Sun 08:00") and warp pin and speed up the clock, for tests
@@ -228,17 +283,19 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
 
     from havana.clock import Clock, parse_at
     from havana.rules.traffic import load_config
+    from havana.weather import load_sky_config
 
     os.environ["HAVANA_DATA"] = os.path.abspath(data)
     engine = mx.Engine("havana-driver", width=size[0], height=size[1])
     clock = Clock(at=parse_at(when), warp=warp) if when or warp != 1.0 else Clock()
     game = Game(engine, CityData.load(data), at=at, traffic=load_config(traffic) if traffic else None,
-                clock=clock)
+                clock=clock, sky=load_sky_config(sky) if sky else None)
     if not shot:
         engine.run()
         return
     from PIL import Image
 
+    game.atmosphere.prepare(wait=True)  # an offline shot waits for the ambient light instead of drawing without it
     t0, n = time.monotonic(), 0
     while n < frames or (game.waiting() and time.monotonic() - t0 < 300):
         img = engine.render_frame(supersample=1)

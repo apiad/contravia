@@ -6,8 +6,10 @@ from PIL import Image
 
 def test_play_renders_a_shot_with_streets(city_npz, tmp_path):
     out = tmp_path / "shot.png"
-    subprocess.run([sys.executable, "-m", "havana.cli", "play", "--data", str(city_npz),
-                    "--shot", str(out), "--frames", "60"], check=True, timeout=600)
+    clear = tmp_path / "clear.json"
+    clear.write_text('{"force": "clear"}')  # today's real weather could bring the fog in
+    subprocess.run([sys.executable, "-m", "havana.cli", "play", "--data", str(city_npz), "--time", "2026-02-10 12:00",
+                    "--sky", str(clear), "--shot", str(out), "--frames", "60"], check=True, timeout=600)
     import numpy as np
 
     img = np.asarray(Image.open(out).convert("RGB"), float)

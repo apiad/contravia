@@ -16,6 +16,12 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   `manifoldx emit close x=... z=... minutes=40` closes a street; `engine.state.traffic` reports the numbers.
 - `havana flowmap out.png --time "Tue 08:00" [--traffic my.json]` draws the flow layer over the province without a
   window; `havana bench --time ...` adds traffic numbers to the run.
+- The sky follows the same clock: sun, moon, planets and stars (`havana/sky.py`) and Havana's weather from a chain
+  learnt from ERA5 (`havana/weather.py`). `havana climate` rebuilds the tables in `havana/sky_data/` (needs network;
+  the game never does). `--time "2026-07-18 23:00"` takes a full date; `--sky my.json` changes `SkyConfig` keys;
+  while playing, `manifoldx emit weather state=storm minutes=30` and `manifoldx emit sky_config city_glow=0`;
+  `engine.state.sky` reports it. `havana skymap out.png` draws a year of weather; `havana timelapse out.mp4`
+  renders a day over the Capitolio.
 - The game grows in layers, and every layer covers the whole city. Never detail one district ahead of the rest.
 - Same inputs, same city: every random draw is seeded from an OSM id or a block centroid.
 - `data/` is never committed: no OSM extract, no npz.
