@@ -52,6 +52,5 @@ def build(i: int, j: int):
             SKIPPED_ROOFS += 1
     for block, seed in zip(c.fillers, c.filler_seeds, strict=True):
         buildings.filler(mb, block, int(seed))
-    for xz in c.trees:
-        trees.tree(mb, xz)
+    trees.trees(mb, c.trees)
     return mb.to_meshdata(x0, z0)
