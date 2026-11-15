@@ -106,8 +106,9 @@ def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: st
     city = CityData.load(data)
     engine = mx.Engine("havana-bench", width=size[0], height=size[1])
     game = Game(engine, city, clock=Clock(at=parse_at(when)))
+    game.atmosphere.prepare(wait=True)
     frame_ms, waits, wait_start = [], [], None
-    traffic_ms, cars = [], []
+    traffic_ms, cars, sky_ms = [], [], []
     for leg in json.loads(Path(route).read_text())["legs"]:
         stops = [tuple(to_local(np.array([lat]), np.array([lon]))[0]) for lat, lon, _ in leg["stops"]]
         path = road_path(city, stops)
@@ -125,6 +126,7 @@ def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: st
         while time.monotonic() - t_leg < limit and not (not leg.get("seconds") and state["i"] == len(path) - 1):
             engine.render_frame(supersample=1)
             frame_ms.append(game.frame_ms)
+            sky_ms.append(game.sky_ms)
             if game.layer:
                 traffic_ms.append(game.traffic_ms)
                 cars.append(len(game.layer.cars))
@@ -143,6 +145,9 @@ def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: st
                              "cars_max": int(max(cars)) if cars else 0,
                              "traffic_ms_mean": round(float(np.mean(traffic_ms)), 2) if traffic_ms else 0,
                              "traffic_ms_p95": round(float(np.percentile(traffic_ms, 95)), 2) if traffic_ms else 0}
+    result["sky"] = {"sky_ms_mean": round(float(np.mean(sky_ms)), 2) if sky_ms else 0,
+                     "sky_ms_p95": round(float(np.percentile(sky_ms, 95)), 2) if sky_ms else 0,
+                     "weather": engine.state.sky.get("weather"), "shadows": engine.state.sky.get("shadows")}
     HISTORY.parent.mkdir(exist_ok=True)
     with HISTORY.open("a") as f:
         f.write(json.dumps(result, ensure_ascii=False) + "\n")

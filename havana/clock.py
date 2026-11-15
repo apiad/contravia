@@ -20,8 +20,11 @@ DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
 
 def parse_at(text: str) -> datetime:
-    """'Sun 08:00' as that weekday and time in the current week (Monday first)."""
+    """'2026-09-12 17:30' as that moment, or 'Sun 08:00' as that weekday and time in the current week
+    (Monday first)."""
     day, hm = text.strip().split()
+    if "-" in day:
+        return datetime.fromisoformat(f"{day} {hm}")
     hour, minute = (int(v) for v in hm.split(":"))
     today = datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
     monday = today - timedelta(days=today.weekday())
