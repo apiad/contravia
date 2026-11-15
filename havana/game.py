@@ -1,8 +1,10 @@
-"""havana play: the city streamed around a sedan you drive.
+"""havana play: the city streamed around a sedan you drive, with traffic.
 
 The engine draws; manifoldx's Streamer asks a worker process for the cells around the car; each frame the
-car reads the keys, moves against the walls near it, and the camera follows. engine.state shows what an
-agent needs to check the game without a person at the keyboard, and the "teleport" event moves the car.
+car reads the keys, moves against the walls near it, and the camera follows. Traffic runs in two layers: the
+flow layer counts vehicles on every street in a thread, on the machine's clock, and the car layer drives the
+cars within 400 m. engine.state shows what an agent needs to check the game without a person at the keyboard;
+the "teleport" event moves the car, "traffic_config" changes the demand settings and "close" closes a street.
 """
 
 import math
@@ -26,7 +28,7 @@ SKY = (0.62, 0.72, 0.80)
 class Game:
     """One drive: the engine, the streamed city, the car and the camera."""
 
-    def __init__(self, engine, city: CityData, at: tuple[float, float] = (0.0, 0.0)):
+    def __init__(self, engine, city: CityData, at: tuple[float, float] = (0.0, 0.0), traffic=None, clock=None):
         from manifoldx.modeling.assets.car import CarParams, build_car, spawn_car
         from manifoldx.resources import DirectionalLight
         from manifoldx.streaming import Streamer
@@ -59,8 +61,68 @@ class Game:
         self._rng = np.random.default_rng()
         self.autopilot = None  # bench.py sets a function (car) -> Controls
 
+        self._start_traffic(traffic, clock)
         engine.system(self._frame)
         engine.on("teleport")(lambda p: self.teleport(float(p["x"]), float(p["z"])))
+        engine.on("traffic_config")(self.configure_traffic)
+        engine.on("close")(self.close_street)
+
+    def _start_traffic(self, config, clock) -> None:
+        """The flow layer over the whole graph, warmed up to now, and the cars around the player."""
+        from havana.clock import Clock, FlowRunner
+        from havana.flow import Flow
+        from havana.rules.traffic import TrafficConfig
+        from havana.traffic import TrafficLayer
+        from havana.vehicles import Fleet
+
+        self.traffic_config = config or TrafficConfig()
+        self.clock = clock or Clock()
+        self.layer, self._state_at = None, 0.0
+        self.engine.state.traffic = {"error": None}
+        graph = self.city.graph
+        if not len(graph):
+            self.engine.state.traffic = {"error": "no road graph in the data file: run havana prepare again"}
+            return
+        self.runner = FlowRunner(Flow(graph, self.traffic_config), self.clock)
+        self.runner.warm_up(minutes=30)
+        self.layer = TrafficLayer(graph, self.runner)
+        self.fleet = Fleet(self.engine)
+        self.runner.start()
+
+    def configure_traffic(self, changes: dict) -> None:
+        """Change demand settings while playing; refused settings leave the old ones and say why in state."""
+        def value(v):
+            if isinstance(v, str):
+                try:
+                    return float(v)
+                except ValueError:
+                    return v
+            return v
+
+        try:
+            cfg = self.traffic_config.updated(**{k: value(v) for k, v in (changes or {}).items()})
+        except (ValueError, TypeError) as e:
+            self.engine.state.traffic = {**self.engine.state.traffic, "error": str(e)}
+            return
+        self.traffic_config = cfg
+        if self.layer:
+            self.runner.submit(lambda flow: flow.configure(cfg))
+        self.engine.state.traffic = {**self.engine.state.traffic, "error": None}
+        self._state_at = 0.0  # report the new numbers on the next frame
+
+    def close_street(self, p: dict) -> None:
+        """Close the edge `edge`, or the one nearest (x, z), for `minutes` (40 by default)."""
+        if not self.layer:
+            return
+        if "edge" in p:
+            edge = int(p["edge"])
+        else:
+            near = self.city.graph.edges_near(float(p["x"]), float(p["z"]), 200.0)
+            if not len(near):
+                return
+            mid = self.city.graph.a["g_mid"][near]
+            edge = int(near[np.argmin(np.hypot(mid[:, 0] - float(p["x"]), mid[:, 1] - float(p["z"])))])
+        self.layer.accident(edge, float(p.get("minutes", 40)))
 
     def controls(self) -> Controls:
         """The keys as controls: arrows or WASD, Space for the handbrake."""
@@ -93,7 +155,13 @@ class Game:
             x, z, _ = self.walls.random_road(self._rng)
             self.teleport(x, z)
         c = self.autopilot(self.car) if self.autopilot else self.controls()
-        self.car = step(self.car, c, min(dt, 0.05), self.walls.near(self.car.x, self.car.z), self.surface)
+        walls = self.walls.near(self.car.x, self.car.z)
+        if self.layer:
+            walls = np.concatenate([walls.reshape(-1, 2, 2), self.layer.boxes_near(self.car.x, self.car.z)])
+        before = self.car
+        self.car = step(self.car, c, min(dt, 0.05), walls, self.surface)
+        if self.layer:
+            self._traffic(before, min(dt, 0.05))
         # manifoldx turns +x toward -z for a positive yaw; the game turns it toward +z.
         place_car(self.handles, self.model, at=(self.car.x, self.car.y, self.car.z), yaw=-self.car.yaw,
                   pitch=self.car.pitch, roll=self.car.roll)
@@ -110,14 +178,60 @@ class Game:
         st.cells_built = self.streamer.stats()["built"]
         st.cells_waiting = self.waiting()
 
+    def _traffic(self, before, dt: float) -> None:
+        """Drive the cars around the player, draw them, and turn a hard hit into an accident."""
+        from havana.rules.traffic import as_dict, day_type, moving, vehicle_trips
 
-def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, size=(1280, 720)) -> None:
-    """Open a window and drive, or with `shot`, render offscreen until the city is drawn and save a PNG."""
+        x, z = self.car.x, self.car.z
+        heading = self.car.yaw
+        me = self.layer.locate(x, z, heading)
+        obstacles = [(me[0], me[1], me[2] + 2.1, abs(self.car.speed))] if me else []
+        self.layer.update(x, z, dt, obstacles)
+        cars = self.layer.cars
+        xyz, head, pitch = cars.world(self.surface)
+        self.fleet.draw(xyz, head, pitch, cars.kind)
+        # A contact: the player stopped against a traffic car this frame.
+        if len(cars) and abs(before.speed) * 3.6 > 25 and abs(self.car.speed) < abs(before.speed) * 0.5:
+            d = np.hypot(xyz[:, 0] - x, xyz[:, 2] - z)
+            k = int(np.argmin(d))
+            if d[k] < cars.length[k] / 2 + 3.0:
+                self.layer.accident(int(cars.edge[k]), 40.0)
+        now = time.perf_counter()
+        if now - self._state_at > 0.5:
+            self._state_at = now
+            when = self.clock.now()
+            cfg = self.traffic_config
+            self.engine.state.traffic = {
+                "time": when.strftime("%a %H:%M:%S"),
+                "settings": as_dict(cfg),
+                "trips_per_day": round(sum(vehicle_trips(cfg, day_type(when)).values())),
+                "moving_now": {k: round(v) for k, v in moving(cfg, when).items()},
+                "flow_total": round(float(self.runner.view.n.sum())),
+                "flow_step_ms": round(self.runner.step_ms, 1),
+                **self.layer.stats(),
+                "accidents": len(self.layer.closed_until),
+                "fleet_overflow": self.fleet.overflow,
+                "error": self.engine.state.traffic.get("error"),
+            }
+
+
+def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, size=(1280, 720),
+         traffic: str | None = None, when: str | None = None, warp: float = 1.0) -> None:
+    """Open a window and drive, or with `shot`, render offscreen until the city is drawn and save a PNG.
+
+    traffic: a JSON file of demand settings. when ("Sun 08:00") and warp pin and speed up the clock, for tests
+    and the dev channel; play without them runs on the machine's clock.
+    """
     import manifoldx as mx
+
+    from havana.clock import Clock, parse_at
+    from havana.rules.traffic import load_config
 
     os.environ["HAVANA_DATA"] = os.path.abspath(data)
     engine = mx.Engine("havana-driver", width=size[0], height=size[1])
-    game = Game(engine, CityData.load(data), at=at)
+    clock = Clock(at=parse_at(when), warp=warp) if when or warp != 1.0 else Clock()
+    game = Game(engine, CityData.load(data), at=at, traffic=load_config(traffic) if traffic else None,
+                clock=clock)
     if not shot:
         engine.run()
         return

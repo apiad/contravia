@@ -63,13 +63,18 @@ class FlowRunner:
         while self._calls:
             self._calls.popleft()(self.flow)
 
-    def warm_up(self, minutes: float = 30) -> None:
-        """Step the flow through the `minutes` that end at the clock's time, now, in this thread."""
+    def warm_up(self, minutes: float = 30, step: float = 20.0) -> None:
+        """Step the flow through the `minutes` that end at the clock's time, now, in this thread.
+
+        Steps are `step` seconds long: coarse, so a city-sized warm-up takes seconds, and still bounded,
+        because an edge never sends more than it holds.
+        """
         end = self.clock.now()
         t = end - timedelta(minutes=minutes)
         while t < end:
-            self.flow.step(1.0, t)
-            t += timedelta(seconds=1)
+            dt = min(step, (end - t).total_seconds())
+            self.flow.step(dt, t)
+            t += timedelta(seconds=dt)
         self.flow.when = end
         self.view = self.flow.view()
 

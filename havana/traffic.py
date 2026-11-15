@@ -17,6 +17,7 @@ from havana.graph import CLASSES, Graph
 from havana.rules.traffic import KINDS
 
 LENGTH = {"car": 4.5, "taxi": 5.0, "moto": 2.0, "bus": 12.0, "truck": 8.0}
+WIDTH = {"car": 1.8, "taxi": 1.95, "moto": 0.8, "bus": 2.5, "truck": 2.5}
 ACCEL, BRAKE, S0, HEADWAY = 1.5, 2.0, 2.0, 1.2  # intelligent driver model: m/s², m/s², m, s
 LANE_WIDTH = 3.0  # metres, at most; narrower when the street is narrow
 WIDTHS = {"motorway": 14.0, "trunk": 10.0, "primary": 10.0, "secondary": 8.0, "tertiary": 6.0,
@@ -291,6 +292,9 @@ class TrafficLayer:
         self.waiting = np.zeros(E)  # vehicles that arrived on an owned edge but have no room at its start yet
         self.inbox = deque()
         self.counts = {"spawned": 0, "removed": 0}
+        self.closed_until: dict[int, object] = {}  # edge -> datetime when its accident clears
+        self.stored: dict[int, list] = {}  # edge -> [(s, lane, kind)] of accident cars while the edge is away
+        self.kind_width = np.array([WIDTH[k] for k in KINDS])
 
     # Messages run in the flow's thread.
     def _hand_over(self, edges):
@@ -312,7 +316,8 @@ class TrafficLayer:
         flow = self.runner.flow
         transit = sum(m[2].sum() for m in self.inbox)
         return float(flow.n[~flow.owned].sum() + flow.arrived[flow.owned].sum() + len(self.cars)
-                     + self.carry.sum() + self.waiting.sum() + transit)
+                     + self.carry.sum() + self.waiting.sum() + transit
+                     + sum(len(v) for v in self.stored.values()))
 
     def _kinds(self, edge: int, k: int) -> np.ndarray:
         from havana.rules.traffic import KINDS, moving
@@ -328,6 +333,11 @@ class TrafficLayer:
             if not self.owned[e]:  # left again before the flow answered: give the vehicles back
                 self.runner.submit(lambda flow, e=e, ne=ne: self._give_back(flow, [e], [ne]))
                 continue
+            if e in self.stored:
+                kept = self.stored.pop(e)
+                self.cars.add([e] * len(kept), [c[0] for c in kept], [0.0] * len(kept), [c[2] for c in kept])
+                self.cars.stopped[-len(kept):] = True
+                self.cars.lane[-len(kept):] = [c[1] for c in kept]
             k = int(np.floor(ne))
             self.carry[e] += ne - k
             if k == 0:
@@ -377,6 +387,12 @@ class TrafficLayer:
 
         leaving = np.flatnonzero(self.owned & ~want)
         if len(leaving):
+            crashed = np.isin(self.cars.edge, leaving) & self.cars.stopped
+            for i in np.flatnonzero(crashed).tolist():  # accident cars wait here, out of the flow, until it clears
+                e = int(self.cars.edge[i])
+                self.stored.setdefault(e, []).append((float(self.cars.s[i]), int(self.cars.lane[i]),
+                                                      int(self.cars.kind[i])))
+            self.cars.remove(crashed)
             on = np.isin(self.cars.edge, leaving)
             counts = (np.bincount(self.cars.edge[on], minlength=E)[leaving] + self.carry[leaving]
                       + self.waiting[leaving])
@@ -395,6 +411,13 @@ class TrafficLayer:
             self.runner.submit(self._hand_over(entering))
 
         when = self.runner.clock.now()
+        for e, until in list(self.closed_until.items()):
+            if until <= when:
+                del self.closed_until[e]
+                self.cars.stopped[self.cars.edge == e] = False
+                if e in self.stored:
+                    k = len(self.stored.pop(e))
+                    self.runner.submit(lambda flow, e=e, k=k: flow.n.__setitem__(e, flow.n[e] + k))
         t = when.hour * 3600 + when.minute * 60 + when.second + when.microsecond / 1e6
         self.cars.step(dt, t, obstacles)
 
@@ -414,6 +437,56 @@ class TrafficLayer:
             self._take_arrivals(flow)
 
         self.runner.submit(report)
+
+    def accident(self, edge: int, minutes: float = 40.0) -> None:
+        """Close an edge for `minutes`: its cars stop where they are and stay until it clears."""
+        from datetime import timedelta
+
+        until = self.runner.clock.now() + timedelta(minutes=minutes)
+        self.closed_until[int(edge)] = until
+        self.cars.stopped[self.cars.edge == edge] = True
+        self.runner.submit(lambda flow: flow.close([edge], until))
+
+    def locate(self, x: float, z: float, heading: float, within: float = 8.0):
+        """(edge, lane, s) of a vehicle at (x, z) driving along `heading`, or None when it is off the streets."""
+        a = self.g.a
+        cand = self.g.edges_near(x, z, 120.0)
+        if not len(cand):
+            return None
+        p0, p1 = a["g_junction"][a["g_from"][cand]].astype(float), a["g_junction"][a["g_to"][cand]].astype(float)
+        d = p1 - p0
+        L2 = np.maximum((d ** 2).sum(1), 1e-9)
+        t = np.clip(((np.array([x, z]) - p0) * d).sum(1) / L2, 0, 1)
+        foot = p0 + d * t[:, None]
+        dist = np.hypot(*(foot - (x, z)).T)
+        u = d / np.sqrt(L2)[:, None]
+        along = u @ np.array([np.cos(heading), np.sin(heading)])
+        dist = np.where(along > 0.3, dist, np.inf)
+        k = int(np.argmin(dist))
+        if dist[k] > within:
+            return None
+        e = int(cand[k])
+        right = (np.array([x, z]) - foot[k]) @ np.array([-u[k, 1], u[k, 0]])  # metres right of the centreline
+        lanes = int(self.cars.lanes[e])
+        w = self.cars.lane_w[e]
+        offs = (lanes - np.arange(lanes) - 0.5) * w - (0 if self.cars.twoway[e] else lanes * w / 2)
+        lane = int(np.argmin(np.abs(offs - right)))
+        return e, lane, float(t[k] * self.cars.len[e])
+
+    def boxes_near(self, x: float, z: float, r: float = 30.0) -> np.ndarray:
+        """The outlines of the cars within r metres as (W, 2, 2) wall segments, for the player's collisions."""
+        if not len(self.cars):
+            return np.zeros((0, 2, 2))
+        xyz, heading, _ = self.cars.world()
+        near = np.flatnonzero(np.hypot(xyz[:, 0] - x, xyz[:, 2] - z) < r)
+        segs = []
+        for i in near.tolist():
+            c, s = np.cos(heading[i]), np.sin(heading[i])
+            hl, hw = self.cars.length[i] / 2, self.kind_width[self.cars.kind[i]] / 2
+            corners = [(xyz[i, 0] + c * fx - s * fz, xyz[i, 2] + s * fx + c * fz)
+                       for fx, fz in ((hl, hw), (hl, -hw), (-hl, -hw), (-hl, hw))]
+            segs += [(corners[k], corners[(k + 1) % 4]) for k in range(4)]
+        return np.array(segs, float).reshape(-1, 2, 2)
 
     def stats(self) -> dict:
         return {"cars": len(self.cars), "edges": int(self.owned.sum()), **self.counts}
