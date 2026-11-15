@@ -158,6 +158,9 @@ def build_table(time: np.ndarray, cloud: np.ndarray, rain: np.ndarray, gauge: di
                 if trans[m, h, s].sum() == 0:
                     trans[m, h, s, s] = 1.0
     trans /= trans.sum(axis=3, keepdims=True)
+    rain_days = [float(((np.bincount(inv, state >= 3, len(days)) > 0) & (dmonth == m)).sum() / years) for m in range(12)]
+    for m in range(12):
+        trans[m] = _calibrate(trans[m], rain_days[m])
 
     cloud_mean = np.zeros((12, 5))
     rain_mean = np.zeros((12, 5))
@@ -168,7 +171,6 @@ def build_table(time: np.ndarray, cloud: np.ndarray, rain: np.ndarray, gauge: di
             cloud_mean[m, s] = cloud[sel].mean() / 100.0 if sel.any() else [0.1, 0.4, 0.8, 0.9, 1.0][s]
             rain_mean[m, s] = min(1.0, rain[sel].mean() / max(storm_mm[m], 1e-6)) if s >= 3 and sel.any() else 0.0
         start[m] = np.bincount(state[(month == m) & (hour == 0)], minlength=5) / max(1, ((month == m) & (hour == 0)).sum())
-    rain_days = [float(((np.bincount(inv, state >= 3, len(days)) > 0) & (dmonth == m)).sum() / years) for m in range(12)]
     peak = [int(np.argmax([(state[(month == m) & (hour == h)] >= 3).mean() for h in range(24)])) for m in range(12)]
     return {
         "states": list(STATES),
@@ -182,6 +184,50 @@ def build_table(time: np.ndarray, cloud: np.ndarray, rain: np.ndarray, gauge: di
                   "cloud": [round(float(cloud[month == m].mean()) / 100, 3) for m in range(12)],
                   "peak_hour": peak},
     }
+
+
+def _with_onset(trans: np.ndarray, k: float) -> np.ndarray:
+    """One month's 24 matrices with rain starting k times as often and lasting 1/k times as long.
+
+    A chain that only looks one hour back cannot tell that rain comes in spells of days (fronts in the dry
+    season), so it scatters the rain hours over too many days. Fewer, longer rain spells keep the hours of
+    rain and bring the days with rain back to the data.
+    """
+    t = trans.copy()
+    for r in range(5):
+        cross = slice(3, 5) if r < 3 else slice(0, 3)  # from dry to wet, or from wet to dry
+        stay = slice(0, 3) if r < 3 else slice(3, 5)
+        old = t[:, r, cross].sum(axis=1, keepdims=True)
+        new = np.minimum(old * k, 0.999)
+        t[:, r, cross] *= np.where(old > 0, new / np.maximum(old, 1e-12), 0.0)
+        t[:, r, stay] *= (1.0 - new) / np.maximum(1.0 - old, 1e-12)
+    return t / t.sum(axis=2, keepdims=True)
+
+
+def _rain_days(trans: np.ndarray, days: int = 900, seed: int = 0) -> float:
+    """Days with a rain hour per 30.4 days when one month's chain runs on and on."""
+    rng = np.random.default_rng(seed)
+    cum = np.cumsum(trans, axis=2)
+    u = rng.random((days, 24))
+    s, wet = 0, 0
+    for d in range(days):
+        rained = False
+        for h in range(24):
+            s = min(4, int(np.searchsorted(cum[h, s], u[d, h] * cum[h, s, -1])))
+            rained |= s >= 3
+        wet += rained
+    return wet / days * 30.4
+
+
+def _calibrate(trans: np.ndarray, target: float) -> np.ndarray:
+    """Pick the onset factor k (bisection, 0.2-1.5) whose chain gives `target` rain days a month."""
+    if target <= 0:
+        return trans
+    lo, hi = 0.2, 1.5
+    for _ in range(8):
+        k = (lo + hi) / 2
+        lo, hi = (k, hi) if _rain_days(_with_onset(trans, k)) < target else (lo, k)
+    return _with_onset(trans, (lo + hi) / 2)
 
 
 def main(cache: str, out: str | None = None) -> None:
