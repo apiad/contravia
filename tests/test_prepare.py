@@ -52,3 +52,20 @@ def test_report_has_every_key():
 def test_features_outside_the_box_are_not_read():
     raw = read_osm(FIX, box=(22.0, -81.0, 22.5, -80.5))   # a box far from the fixture
     assert raw.roads == [] and raw.buildings == [] and raw.trees == [] and raw.green == []
+
+
+def test_heights_from_glo30_tiles_reach_the_city_data(tmp_path):
+    import tifffile
+
+    from havana.citydata import CityData
+    from havana.prepare import main
+    from havana.terrain import _tile_name
+
+    dem = tmp_path / "dem"
+    dem.mkdir()
+    for lat in (22, 23):
+        tifffile.imwrite(dem / _tile_name(lat, -83), np.full((36, 36), 12.0, np.float32),
+                         predictor=3, compression="deflate")
+    report = main(FIX, tmp_path / "city.npz", dem=dem)
+    assert report["heights_m"] == [12.0, 12.0]
+    assert np.isclose(CityData.load(tmp_path / "city.npz").terrain.height(0.0, 0.0), 12.0)

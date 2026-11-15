@@ -97,8 +97,8 @@ def read_tiles(folder, box=HAVANA_BOX) -> Terrain:
     import tifffile
 
     south, west, north, east = box
-    lats = range(math.floor(north), math.floor(south) - 1, -1)  # north to south
-    lons = range(math.floor(west), math.floor(east) + 1)
+    lats = range(math.ceil(north) - 1, math.floor(south) - 1, -1)  # north to south; an edge on a whole
+    lons = range(math.floor(west), math.ceil(east))                 # degree needs no tile beyond it
     rows = []
     for lat in lats:
         row = []

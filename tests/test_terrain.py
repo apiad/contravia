@@ -56,3 +56,9 @@ def test_tiles_are_read_and_cropped(tmp_path):
 def test_old_data_without_heights_is_flat(city):
     a = {k: v for k, v in city.a.items() if not k.startswith("heights")}
     assert float(np.abs(CityData(a).terrain.height(np.array([0.0, 500.0]), np.array([0.0, -800.0]))).max()) == 0.0
+
+
+def test_a_box_edge_on_a_whole_degree_needs_no_tile_beyond_it(tmp_path):
+    tifffile.imwrite(tmp_path / _tile_name(23, -83), np.ones((36, 36), np.float32), predictor=3, compression="deflate")
+    t = read_tiles(tmp_path, box=(23.5, -82.5, 24.0, -82.0))     # north and east edges on whole degrees
+    assert t.heights.shape == (19, 18) and float(t.heights.max()) == 1.0

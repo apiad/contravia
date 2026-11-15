@@ -13,6 +13,7 @@ import numpy as np
 
 from havana.citydata import CityData
 from havana.geo import HAVANA_BOX, cell_of, to_local
+from havana.terrain import Terrain, clean, read_tiles
 
 # Road width in metres by OSM highway class; anything not listed is not drivable and is dropped.
 WIDTHS = {
@@ -121,8 +122,8 @@ def _block_seed(c) -> int:
     return round(c.x) * 1_000_003 + round(c.y)
 
 
-def build_city(raw: Raw) -> tuple[CityData, dict]:
-    """Project, clip to the province and assemble the city data and its report."""
+def build_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]:
+    """Project, clip to the province and assemble the city data, with its heights, and its report."""
     import shapely
     from shapely.geometry import LineString, Polygon
     from shapely.ops import polygonize, unary_union
@@ -196,7 +197,7 @@ def build_city(raw: Raw) -> tuple[CityData, dict]:
     trees = trees[inside(trees)]
 
     city = CityData.from_features(roads, rings, np.array(ids, np.int64), fillers, np.array(seeds, np.int64),
-                                  trees)
+                                  trees, terrain)
     road_cells = {tuple(c) for c in cell_of((roads[:, 0:2] + roads[:, 2:4]) / 2).tolist()}
     built_cells = {tuple(c) for c in cell_of(cents).tolist()}
     sizes = {tuple(c): 0 for c in city.cells().tolist()}
@@ -215,17 +216,22 @@ def build_city(raw: Raw) -> tuple[CityData, dict]:
         "cells": len(city.cells()),
         "largest_cell": {"cell": list(largest[0]), "vertices": largest[1]},
         "cells_with_roads_no_buildings": round(len(road_cells - built_cells) / max(1, len(road_cells)), 3),
+        "heights_m": [round(float(city.terrain.heights.min()), 1), round(float(city.terrain.heights.max()), 1)],
     }
     return city, report
 
 
-def main(pbf, out) -> dict:
-    """Read the extract, write the city data file and print the report."""
+def main(pbf, out, dem=None) -> dict:
+    """Read the extract and, from the GLO-30 tiles in dem, the cleaned heights; write the file and the report."""
     import json
     import time
 
     t0 = time.perf_counter()
-    city, report = build_city(read_osm(pbf))
+    terrain = None
+    if dem:
+        raw = read_tiles(dem, HAVANA_BOX)
+        terrain = Terrain(clean(raw.heights), raw.origin, raw.step)
+    city, report = build_city(read_osm(pbf), terrain)
     city.save(out)
     report["seconds"] = round(time.perf_counter() - t0, 1)
     print(json.dumps(report, indent=2))
