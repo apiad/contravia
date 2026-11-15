@@ -24,13 +24,21 @@ _M_PER_DEG_LON = float(_STEP[1, 0] - _STEP[0, 0]) * 100
 _M_PER_DEG_LAT = float(_STEP[0, 1] - _STEP[2, 1]) * 100
 
 
-class Terrain:
-    """A height grid: sample [r, c] stands at x = origin[0] + c * step[0], z = origin[1] + r * step[1]."""
+FADE = 1000.0  # metres over which the relief falls to flat at the grid's edge, so leaving it shows no cliff
 
-    def __init__(self, heights: np.ndarray, origin, step):
+
+class Terrain:
+    """A height grid: sample [r, c] stands at x = origin[0] + c * step[0], z = origin[1] + r * step[1].
+
+    Heights fade with a smoothstep to 0 over the last `fade` metres inside the grid and are 0 outside it,
+    where the rest of the island is flat.
+    """
+
+    def __init__(self, heights: np.ndarray, origin, step, fade: float = FADE):
         self.heights = np.asarray(heights, np.float32)
         self.origin = (float(origin[0]), float(origin[1]))
         self.step = (float(step[0]), float(step[1]))
+        self.fade = float(fade)
 
     @classmethod
     def flat(cls) -> "Terrain":
@@ -50,7 +58,15 @@ class Terrain:
         tx, tz = fx - c0, fz - r0
         top = h[r0, c0] * (1 - tx) + h[r0, c0 + 1] * tx
         bottom = h[r0 + 1, c0] * (1 - tx) + h[r0 + 1, c0 + 1] * tx
-        return top * (1 - tz) + bottom * tz
+        out = top * (1 - tz) + bottom * tz
+        if self.fade <= 0:
+            return out
+        x0, z0 = self.origin
+        x1, z1 = x0 + (cols - 1) * self.step[0], z0 + (rows - 1) * self.step[1]
+        x, z = np.asarray(x, float), np.asarray(z, float)
+        edge = np.minimum(np.minimum(x - min(x0, x1), max(x0, x1) - x), np.minimum(z - min(z0, z1), max(z0, z1) - z))
+        s = np.clip(edge / self.fade, 0.0, 1.0)
+        return out * (s * s * (3 - 2 * s))
 
 
 def seat(ring, terrain: Terrain) -> float:
