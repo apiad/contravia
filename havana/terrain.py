@@ -13,7 +13,15 @@ from pathlib import Path
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
-from havana.geo import _M_PER_DEG_LAT, _M_PER_DEG_LON, HAVANA_BOX, to_local
+from havana.geo import HAVANA_BOX, ORIGIN, to_local
+
+# Metres per degree of the projection at the Capitolio. The height grid stays a regular grid in (x, z):
+# across the province the projected degree grid bends by about one GLO-30 sample, which every piece of
+# geometry shares because all of it stands on Terrain.height.
+_STEP = to_local(np.array([ORIGIN[0], ORIGIN[0], ORIGIN[0] + 0.01]),
+                 np.array([ORIGIN[1], ORIGIN[1] + 0.01, ORIGIN[1]]))
+_M_PER_DEG_LON = float(_STEP[1, 0] - _STEP[0, 0]) * 100
+_M_PER_DEG_LAT = float(_STEP[0, 1] - _STEP[2, 1]) * 100
 
 
 class Terrain:
