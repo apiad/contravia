@@ -23,7 +23,8 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--shot", help="render offscreen, save this PNG and exit")
     p.add_argument("--frames", type=int, default=120, help="frames to run before --shot is saved")
     p.add_argument("--traffic", help="JSON file of traffic settings to change (see havana/rules/traffic.py)")
-    p.add_argument("--time", help='pin the clock, as "Sun 08:00"; for tests, play uses the machine\'s clock')
+    p.add_argument("--time", help='pin the clock, as "Sun 08:00" or "2026-09-12 17:30"; play uses the machine\'s clock')
+    p.add_argument("--sky", help="JSON file of sky settings to change (see havana/weather.py, SkyConfig)")
     p.add_argument("--warp", type=float, default=1.0, help="run the clock this many times faster; for tests")
 
     p = sub.add_parser("bench", help="drive the fixed route and record frame times")
@@ -42,6 +43,20 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--cache", default="~/.cache/havana", help="where the downloads are kept")
     p.add_argument("--out", help="folder for the tables; havana/sky_data by default")
 
+    p = sub.add_parser("skymap", help="draw a year of the weather chain as a PNG: days down, hours across")
+    p.add_argument("out")
+    p.add_argument("--year", type=int, default=2026)
+    p.add_argument("--sky", help="JSON file of sky settings to change")
+
+    p = sub.add_parser("timelapse", help="render a day of sky over the Capitolio as a video")
+    p.add_argument("out")
+    p.add_argument("--data", default="data/havana.npz")
+    p.add_argument("--day", help="YYYY-MM-DD; by default the best day of the 2026 rainy season")
+    p.add_argument("--start", default="04:30")
+    p.add_argument("--minutes", type=int, default=1440, help="game minutes to cover")
+    p.add_argument("--step", type=float, default=1.0, help="game minutes per frame")
+    p.add_argument("--sky", help="JSON file of sky settings to change")
+
     args = parser.parse_args(argv)
     if args.command == "prepare":
         from havana.prepare import main as prepare
@@ -51,13 +66,22 @@ def main(argv: list[str] | None = None) -> None:
         from havana.game import main as play
 
         play(args.data, at=args.at, shot=args.shot, frames=args.frames, traffic=args.traffic, when=args.time,
-             warp=args.warp)
+             warp=args.warp, sky=args.sky)
     elif args.command == "climate":
         import os
 
         from havana.climate import main as climate
 
         climate(os.path.expanduser(args.cache), args.out)
+    elif args.command == "skymap":
+        from havana.skymap import main as skymap
+
+        skymap(args.out, args.year, sky=args.sky)
+    elif args.command == "timelapse":
+        from havana.timelapse import main as timelapse
+
+        timelapse(args.data, args.out, day=args.day, start=args.start, minutes=args.minutes, step=args.step,
+                  sky_file=args.sky)
     elif args.command == "flowmap":
         from havana.flowmap import main as flowmap
 
