@@ -44,7 +44,7 @@ def advance(clock, runner, layer, x, z, seconds=1.0, dt=0.1):
 
 
 def test_an_edge_entering_range_gets_the_flow_vehicles(graph):
-    clock, flow, runner, layer = setup(graph)
+    _clock, flow, runner, layer = setup(graph)
     expected = np.floor(flow.n.copy())
     layer.update(100.0, 100.0, 0.0, [])
     runner.tick()
@@ -56,7 +56,7 @@ def test_an_edge_entering_range_gets_the_flow_vehicles(graph):
 
 
 def test_moving_across_and_back_conserves_vehicles(graph):
-    clock, flow, runner, layer = setup(graph)
+    clock, _flow, runner, layer = setup(graph)
     before = layer.total()
     for x in (0.0, 100.0, 200.0, 2000.0, 100.0, -1500.0, 100.0):
         advance(clock, runner, layer, x, 100.0, seconds=3)
@@ -92,7 +92,7 @@ def test_a_car_leaving_the_circle_returns_to_the_flow(graph):
 
 
 def test_a_teleport_enters_a_limited_number_of_edges_per_update(graph):
-    clock, flow, runner, layer = setup(graph)
+    _clock, _flow, runner, layer = setup(graph)
     layer.MAX_ENTER = 3
     before = layer.total()
     layer.update(5000.0, 5000.0, 0.0, [])
