@@ -28,6 +28,7 @@ CYCLE = 2 * (GREEN + AMBER)
 PATIENCE = 8.0  # seconds a car waits at a junction before it goes anyway
 LOOK = 30.0  # metres before the end of an edge where a car starts asking to enter the junction
 NEAR = 25.0  # metres: a car this close to the junction on another approach counts as about to enter
+REFRESH = 10.0  # metres the player moves before the circle is worked out again
 ARRIVING = 3.0  # seconds: a moving car this close in time to the junction is about to enter it
 BOX = 6.0  # metres: a car this far into an edge leaving the junction is still inside it
 SPACING_QUEUE = 7.0  # metres between queued cars placed from the flow
@@ -303,6 +304,8 @@ class TrafficLayer:
         self.kind_width = np.array([WIDTH[k] for k in KINDS])
         self._rng = np.random.default_rng(seed + 1)
         self.debt = 0.0  # vehicles owed to the flow by rounding (never handed over as a negative count)
+        self._at, self._backlog = None, False  # where the circle was last worked out, and whether edges wait
+        self._owned_idx = np.zeros(0, np.int64)
 
     # Messages run in the flow's thread.
     def _hand_over(self, edges):
@@ -395,8 +398,7 @@ class TrafficLayer:
 
     def update(self, x: float, z: float, dt: float, obstacles: list) -> None:
         """One frame: hand edges over as the player moves, place arriving vehicles, drive, and report counts."""
-        E = len(self.g)
-        if E == 0:
+        if len(self.g) == 0:
             return
         while self.inbox:
             msg = self.inbox.popleft()
@@ -404,8 +406,16 @@ class TrafficLayer:
                 self._enter(*msg[1:])
             else:
                 self._arrive(*msg[1:])
-        want = np.hypot(*(self.centre - (x, z)).T) <= self.radius
+        # Which edges belong to the circle changes only when the player moves; checking every edge costs ms.
+        if self._at is None or np.hypot(x - self._at[0], z - self._at[1]) > REFRESH or self._backlog:
+            self._circle(x, z)
+        self._drive(dt, obstacles)
 
+    def _circle(self, x: float, z: float) -> None:
+        """Give back the edges that left the circle and ask for those that entered it, nearest first."""
+        E = len(self.g)
+        self._at = (x, z)
+        want = np.hypot(*(self.centre - (x, z)).T) <= self.radius
         leaving = np.flatnonzero(self.owned & ~want)
         if len(leaving):
             crashed = np.isin(self.cars.edge, leaving) & self.cars.stopped
@@ -424,14 +434,17 @@ class TrafficLayer:
             counts = self._settle(counts)
             self.owned[leaving] = False
             self.runner.submit(lambda flow, e=leaving, c=counts: self._give_back(flow, e, c))
-
         entering = np.flatnonzero(want & ~self.owned)
+        self._backlog = len(entering) > self.MAX_ENTER
         if len(entering):
             d = np.hypot(*(self.centre[entering] - (x, z)).T)
             entering = entering[np.argsort(d)][: self.MAX_ENTER]
             self.owned[entering] = True
             self.runner.submit(self._hand_over(entering))
+        self._owned_idx = np.flatnonzero(self.owned)
 
+    def _drive(self, dt: float, obstacles: list) -> None:
+        """Clear finished accidents, move the cars, return those that left the circle, and report counts."""
         when = self.runner.clock.now()
         for e, until in list(self.closed_until.items()):
             if until <= when:
@@ -450,8 +463,9 @@ class TrafficLayer:
             self.counts["removed"] += len(gone)
             self.runner.submit(lambda flow, g=gone: np.add.at(flow.n, g, 1.0))
 
-        owned = np.flatnonzero(self.owned)
-        counts = np.bincount(self.cars.edge, minlength=E)[owned] + self.carry[owned] + self.waiting[owned]
+        owned = self._owned_idx  # every car is on one of these now
+        on = np.bincount(np.searchsorted(owned, self.cars.edge), minlength=len(owned))
+        counts = on + self.carry[owned] + self.waiting[owned]
 
         def report(flow, idx=owned, c=counts):
             mine = flow.owned[idx]
