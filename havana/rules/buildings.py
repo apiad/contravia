@@ -22,12 +22,17 @@ def _rng(seed) -> np.random.Generator:
     return np.random.default_rng(abs(int(seed)))
 
 
+def style(osm_id: int) -> tuple[float, tuple]:
+    """The height and colour of a building, drawn from its OSM id, so box and the summaries agree."""
+    rng = _rng(osm_id)
+    h = rng.uniform(MIN_H, MAX_H)
+    return h, colorsys.hsv_to_rgb(rng.uniform(0, 1), rng.uniform(0.25, 0.4), rng.uniform(0.8, 0.95))
+
+
 def box(mb, ring: np.ndarray, osm_id: int, base: float = 0.0) -> bool:
     """Add walls from base up and a flat roof for a footprint; returns False when the roof could not be cut."""
     ring = np.asarray(ring, float)
-    rng = _rng(osm_id)
-    h = rng.uniform(MIN_H, MAX_H)
-    color = colorsys.hsv_to_rgb(rng.uniform(0, 1), rng.uniform(0.25, 0.4), rng.uniform(0.8, 0.95))
+    h, color = style(osm_id)
     ccw = signed_area(ring) > 0
     for k in range(len(ring)):
         (x0, z0), (x1, z1) = ring[k], ring[(k + 1) % len(ring)]
