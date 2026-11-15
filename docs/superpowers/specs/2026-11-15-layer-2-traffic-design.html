@@ -173,8 +173,9 @@ svg text{font-family:var(--font-mono)}
 <tr><td>Demand <span class="who">agent</span></td><td>Cars enter and leave the network on every edge at rates from the building area near it, its street class and an hour curve; the numbers sit in one rule file.</td><td class="why">There are no traffic counts for Havana. Plausible beats measured here, and a student can change the curve and see the city change.</td></tr>
 <tr><td>Car model <span class="who">agent</span></td><td>Kinematic agents on lanes: the intelligent driver model for following, gaps at junctions, signals on OSM's signal nodes. Not physics bodies.</td><td class="why">Hundreds of cars with full physics do not fit a frame. A car the player hits stops and blocks its lane; that is enough for a demo.</td></tr>
 <tr><td>Player crash <span class="who">agent</span></td><td>A hard crash between the player and a traffic car opens an accident on that edge in the flow layer.</td><td class="why">The event then comes from play, not only from a dev command.</td></tr>
-<tr><td>Vehicle mix <span class="who">agent</span></td><td>Sedan, old American car, bus and motorbike, as parameter sets of manifoldx's parametric car; the mix per zone and hour is a rule.</td><td class="why">Havana's traffic reads as its mix more than its volume. New meshes stay out until layer 5's asset tool.</td></tr>
+<tr><td>Vehicle mix <span class="who">agent</span></td><td>Sedan, old American car (the shared taxi), bus, motorbike and truck, as parameter sets of manifoldx's parametric car; the mix follows the demand settings.</td><td class="why">Havana's traffic reads as its mix more than its volume. New meshes stay out until layer 5's asset tool.</td></tr>
 <tr><td>Clock <span class="who">maintainer</span></td><td>The game runs on the machine's local clock, in real time: at 08:10 on a Monday you drive in Monday's 08:10 traffic, and an accident lasts its real two hours.</td><td class="why">Weather and season will later come from the same clock.</td></tr>
+<tr><td>Settings <span class="who">maintainer</span></td><td>Every number of the demand (population, trips per person, modal split, occupancy, hour and day curves, overall level) is a setting that can change while the game runs, and the city reacts.</td><td class="why">To try other Havanas and see the difference; an in-game menu will set them later.</td></tr>
 <tr><td>Day of week <span class="who">maintainer</span></td><td>Demand has a curve per day type: weekday, Friday, Saturday, Sunday.</td><td class="why">Weekends move differently from workdays.</td></tr>
 </tbody>
 </table>
@@ -278,13 +279,38 @@ svg text{font-family:var(--font-mono)}
 <tr><td>Sunday</td><td>60%</td><td class="why">Flat and late: little before 09:00, most from 10:00 to 18:00.</td></tr>
 </tbody>
 </table>
+<h3>Every number is a setting</h3>
+<p>All the inputs above live in one <code>TrafficConfig</code> dataclass in <code>havana/rules/traffic.py</code>, with the values of this section as defaults:</p>
+<table class="tbl">
+<thead><tr><th>setting</th><th>default</th><th class="why">what it changes</th></tr></thead>
+<tbody>
+<tr><td>population</td><td>1 814 207</td><td class="why">All demand, in proportion.</td></tr>
+<tr><td>trips_per_person</td><td>2.3</td><td class="why">All demand, in proportion.</td></tr>
+<tr><td>modal_split</td><td>walk 0.462, public 0.436, car 0.060, moto 0.032, bike 0.011</td><td class="why">How many trips need a vehicle, and which. Normalised to sum 1.</td></tr>
+<tr><td>occupancy</td><td>car 1.5, moto 1.2, shared taxi 4.0</td><td class="why">People per vehicle trip.</td></tr>
+<tr><td>shared_taxi_share</td><td>0.25</td><td class="why">Part of public transport trips made in almendrones.</td></tr>
+<tr><td>bus_trips</td><td>5000</td><td class="why">Bus vehicle trips per weekday.</td></tr>
+<tr><td>freight_share</td><td>0.25</td><td class="why">Trucks and state vehicles, as a share added on top.</td></tr>
+<tr><td>trip_minutes</td><td>15</td><td class="why">How long a vehicle stays on the street per trip, so how many are moving at once.</td></tr>
+<tr><td>hours</td><td>the weekday curve, and one per day type</td><td class="why">The shape of each day.</td></tr>
+<tr><td>days</td><td>Mon–Thu 1.00, Fri 1.05, Sat 0.80, Sun 0.60</td><td class="why">The total of each day type.</td></tr>
+<tr><td>attract</td><td>Plaza de la Revolución 1.5, La Lisa 1.3</td><td class="why">Municipios where morning trips end and afternoon trips start, over the rest at 1.0.</td></tr>
+<tr><td>level</td><td>1.0</td><td class="why">A plain multiplier on everything, for loading manifoldx harder.</td></tr>
+</tbody>
+</table>
+<ul>
+  <li><b>Changing them.</b> A JSON file at start (<code>havana play --traffic my.json</code>, only the keys it names), or while playing through one event, <code>traffic_config</code>, with the keys to change: <code>manifoldx emit traffic_config population=3000000</code>. The in-game menu, later, sends the same event; manifoldx's GUI already has sliders and buttons for it.</li>
+  <li><b>What reacts.</b> The flow layer reads the settings on every step, so sources change at once and the street counts follow within about one trip time; the car layer follows as edges refill. Nothing is rebuilt.</li>
+  <li><b>Seeing the difference.</b> <code>engine.state.traffic</code> reports the settings and the numbers they give: vehicle trips per day, vehicles moving now by type, cars in the flow layer, cars drawn. <code>havana flowmap --at "Tue 08:00" --traffic my.json out.png</code> warms the flow layer up to that time without opening a window and draws the province coloured by flow, so two settings files compare as two pictures.</li>
+  <li><b>Fixed time, for tests only.</b> <code>--at "Sun 08:00"</code> on <code>play</code> and <code>flowmap</code> pins the clock; play without it uses the machine's clock.</li>
+</ul>
 <h3>Where on the map</h3>
 <ul>
   <li><b>Built area.</b> Each edge gets a source rate (vehicles starting there) and a sink rate (the share of passing vehicles that stop there) from the footprint area of the buildings within 100 m, which the city file already has.</li>
   <li><b>Municipio.</b> The morning peak sends more trips toward Plaza de la Revolución and La Lisa, which attract the most, and the afternoon one back out; Playa and Plaza generate the most (11% each), per the 2014 study.</li>
   <li><b>Street class.</b> Primary and trunk roads carry through traffic and have few sources of their own; residential streets have many sources and little capacity.</li>
   <li><b>Turn weights.</b> A turn onto a bigger street weighs more than one onto a smaller one, so traffic collects on avenues as it does.</li>
-  <li><b>Overall level.</b> One number scales everything; 1.0 is the estimate above.</li>
+  <li><b>Overall level.</b> The <code>level</code> setting scales everything; 1.0 is the estimate above.</li>
 </ul>
 <p>Sources: <a href="https://www.mobiliseyourcity.net/sites/default/files/2024-04/Plan%20de%20Movilidad%20Urbana%20Sostenible%20de%20La%20Habana-Clean%2012%2008%202022.pdf">Plan de Movilidad Urbana Sostenible La Habana (2022)</a>, pages 30–32; <a href="https://cubamemorias.com/wp-content/uploads/2025/04/aep-la-habana-2023.pdf">ONEI, Anuario Estadístico La Habana 2023</a> (population 1 814 207); <a href="https://www.cubaconecta.com/curiosidades/articulos/2017-11-06-u34-e42-horario-pico-habana">peak hours in Havana</a>.</p>
 
@@ -317,12 +343,12 @@ svg text{font-family:var(--font-mono)}
 </ul>
 
 <h2 id="drawing"><span class="n">11</span>Drawing</h2>
-<p>Each vehicle type is one merged mesh built once from manifoldx's parametric car, and all cars of a type are one instanced batch whose transforms are written as arrays each frame: four batches for the whole car layer. If manifoldx cannot update a batch's transforms from an array every frame without a Python call per instance, that is fixed in manifoldx with a benchmark, per the repo rule. Wheels do not turn; brake and hazard lights are an emissive part toggled per instance if manifoldx allows a per-instance colour, otherwise later.</p>
+<p>Each vehicle type is one merged mesh built once from manifoldx's parametric car, and all cars of a type are one instanced batch whose transforms are written as arrays each frame: five batches for the whole car layer. If manifoldx cannot update a batch's transforms from an array every frame without a Python call per instance, that is fixed in manifoldx with a benchmark, per the repo rule. Wheels do not turn; brake and hazard lights are an emissive part toggled per instance if manifoldx allows a per-instance colour, otherwise later.</p>
 <p>A debug view colours every street of the province by its flow (the colours of the toy above) on the map, so students and agents can see the flow layer without driving. It is also what <code>manifoldx look</code> reports as an image.</p>
 
 <h2 id="measure"><span class="n">12</span>Measuring</h2>
 <ul>
-  <li><code>havana bench</code> adds: flow step time, cars in the car layer, car layer time per frame, and draw time of the four batches, on the fixed route at 08:00 and 03:00.</li>
+  <li><code>havana bench</code> adds: flow step time, cars in the car layer, car layer time per frame, and draw time of the five batches, on the fixed route at 08:00 and 03:00.</li>
   <li>Target on the laptop the design names: car layer under 2 ms per frame for 1000 cars, flow step under 20 ms, no frame over 33 ms when a crowd of edges enters range.</li>
   <li>The graph's real size is counted by prepare and printed; the spike assumed 80 000 edges.</li>
 </ul>
@@ -357,7 +383,6 @@ svg text{font-family:var(--font-mono)}
 
 <h2 id="open"><span class="n">16</span>Open questions</h2>
 <ul>
-  <li><span class="who q">question</span> Overall level: the estimate in <a href="#demand">07</a> gives about 70 cars moving within 400 m of the Capitolio at the morning peak. Keep that as the default, or default to a multiple of it that loads manifoldx harder, with the real level one setting away?</li>
   <li><span class="who q">question</span> Should a player crash open an accident by default, or only the dev command until layer 4?</li>
 </ul>
 </main>
