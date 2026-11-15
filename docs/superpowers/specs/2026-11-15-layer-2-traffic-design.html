@@ -301,8 +301,8 @@ svg text{font-family:var(--font-mono)}
 <ul>
   <li><b>Changing them.</b> A JSON file at start (<code>havana play --traffic my.json</code>, only the keys it names), or while playing through one event, <code>traffic_config</code>, with the keys to change: <code>manifoldx emit traffic_config population=3000000</code>. The in-game menu, later, sends the same event; manifoldx's GUI already has sliders and buttons for it.</li>
   <li><b>What reacts.</b> The flow layer reads the settings on every step, so sources change at once and the street counts follow within about one trip time; the car layer follows as edges refill. Nothing is rebuilt.</li>
-  <li><b>Seeing the difference.</b> <code>engine.state.traffic</code> reports the settings and the numbers they give: vehicle trips per day, vehicles moving now by type, cars in the flow layer, cars drawn. <code>havana flowmap --at "Tue 08:00" --traffic my.json out.png</code> warms the flow layer up to that time without opening a window and draws the province coloured by flow, so two settings files compare as two pictures.</li>
-  <li><b>Fixed time, for tests only.</b> <code>--at "Sun 08:00"</code> on <code>play</code> and <code>flowmap</code> pins the clock; play without it uses the machine's clock.</li>
+  <li><b>Seeing the difference.</b> <code>engine.state.traffic</code> reports the settings and the numbers they give: vehicle trips per day, vehicles moving now by type, cars in the flow layer, cars drawn. <code>havana flowmap out.png --time "Tue 08:00" --traffic my.json</code> warms the flow layer up to that time without opening a window and draws the province coloured by flow, so two settings files compare as two pictures.</li>
+  <li><b>Fixed time, for tests only.</b> <code>--time "Sun 08:00"</code> on <code>play</code>, <code>flowmap</code> and <code>bench</code> pins the clock (<code>--at</code> already means the start point); play without it uses the machine's clock.</li>
 </ul>
 <h3>Where on the map</h3>
 <ul>

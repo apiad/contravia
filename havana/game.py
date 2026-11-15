@@ -77,7 +77,7 @@ class Game:
 
         self.traffic_config = config or TrafficConfig()
         self.clock = clock or Clock()
-        self.layer, self._state_at = None, 0.0
+        self.layer, self._state_at, self.traffic_ms = None, 0.0, 0.0
         self.engine.state.traffic = {"error": None}
         graph = self.city.graph
         if not len(graph):
@@ -161,7 +161,9 @@ class Game:
         before = self.car
         self.car = step(self.car, c, min(dt, 0.05), walls, self.surface)
         if self.layer:
+            t_traffic = time.perf_counter()
             self._traffic(before, min(dt, 0.05))
+            self.traffic_ms = (time.perf_counter() - t_traffic) * 1000
         # manifoldx turns +x toward -z for a positive yaw; the game turns it toward +z.
         place_car(self.handles, self.model, at=(self.car.x, self.car.y, self.car.z), yaw=-self.car.yaw,
                   pitch=self.car.pitch, roll=self.car.roll)

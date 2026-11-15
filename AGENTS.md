@@ -9,6 +9,13 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
 - `havana prepare ... --dem DIR` adds the ground's heights from the Copernicus GLO-30 tiles
   `Copernicus_DSM_COG_10_N22_00_W083_00_DEM` and `..._N23_00_W083_00_DEM`, each fetched with `curl -L` from
   `https://copernicus-dem-30m.s3.amazonaws.com/<name>/<name>.tif`. Without it the city is flat.
+- `havana prepare` also builds the road graph traffic drives on (g_* arrays); data from before layer 2 plays with no traffic.
+- Traffic runs on the machine's local clock. `havana play --traffic my.json` changes demand settings
+  (`havana/rules/traffic.py`, only the keys the file names); `--time "Sun 08:00"` and `--warp 60` pin and speed up
+  the clock for tests only. While playing, `manifoldx emit traffic_config population=3000000` changes settings and
+  `manifoldx emit close x=... z=... minutes=40` closes a street; `engine.state.traffic` reports the numbers.
+- `havana flowmap out.png --time "Tue 08:00" [--traffic my.json]` draws the flow layer over the province without a
+  window; `havana bench --time ...` adds traffic numbers to the run.
 - The game grows in layers, and every layer covers the whole city. Never detail one district ahead of the rest.
 - Same inputs, same city: every random draw is seeded from an OSM id or a block centroid.
 - `data/` is never committed: no OSM extract, no npz.
