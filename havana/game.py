@@ -15,6 +15,7 @@ from havana.camera import chase
 from havana.car import CarState, Controls, settle, step
 from havana.citydata import CityData
 from havana.geo import CELL
+from havana.surface import Surface
 from havana.walls import Walls
 
 RADIUS, READY_RADIUS = 3, 4
@@ -33,6 +34,7 @@ class Game:
         from havana.cells import build
 
         self.engine, self.city, self.walls, self.terrain = engine, city, Walls(city), city.terrain
+        self.surface = Surface(city, self.terrain)  # what the wheels stand on: roads level across
         engine.background_color = SKY
         engine.fog_enabled, engine.fog_start, engine.fog_end, engine.fog_color = True, *FOG, SKY
         engine.set_sun(DirectionalLight(color="#fff3dd", intensity=3.0, direction=(-0.5, -0.8, -0.35)))
@@ -70,7 +72,7 @@ class Game:
     def teleport(self, x: float, z: float) -> None:
         """Put the car on the road nearest (x, z), stopped."""
         x, z, yaw = self.walls.nearest_road(x, z)
-        self.car = settle(CarState(x, z, yaw, 0.0), self.terrain)
+        self.car = settle(CarState(x, z, yaw, 0.0), self.surface)
         self.eye = np.array([x, self.car.y + 3.0, z])
 
     def waiting(self) -> int:
@@ -91,7 +93,7 @@ class Game:
             x, z, _ = self.walls.random_road(self._rng)
             self.teleport(x, z)
         c = self.autopilot(self.car) if self.autopilot else self.controls()
-        self.car = step(self.car, c, min(dt, 0.05), self.walls.near(self.car.x, self.car.z), self.terrain)
+        self.car = step(self.car, c, min(dt, 0.05), self.walls.near(self.car.x, self.car.z), self.surface)
         # manifoldx turns +x toward -z for a positive yaw; the game turns it toward +z.
         place_car(self.handles, self.model, at=(self.car.x, self.car.y, self.car.z), yaw=-self.car.yaw,
                   pitch=self.car.pitch, roll=self.car.roll)

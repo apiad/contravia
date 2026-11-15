@@ -89,9 +89,28 @@ def test_the_camera_stays_above_the_ground_on_a_downhill():
 
 def test_teleport_puts_the_car_on_the_ground(city):
     from havana.game import Game
+    from havana.surface import Surface
     from havana.walls import Walls
 
     g = Game.__new__(Game)
     g.walls, g.terrain = Walls(city), _ramp(0.1)
+    g.surface = Surface(city, g.terrain)
     g.teleport(100.0, 50.0)
-    assert np.isclose(g.car.y, float(g.terrain.height(g.car.x, g.car.z)), atol=0.3)
+    assert abs(g.car.y - float(g.terrain.height(g.car.x, g.car.z))) < 1.0   # on the road, level across
+
+
+def test_on_a_hillside_road_the_car_pitches_with_it_and_does_not_roll():
+    from havana.car import settle
+    from havana.citydata import CityData
+    from havana.surface import Surface
+    from havana.terrain import Terrain
+
+    _, c = np.mgrid[0:300, 0:300]
+    r, _ = np.mgrid[0:300, 0:300]
+    t = Terrain(0.15 * (-1500 + 10.0 * r) + 0.05 * (-1500 + 10.0 * c), (-1500, -1500), (10, 10))
+    road = np.array([[-100, 0, 100, 0, 8]], np.float32)               # runs east across a slope rising south
+    city = CityData.from_features(road, [], np.zeros(0), [], np.zeros(0), np.zeros((0, 2)), t)
+    on_road = settle(CarState(0.0, 0.0, 0.0, 0.0), Surface(city, t))
+    assert abs(on_road.roll) < 1e-3 and abs(on_road.pitch - np.arctan(0.05)) < 2e-3
+    off_road = settle(CarState(0.0, 60.0, 0.0, 0.0), Surface(city, t))
+    assert abs(off_road.roll) > 0.1                                    # on the grass it follows the hillside

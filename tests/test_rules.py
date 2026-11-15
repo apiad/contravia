@@ -70,13 +70,48 @@ def tilted():
     return Terrain(0.1 * (-1000 + 10.0 * c) + 0.05 * (-1000 + 10.0 * r), (-1000, -1000), (10, 10))
 
 
-def test_roads_lie_on_the_terrain_and_are_cut_every_10_m():
-    mb = MeshBuilder()
-    roads.ribbon(mb, np.array([[0, 0, 35, 12, 6]], np.float32), tilted())
+def cross():
+    """Ground rising 0.15 m per metre southward (+z): a hillside under a road that runs east."""
+    r, _ = np.mgrid[0:200, 0:200]
+    return Terrain(0.15 * (-1000 + 10.0 * r), (-1000, -1000), (10, 10))
+
+
+def road_vertices(md):
+    keep = np.all(np.isclose(md.colors, roads.ROAD), axis=1)
+    return md.positions[keep].astype(float)
+
+
+def test_a_road_on_a_hillside_is_level_across_and_never_under_the_ground():
+    t, mb = cross(), MeshBuilder()
+    roads.ribbon(mb, np.array([[0, 0, 35, 0, 8]], np.float32), t)
+    p = road_vertices(mb.to_meshdata(0, 0))
+    assert np.ptp(p[:, 1]) < 1e-3                                     # level across and along: it runs east
+    assert np.allclose(p[:, 1], 0.15 * 4 + roads.LIFT, atol=1e-3)     # the uphill edge's ground plus the lift
+    assert (p[:, 1] >= t.height(p[:, 0], p[:, 2]) + roads.LIFT - 1e-3).all()
+
+
+def test_the_road_climbs_along_its_length_and_is_cut_every_10_m():
+    t, mb = tilted(), MeshBuilder()
+    roads.ribbon(mb, np.array([[0, 0, 35, 12, 6]], np.float32), t)
     md = mb.to_meshdata(0, 0)
-    p = md.positions.astype(float)
-    assert np.allclose(p[:, 1], 0.1 * p[:, 0] + 0.05 * p[:, 2] + roads.LIFT, atol=0.01)
-    assert len(md.indices) // 3 == 2 * (4 + 2)          # 37 m in four pieces, plus two end squares
+    p = road_vertices(md)
+    assert np.ptp(p[:, 1]) > 3.0                                       # it rises with the slope along x
+    assert np.all(np.isclose(md.colors, roads.ROAD), axis=1).sum() == 4 * (4 + 2)   # four pieces, two squares
+
+
+def test_a_skirt_drops_to_the_ground_on_the_low_side_only():
+    flat, mb = Terrain.flat(), MeshBuilder()
+    roads.ribbon(mb, np.array([[0, 0, 35, 0, 8]], np.float32), flat)
+    assert not np.all(np.isclose(mb.to_meshdata(0, 0).colors, roads.SKIRT), axis=1).any()
+    t, mb = cross(), MeshBuilder()
+    roads.ribbon(mb, np.array([[0, 0, 35, 0, 8]], np.float32), t)
+    md = mb.to_meshdata(0, 0)
+    sk = md.positions[np.all(np.isclose(md.colors, roads.SKIRT), axis=1)]
+    quads = sk.reshape(-1, 4, 3)
+    along_low = np.all(np.isclose(quads[:, :, 2], -4.0), axis=1)
+    along_high = np.all(np.isclose(quads[:, :, 2], 4.0), axis=1)
+    assert along_low.any() and not along_high.any()                         # north edge only, the low side
+    assert np.isclose(sk[:, 1].min(), t.height(0, -4.0), atol=1e-3)         # down to the ground
 
 
 def test_neighbouring_cells_share_their_ground_edge():
