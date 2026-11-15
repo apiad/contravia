@@ -7,9 +7,6 @@ and the right edge, plus LIFT, so the ground never shows through. Where the road
 a skirt drops from its edge to the ground, like an embankment wall.
 """
 
-import math
-from itertools import pairwise
-
 import numpy as np
 
 ROAD = (0.08, 0.08, 0.09)
@@ -34,52 +31,59 @@ def _quads(mb, corners, heights, color) -> None:
            np.concatenate([base + (0, 1, 2), base + (0, 2, 3)]))
 
 
-def _skirts(mb, edges, tops, terrain) -> None:
-    """Add a vertical face under each (E, 2, 2) edge from its (E, 2) top heights down to the ground."""
+def _skirts(mb, edges, tops, centres, terrain) -> None:
+    """Add a vertical face under each (E, 2, 2) edge, from its (E, 2) top heights down to the ground,
+    facing away from the (E, 2) centre of the piece it belongs to."""
     a, b = edges[:, 0], edges[:, 1]
     ga, gb = terrain.height(a[:, 0], a[:, 1]), terrain.height(b[:, 0], b[:, 1])
     keep = (tops[:, 0] - ga > 0.2) | (tops[:, 1] - gb > 0.2)  # only where the road stands clear of the ground
     if not keep.any():
         return
-    a, b, t, ga, gb = a[keep], b[keep], tops[keep], ga[keep], gb[keep]
+    a, b, t, ga, gb, c = a[keep], b[keep], tops[keep], ga[keep], gb[keep], centres[keep]
     pos = np.stack([np.c_[a[:, 0], np.minimum(ga, t[:, 0]), a[:, 1]], np.c_[b[:, 0], np.minimum(gb, t[:, 1]), b[:, 1]],
                     np.c_[b[:, 0], t[:, 1], b[:, 1]], np.c_[a[:, 0], t[:, 0], a[:, 1]]], axis=1).reshape(-1, 3)
     d = b - a
-    n = np.stack([d[:, 1], np.zeros(len(d)), -d[:, 0]], axis=1)
-    n /= np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-9)
+    out = np.stack([d[:, 1], -d[:, 0]], axis=1)
+    out *= np.sign(np.einsum("ij,ij->i", out, (a + b) / 2 - c))[:, None]  # away from the road
+    out /= np.maximum(np.linalg.norm(out, axis=1, keepdims=True), 1e-9)
+    n = np.repeat(np.c_[out[:, 0], np.zeros(len(out)), out[:, 1]], 4, axis=0)
     base = 4 * np.arange(len(a))[:, None]
-    tris = np.concatenate([base + (0, 1, 2), base + (0, 2, 3)])
-    nrm = np.repeat(n, 4, axis=0)
-    mb.add(pos, nrm, SKIRT, tris)  # once facing each way, so the skirt shows from both sides
-    mb.add(pos, -nrm, SKIRT, tris)
+    mb.add(pos, n, SKIRT, np.concatenate([base + (0, 1, 2), base + (0, 2, 3)]))
 
 
 def ribbon(mb, roads: np.ndarray, terrain) -> None:
-    """Add every row (ax, az, bx, bz, width) as level pieces on the terrain, plus a square at each end."""
-    quads, heights, edges, tops = [], [], [], []
-    for ax, az, bx, bz, w in np.asarray(roads, float):
-        d = np.array([bx - ax, bz - az])
-        length = np.hypot(*d)
-        if length < 1e-6:
-            continue
-        d /= length
-        side = np.array([-d[1], d[0]]) * w / 2
-        a, b = np.array([ax, az]), np.array([bx, bz])
-        cuts = a + np.outer(np.linspace(0, 1, math.ceil(length / PIECE) + 1), b - a)
-        y = level(terrain, cuts, side)
-        for (p, q), (yp, yq) in zip(pairwise(cuts), pairwise(y), strict=True):
-            quads.append((p + side, q + side, q - side, p - side))
-            heights.append((yp, yq, yq, yp))
-            edges += [(p + side, q + side), (p - side, q - side)]
-            tops += [(yp, yq), (yp, yq)]
-        for p, yp in ((a, y[0]), (b, y[-1])):
-            h = d * w / 2
-            sq = (p - h + side, p + h + side, p + h - side, p - h - side)
-            quads.append(sq)
-            heights.append((yp,) * 4)
-            edges += [(sq[k], sq[(k + 1) % 4]) for k in range(4)]
-            tops += [(yp, yp)] * 4
-    if not quads:
+    """Add every row (ax, az, bx, bz, width) as level pieces on the terrain, plus a square at each end.
+
+    All segments of a cell are handled at once as arrays: piece k of a segment cut into n pieces runs
+    from fraction k / n to (k + 1) / n of it.
+    """
+    r = np.asarray(roads, float).reshape(-1, 5)
+    a, b, w = r[:, 0:2], r[:, 2:4], r[:, 4]
+    length = np.hypot(*(b - a).T)
+    ok = length > 1e-6
+    a, b, w, length = a[ok], b[ok], w[ok], length[ok]
+    if not len(a):
         return
-    _quads(mb, np.asarray(quads, float), np.asarray(heights, float), ROAD)
-    _skirts(mb, np.asarray(edges, float), np.asarray(tops, float), terrain)
+    d = (b - a) / length[:, None]
+    side = np.stack([-d[:, 1], d[:, 0]], axis=1) * (w / 2)[:, None]
+    n = np.ceil(length / PIECE).astype(int)
+    seg = np.repeat(np.arange(len(a)), n)
+    k = np.arange(n.sum()) - np.repeat(np.cumsum(n) - n, n)
+    p = a[seg] + (b - a)[seg] * (k / n[seg])[:, None]
+    q = a[seg] + (b - a)[seg] * ((k + 1) / n[seg])[:, None]
+    s = side[seg]
+    yp, yq = level(terrain, p, s), level(terrain, q, s)
+    pieces = np.stack([p + s, q + s, q - s, p - s], axis=1)
+
+    ends = np.concatenate([a, b])  # a square at each end hides the joint with the next segment
+    es, ed = np.concatenate([side, side]), np.concatenate([d * (w / 2)[:, None]] * 2)
+    ye = level(terrain, ends, es)
+    squares = np.stack([ends - ed + es, ends + ed + es, ends + ed - es, ends - ed - es], axis=1)
+
+    _quads(mb, np.concatenate([pieces, squares]),
+           np.concatenate([np.stack([yp, yq, yq, yp], axis=1), np.repeat(ye[:, None], 4, axis=1)]), ROAD)
+    sq_edges = np.stack([squares, np.roll(squares, -1, axis=1)], axis=2).reshape(-1, 2, 2)
+    edges = np.concatenate([np.stack([p + s, q + s], axis=1), np.stack([p - s, q - s], axis=1), sq_edges])
+    tops = np.concatenate([np.stack([yp, yq], axis=1)] * 2 + [np.repeat(ye, 4)[:, None].repeat(2, axis=1)])
+    centres = np.concatenate([(p + q) / 2, (p + q) / 2, np.repeat(ends, 4, axis=0)])
+    _skirts(mb, edges, tops, centres, terrain)
