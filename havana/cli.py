@@ -38,6 +38,10 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--size", type=int, default=2000, help="width in pixels")
     p.add_argument("--box", help="x0,z0,x1,z1 in local metres; the whole province by default")
 
+    p = sub.add_parser("climate", help="build the star, Milky Way and weather tables in havana/sky_data (needs network)")
+    p.add_argument("--cache", default="~/.cache/havana", help="where the downloads are kept")
+    p.add_argument("--out", help="folder for the tables; havana/sky_data by default")
+
     args = parser.parse_args(argv)
     if args.command == "prepare":
         from havana.prepare import main as prepare
@@ -48,6 +52,12 @@ def main(argv: list[str] | None = None) -> None:
 
         play(args.data, at=args.at, shot=args.shot, frames=args.frames, traffic=args.traffic, when=args.time,
              warp=args.warp)
+    elif args.command == "climate":
+        import os
+
+        from havana.climate import main as climate
+
+        climate(os.path.expanduser(args.cache), args.out)
     elif args.command == "flowmap":
         from havana.flowmap import main as flowmap
 
