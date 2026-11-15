@@ -1,6 +1,7 @@
 """The Habana Libre: a 12 m podium on its OSM footprint and a slab tower to 126 m along its long side."""
 
 from havana.landmarks.shapes import Piece, frame, prism, rect
+from havana.terrain import seat
 
 NAME = "Habana Libre"
 OSM_ID = 289803271
@@ -12,9 +13,10 @@ def place(city, mb) -> Piece | None:
     ring = city.building(OSM_ID)
     if ring is None:
         return None
-    prism(mb, ring, 0, 12, PODIUM)
+    y = seat(ring, city.terrain)
+    prism(mb, ring, y, y + 12, PODIUM)
     c, u, _, a, _ = frame(ring)
     slab = rect(c, u, min(38, a - 5), 11)
-    prism(mb, slab, 12, 124, GLASS)
-    prism(mb, slab, 124, 126, CAP)
+    prism(mb, slab, y + 12, y + 124, GLASS)
+    prism(mb, slab, y + 124, y + 126, CAP)
     return Piece(replaces={OSM_ID}, walls=[ring])

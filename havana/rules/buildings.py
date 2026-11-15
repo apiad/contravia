@@ -9,6 +9,7 @@ import colorsys
 import numpy as np
 
 from havana.mesh import signed_area, triangulate
+from havana.terrain import seat
 
 MIN_H, MAX_H = 6.0, 30.0
 SETBACK = 3.0  # metres between a block's edge and its filler boxes
@@ -21,8 +22,8 @@ def _rng(seed) -> np.random.Generator:
     return np.random.default_rng(abs(int(seed)))
 
 
-def box(mb, ring: np.ndarray, osm_id: int) -> bool:
-    """Add walls and a flat roof for a footprint; returns False when the roof could not be cut."""
+def box(mb, ring: np.ndarray, osm_id: int, base: float = 0.0) -> bool:
+    """Add walls from base up and a flat roof for a footprint; returns False when the roof could not be cut."""
     ring = np.asarray(ring, float)
     rng = _rng(osm_id)
     h = rng.uniform(MIN_H, MAX_H)
@@ -38,12 +39,14 @@ def box(mb, ring: np.ndarray, osm_id: int) -> bool:
         if not ccw:
             out = -out
         n = (out[0], 0.0, out[1])
-        mb.add([(x0, 0, z0), (x1, 0, z1), (x1, h, z1), (x0, h, z0)], [n] * 4, color, [(0, 1, 2), (0, 2, 3)])
+        top = base + h
+        mb.add([(x0, base, z0), (x1, base, z1), (x1, top, z1), (x0, top, z0)], [n] * 4, color,
+               [(0, 1, 2), (0, 2, 3)])
     try:
         tris = triangulate(ring)
     except ValueError:
         return False
-    mb.add([(x, h, z) for x, z in ring], [(0, 1, 0)] * len(ring), color, tris)
+    mb.add([(x, base + h, z) for x, z in ring], [(0, 1, 0)] * len(ring), color, tris)
     return True
 
 
@@ -108,7 +111,7 @@ def filler_rings(block: np.ndarray, seed: int) -> list[np.ndarray]:
     return placed
 
 
-def filler(mb, block: np.ndarray, seed: int) -> None:
-    """Add the filler boxes of a block as buildings, each seeded from the block's seed."""
+def filler(mb, block: np.ndarray, seed: int, terrain=None) -> None:
+    """Add the filler boxes of a block as buildings, each seeded from the block's seed and on the terrain."""
     for k, ring in enumerate(filler_rings(block, seed)):
-        box(mb, ring, osm_id=abs(int(seed)) * 131 + k)
+        box(mb, ring, osm_id=abs(int(seed)) * 131 + k, base=seat(ring, terrain) if terrain else 0.0)

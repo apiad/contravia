@@ -1,6 +1,7 @@
 """The FOCSA: its OSM footprint raised to 121 m, the tallest building in the city."""
 
 from havana.landmarks.shapes import Piece, prism
+from havana.terrain import seat
 
 NAME = "FOCSA"
 OSM_ID = 23866811
@@ -12,5 +13,6 @@ def place(city, mb) -> Piece | None:
     ring = city.building(OSM_ID)
     if ring is None:
         return None
-    prism(mb, ring, 0, 121, WHITE)
+    y = seat(ring, city.terrain)
+    prism(mb, ring, y, y + 121, WHITE)
     return Piece(replaces={OSM_ID}, walls=[ring])

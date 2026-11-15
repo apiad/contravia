@@ -91,3 +91,19 @@ def test_neighbouring_cells_share_their_ground_edge():
     ea, eb = ea[np.argsort(ea[:, 2])], eb[np.argsort(eb[:, 2])]
     assert len(ea) == 21 and np.array_equal(ea, eb)
     assert np.allclose(pa[:, 1], 0.1 * pa[:, 0] + 0.05 * pa[:, 2], atol=1e-3)
+
+
+def test_a_box_on_a_slope_stands_on_its_lowest_corner():
+    from havana.terrain import seat
+
+    t, ring = tilted(), np.array([(0, 0), (30, 0), (30, 20), (0, 20)], float)
+    mb = MeshBuilder()
+    buildings.box(mb, ring, 3, base=seat(ring, t))
+    assert np.isclose(mb.to_meshdata(0, 0).positions[:, 1].min(), 0.0, atol=1e-4)   # h(0, 0) = 0 is the lowest
+
+
+def test_trees_stand_on_the_ground():
+    mb = MeshBuilder()
+    trees.trees(mb, np.array([[10.0, 0.0], [50.0, 20.0]]), np.array([1.0, 6.0]))
+    p = mb.to_meshdata(0, 0).positions
+    assert np.isclose(p[np.isclose(p[:, 0], 50.2, atol=0.01), 1].min(), 6.0)          # a trunk corner of tree 2

@@ -268,7 +268,7 @@ def test_old_data_without_heights_is_flat(city):
 </div>
 </details>
 
-<details class="task" id="task-5" data-state="pending">
+<details class="task" id="task-5" data-state="done">
 <summary><span class="num">5</span><span><span class="ttl">Seat buildings, filler, trees and landmarks</span><span class="files">havana/rules/buildings.py · havana/rules/trees.py · havana/landmarks/* · havana/mesh.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -327,6 +327,7 @@ def test_old_data_without_heights_is_flat(city):
 <h2 id="departs"><span class="n">04</span>Where this plan departs from the spec</h2>
 <ul>
   <li><b>Narrow hills lose part of their top.</b> The spec's test says a hill 300 m wide keeps its height within 10 %. Measured on Gaussian hills (<code>tests/test_terrain.py</code>), the cleaning keeps 61 % of the peak at σ = 90 m, 83 % at 150 m, 93 % at 240 m and 97 % at 360 m. The test uses a hill about 500 m across (σ = 240 m). Hills of a city block or two come out lower and rounder.</li>
+  <li><b>Each landmark part seats itself.</b> Task 5 lifted a whole landmark to the lowest point under its walls (<code>rigid</code>, <code>MeshBuilder.extend</code>). The Plaza spans 400 m and the Morro sits on a hill, so one lift buried half their parts. Instead each module calls <code>seat</code> for each part on <code>city.terrain</code>; the Morro's walls rise from its lowest ground to 14 m above its highest; the Plaza drapes its own paving with <code>shapes.drape</code>. <code>Piece</code> is unchanged and <code>extend</code> was not needed.</li>
   <li><b>The Malecón's sea is not draped.</b> The spec drapes it like the paving. It lies where the cleaned heights are 0, so it stays flat at its 0.3 m floor; near the wall, the 30 m blur raises the land a little above it, which reads as rocks until layer 6 brings the coastline.</li>
 </ul>
 </main>
