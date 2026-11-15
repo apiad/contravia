@@ -398,7 +398,7 @@ DAYS = {"weekday": 1.00, "friday": 1.05, "saturday": 0.80, "sunday": 0.60}
 </div>
 </details>
 
-<details class="task" id="task-10" data-state="doing">
+<details class="task" id="task-10" data-state="done">
 <summary><span class="num">10</span><span><span class="ttl">On the real city</span><span class="files">data/havana.npz · bench/history.jsonl</span></span><span class="state">pending</span></summary>
 <div class="body">
 <ol class="steps">
@@ -422,6 +422,7 @@ DAYS = {"weekday": 1.00, "friday": 1.05, "saturday": 0.80, "sunday": 0.60}
   <li><b>Bus and truck are boxes.</b> The parametric car stretched to 12 m and 8 m is a long sedan; cars are merged without their interior and decimated, with colours copied from the nearest original vertex (<code>havana/vehicles.py</code>).</li>
   <li><b><code>--time</code>, not <code>--at</code>.</b> <code>play --at</code> already means the start point. Warm-up uses 20 s steps (about 2 s on the real graph instead of 36 s).</li>
   <li><b>The flow map shows vehicles per hour.</b> At Havana's level every street is about 2 % full, so fill shows nothing; density makes fast avenues look quiet.</li>
+  <li><b>Road heights are prepared along each edge.</b> The bench showed 235 ms of traffic per frame at 148 cars: the game asked the road surface point by point, three times per car. Edges are now sampled every 10 m and <code>prepare</code> stores the road's height there (<code>g_poly_y</code>); traffic then costs 13 ms per frame at 08:00 on the server, where llvmpipe draws a frame in 320 ms, and 0.6 ms measured without drawing. <code>prepare</code> takes 905 s instead of 502 s.</li>
   <li><b>The circle is worked out after a 10 m move.</b> Doing it every frame over 104 000 edges cost 5 ms; now 0.6 ms at the real level, 2.3 ms with 133 cars.</li>
 </ul>
 </main>
