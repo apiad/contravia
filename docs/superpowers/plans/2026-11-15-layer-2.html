@@ -140,11 +140,11 @@ main.plan{max-width:980px;margin:0 auto}
     editing data-state on the task (one Edit per change). Never edit anything else to mark progress.
   - Code blocks are <script type="text/plain" data-lang="..."> elements: their text is the code,
     verbatim, with no HTML escaping. Copy it from there. A script on the page renders them for people.
-  - Execution method: not chosen yet.
+  - Execution method: native (inline in the session that wrote the plan).
 -->
 <div class="chrome2">
   <div class="chrome"><span>havana-driver</span><span class="tab">plan · layer 2, traffic</span>
-    <span class="st"><span class="pill acc">draft</span><span class="pill">2026-11-15</span></span></div>
+    <span class="st"><span class="pill acc">execution: native</span><span class="pill">2026-11-15</span></span></div>
   <div class="progress"><span id="pcount">0 of 0 done</span><div class="track" id="ptrack"></div></div>
 </div>
 <main class="plan">
@@ -185,7 +185,7 @@ main.plan{max-width:980px;margin:0 auto}
 
 <h2 id="tasks"><span class="n">03</span>Tasks</h2>
 
-<details class="task" id="task-1" data-state="pending">
+<details class="task" id="task-1" data-state="done">
 <summary><span class="num">1</span><span><span class="ttl">Traffic settings and demand arithmetic</span><span class="files">havana/rules/traffic.py · tests/test_traffic_config.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -258,7 +258,7 @@ DAYS = {"weekday": 1.00, "friday": 1.05, "saturday": 0.80, "sunday": 0.60}
 </div>
 </details>
 
-<details class="task" id="task-2" data-state="pending">
+<details class="task" id="task-2" data-state="done">
 <summary><span class="num">2</span><span><span class="ttl">Road graph in prepare</span><span class="files">havana/prepare.py · havana/graph.py · havana/citydata.py · tests/fixtures/traffic.osm · tests/test_graph.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -279,7 +279,7 @@ DAYS = {"weekday": 1.00, "friday": 1.05, "saturday": 0.80, "sunday": 0.60}
 </div>
 </details>
 
-<details class="task" id="task-3" data-state="pending">
+<details class="task" id="task-3" data-state="done">
 <summary><span class="num">3</span><span><span class="ttl">Flow layer</span><span class="files">havana/flow.py · tests/test_flow.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -296,7 +296,7 @@ DAYS = {"weekday": 1.00, "friday": 1.05, "saturday": 0.80, "sunday": 0.60}
 </div>
 </details>
 
-<details class="task" id="task-4" data-state="pending">
+<details class="task" id="task-4" data-state="done">
 <summary><span class="num">4</span><span><span class="ttl">Clock and the flow thread</span><span class="files">havana/clock.py · tests/test_clock.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -313,7 +313,7 @@ DAYS = {"weekday": 1.00, "friday": 1.05, "saturday": 0.80, "sunday": 0.60}
 </div>
 </details>
 
-<details class="task" id="task-5" data-state="pending">
+<details class="task" id="task-5" data-state="done">
 <summary><span class="num">5</span><span><span class="ttl">Cars on lanes</span><span class="files">havana/traffic.py · tests/test_cars.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -330,7 +330,7 @@ DAYS = {"weekday": 1.00, "friday": 1.05, "saturday": 0.80, "sunday": 0.60}
 </div>
 </details>
 
-<details class="task" id="task-6" data-state="pending">
+<details class="task" id="task-6" data-state="done">
 <summary><span class="num">6</span><span><span class="ttl">The circle around the player</span><span class="files">havana/traffic.py · tests/test_coupling.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -347,7 +347,7 @@ DAYS = {"weekday": 1.00, "friday": 1.05, "saturday": 0.80, "sunday": 0.60}
 </div>
 </details>
 
-<details class="task" id="task-7" data-state="pending">
+<details class="task" id="task-7" data-state="done">
 <summary><span class="num">7</span><span><span class="ttl">Five vehicle pools</span><span class="files">havana/vehicles.py · tests/test_vehicles.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -365,7 +365,7 @@ DAYS = {"weekday": 1.00, "friday": 1.05, "saturday": 0.80, "sunday": 0.60}
 </div>
 </details>
 
-<details class="task" id="task-8" data-state="pending">
+<details class="task" id="task-8" data-state="done">
 <summary><span class="num">8</span><span><span class="ttl">Traffic in the game</span><span class="files">havana/game.py · havana/cli.py · tests/test_game.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -382,7 +382,7 @@ DAYS = {"weekday": 1.00, "friday": 1.05, "saturday": 0.80, "sunday": 0.60}
 </div>
 </details>
 
-<details class="task" id="task-9" data-state="pending">
+<details class="task" id="task-9" data-state="done">
 <summary><span class="num">9</span><span><span class="ttl">Flow map, bench and docs</span><span class="files">havana/flowmap.py · havana/cli.py · havana/bench.py · AGENTS.md · tests/test_cli.py</span></span><span class="state">pending</span></summary>
 <div class="body">
 <h4>interfaces</h4>
@@ -398,7 +398,7 @@ DAYS = {"weekday": 1.00, "friday": 1.05, "saturday": 0.80, "sunday": 0.60}
 </div>
 </details>
 
-<details class="task" id="task-10" data-state="pending">
+<details class="task" id="task-10" data-state="doing">
 <summary><span class="num">10</span><span><span class="ttl">On the real city</span><span class="files">data/havana.npz · bench/history.jsonl</span></span><span class="state">pending</span></summary>
 <div class="body">
 <ol class="steps">
@@ -414,7 +414,15 @@ DAYS = {"weekday": 1.00, "friday": 1.05, "saturday": 0.80, "sunday": 0.60}
 
 <h2 id="departs"><span class="n">04</span>Where this plan departs from the spec</h2>
 <ul>
-  <li>None yet. Executors add one line per departure here, with the file and line that forced it.</li>
+  <li><b>Closures block with first in, first out.</b> Plain turn redistribution (task 3) makes no queue at all. An edge now sends at the pace of its most constrained turn, and junctions before a blocked approach send a tenth of their share into it (<code>havana/flow.py</code>, <code>Flow.shares</code>). A closed edge also keeps its vehicles, as spec section 10 says.</li>
+  <li><b>An edge never sends more than it holds.</b> Edges shorter than one second of driving created vehicles out of nothing (35 800 vehicles instead of 9 900 on the real city); demand is capped by <code>n</code> (<code>Flow.step</code>).</li>
+  <li><b>The layers talk through messages.</b> Every change to the flow runs in its thread (<code>runner.submit</code>); the flow answers through <code>TrafficLayer.inbox</code>. Owned edges have no sources or sinks, and what the flow sends into them is counted in <code>flow.arrived</code> and placed as cars when there is room.</li>
+  <li><b>Random rounding at hand-over.</b> Most streets hold a fraction of a vehicle; <code>floor</code> gave no cars within 200 m of the player. A street with 0.2 vehicles gets a car one time in five; the difference stays in <code>carry</code>, and negative remainders in <code>TrafficLayer.debt</code>, so the total is exact.</li>
+  <li><b>Junctions yield only to cars arriving.</b> A car waiting at its own line no longer blocks the others; without this an unsignalled junction passed one car per 8 s per approach (<code>Cars._may_enter</code>, <code>ARRIVING</code>).</li>
+  <li><b>Bus and truck are boxes.</b> The parametric car stretched to 12 m and 8 m is a long sedan; cars are merged without their interior and decimated, with colours copied from the nearest original vertex (<code>havana/vehicles.py</code>).</li>
+  <li><b><code>--time</code>, not <code>--at</code>.</b> <code>play --at</code> already means the start point. Warm-up uses 20 s steps (about 2 s on the real graph instead of 36 s).</li>
+  <li><b>The flow map shows vehicles per hour.</b> At Havana's level every street is about 2 % full, so fill shows nothing; density makes fast avenues look quiet.</li>
+  <li><b>The circle is worked out after a 10 m move.</b> Doing it every frame over 104 000 edges cost 5 ms; now 0.6 ms at the real level, 2.3 ms with 133 cars.</li>
 </ul>
 </main>
 
