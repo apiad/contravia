@@ -107,6 +107,15 @@ class CityData:
             self._terrain = Terrain(self.a["heights"], self.a["heights_origin"], self.a["heights_step"])
         return self._terrain
 
+    @property
+    def graph(self):
+        """The road graph traffic drives on; empty for data prepared before layer 2."""
+        from havana.graph import Graph
+
+        if not hasattr(self, "_graph"):
+            self._graph = Graph.from_arrays(self.a)
+        return self._graph
+
     def cells(self) -> np.ndarray:
         """The (K, 2) cells that hold at least one feature."""
         return self.a["cells"]

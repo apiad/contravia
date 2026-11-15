@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6" generator="havana-driver traffic fixture">
+  <node id="1" version="1" lat="23.1352800" lon="-82.3597200"/>
+  <node id="2" version="1" lat="23.1352800" lon="-82.3587420"/>
+  <node id="3" version="1" lat="23.1352800" lon="-82.3577640"/>
+  <node id="4" version="1" lat="23.1343760" lon="-82.3597200"/>
+  <node id="5" version="1" lat="23.1343760" lon="-82.3587420">
+    <tag k="highway" v="traffic_signals"/>
+  </node>
+  <node id="6" version="1" lat="23.1343760" lon="-82.3577640"/>
+  <node id="7" version="1" lat="23.1334720" lon="-82.3597200"/>
+  <node id="8" version="1" lat="23.1334720" lon="-82.3587420">
+    <tag k="highway" v="stop"/>
+  </node>
+  <node id="9" version="1" lat="23.1334720" lon="-82.3577640"/>
+  <node id="20" version="1" lat="23.1334720" lon="-82.3573728"/>
+  <node id="21" version="1" lat="23.1332008" lon="-82.3571772"/>
+  <node id="22" version="1" lat="23.1332008" lon="-82.3574706"/>
+  <node id="60" version="1" lat="23.1344664" lon="-82.3586442"/>
+  <node id="61" version="1" lat="23.1344664" lon="-82.3584486"/>
+  <node id="62" version="1" lat="23.1346472" lon="-82.3584486"/>
+  <node id="63" version="1" lat="23.1346472" lon="-82.3586442"/>
+  <node id="70" version="1" lat="23.1361840" lon="-82.3606980"/>
+  <node id="71" version="1" lat="23.1361840" lon="-82.3558080"/>
+  <node id="72" version="1" lat="23.1316640" lon="-82.3558080"/>
+  <node id="73" version="1" lat="23.1316640" lon="-82.3606980"/>
+  <way id="10" version="1">
+    <nd ref="1"/>
+    <nd ref="2"/>
+    <tag k="highway" v="primary"/>
+    <tag k="name" v="Row 0 west"/>
+  </way>
+  <way id="11" version="1">
+    <nd ref="2"/>
+    <nd ref="3"/>
+    <tag k="highway" v="primary"/>
+    <tag k="name" v="Row 0 east"/>
+  </way>
+  <way id="12" version="1">
+    <nd ref="4"/>
+    <nd ref="5"/>
+    <nd ref="6"/>
+    <tag k="highway" v="residential"/>
+    <tag k="oneway" v="yes"/>
+    <tag k="name" v="Row 1 one-way east"/>
+  </way>
+  <way id="13" version="1">
+    <nd ref="7"/>
+    <nd ref="8"/>
+    <nd ref="9"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="Row 2"/>
+  </way>
+  <way id="14" version="1">
+    <nd ref="1"/>
+    <nd ref="4"/>
+    <nd ref="7"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="Col 0"/>
+  </way>
+  <way id="15" version="1">
+    <nd ref="2"/>
+    <nd ref="5"/>
+    <nd ref="8"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="Col 1"/>
+  </way>
+  <way id="16" version="1">
+    <nd ref="3"/>
+    <nd ref="6"/>
+    <nd ref="9"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="Col 2"/>
+  </way>
+  <way id="30" version="1">
+    <nd ref="9"/>
+    <nd ref="20"/>
+    <tag k="highway" v="service"/>
+    <tag k="oneway" v="yes"/>
+    <tag k="name" v="Car park entry"/>
+  </way>
+  <way id="31" version="1">
+    <nd ref="20"/>
+    <nd ref="21"/>
+    <nd ref="22"/>
+    <nd ref="20"/>
+    <tag k="highway" v="service"/>
+    <tag k="oneway" v="yes"/>
+    <tag k="name" v="Car park loop"/>
+  </way>
+  <way id="40" version="1">
+    <nd ref="60"/>
+    <nd ref="61"/>
+    <nd ref="62"/>
+    <nd ref="63"/>
+    <nd ref="60"/>
+    <tag k="building" v="yes"/>
+  </way>
+  <way id="41" version="1">
+    <nd ref="70"/>
+    <nd ref="71"/>
+    <nd ref="72"/>
+    <nd ref="73"/>
+    <nd ref="70"/>
+  </way>
+  <relation id="50" version="1">
+    <member type="way" ref="41" role="outer"/>
+    <tag k="type" v="boundary"/>
+    <tag k="boundary" v="administrative"/>
+    <tag k="admin_level" v="6"/>
+    <tag k="name" v="Habana Vieja"/>
+  </relation>
+  <relation id="51" version="1">
+    <member type="way" ref="15" role="from"/>
+    <member type="node" ref="2" role="via"/>
+    <member type="way" ref="10" role="to"/>
+    <tag k="type" v="restriction"/>
+    <tag k="restriction" v="no_left_turn"/>
+  </relation>
+</osm>

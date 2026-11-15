@@ -22,9 +22,21 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--at", type=_xz, default=(0.0, 0.0), help="start point as X,Z in local metres")
     p.add_argument("--shot", help="render offscreen, save this PNG and exit")
     p.add_argument("--frames", type=int, default=120, help="frames to run before --shot is saved")
+    p.add_argument("--traffic", help="JSON file of traffic settings to change (see havana/rules/traffic.py)")
+    p.add_argument("--time", help='pin the clock, as "Sun 08:00"; for tests, play uses the machine\'s clock')
+    p.add_argument("--warp", type=float, default=1.0, help="run the clock this many times faster; for tests")
 
     p = sub.add_parser("bench", help="drive the fixed route and record frame times")
     p.add_argument("--data", default="data/havana.npz")
+    p.add_argument("--time", default="Tue 08:00", help='traffic time for the run, as "Tue 08:00"')
+
+    p = sub.add_parser("flowmap", help="draw the flow layer over the province at a time, as a PNG")
+    p.add_argument("out")
+    p.add_argument("--data", default="data/havana.npz")
+    p.add_argument("--time", default="Tue 08:00", help='as "Sun 08:00"')
+    p.add_argument("--traffic", help="JSON file of traffic settings to change")
+    p.add_argument("--size", type=int, default=2000, help="width in pixels")
+    p.add_argument("--box", help="x0,z0,x1,z1 in local metres; the whole province by default")
 
     args = parser.parse_args(argv)
     if args.command == "prepare":
@@ -34,11 +46,17 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "play":
         from havana.game import main as play
 
-        play(args.data, at=args.at, shot=args.shot, frames=args.frames)
+        play(args.data, at=args.at, shot=args.shot, frames=args.frames, traffic=args.traffic, when=args.time,
+             warp=args.warp)
+    elif args.command == "flowmap":
+        from havana.flowmap import main as flowmap
+
+        box = tuple(float(v) for v in args.box.split(",")) if args.box else None
+        flowmap(args.data, args.out, args.time, traffic=args.traffic, size=args.size, box=box)
     else:
         from havana.bench import main as bench
 
-        bench(args.data)
+        bench(args.data, when=args.time)
 
 
 if __name__ == "__main__":

@@ -95,17 +95,19 @@ def _machine(engine) -> dict:
             "gpu_memory_mb": None}  # manifoldx does not report GPU memory yet
 
 
-def main(data: str, route: str = "bench/route.json", size=(1920, 1080)) -> dict:
-    """Drive the route offscreen and append the run's numbers to the history."""
+def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: str = "Tue 08:00") -> dict:
+    """Drive the route offscreen with traffic at `when` and append the run's numbers to the history."""
     import manifoldx as mx
 
+    from havana.clock import Clock, parse_at
     from havana.game import Game
 
     os.environ["HAVANA_DATA"] = os.path.abspath(data)
     city = CityData.load(data)
     engine = mx.Engine("havana-bench", width=size[0], height=size[1])
-    game = Game(engine, city)
+    game = Game(engine, city, clock=Clock(at=parse_at(when)))
     frame_ms, waits, wait_start = [], [], None
+    traffic_ms, cars = [], []
     for leg in json.loads(Path(route).read_text())["legs"]:
         stops = [tuple(to_local(np.array([lat]), np.array([lon]))[0]) for lat, lon, _ in leg["stops"]]
         path = road_path(city, stops)
@@ -123,6 +125,9 @@ def main(data: str, route: str = "bench/route.json", size=(1920, 1080)) -> dict:
         while time.monotonic() - t_leg < limit and not (not leg.get("seconds") and state["i"] == len(path) - 1):
             engine.render_frame(supersample=1)
             frame_ms.append(game.frame_ms)
+            if game.layer:
+                traffic_ms.append(game.traffic_ms)
+                cars.append(len(game.layer.cars))
             now = time.monotonic()
             if game.waiting() and wait_start is None:
                 wait_start = now
@@ -131,6 +136,13 @@ def main(data: str, route: str = "bench/route.json", size=(1920, 1080)) -> dict:
                 wait_start = None
     game.streamer.close()
     result = {**summary(frame_ms[5:] or frame_ms, waits), "frames": len(frame_ms), **_machine(engine)}
+    if game.layer:
+        game.runner.stop()
+        result["traffic"] = {"time": when, "flow_step_ms": round(game.runner.step_ms, 1),
+                             "cars_mean": round(float(np.mean(cars)), 1) if cars else 0,
+                             "cars_max": int(max(cars)) if cars else 0,
+                             "traffic_ms_mean": round(float(np.mean(traffic_ms)), 2) if traffic_ms else 0,
+                             "traffic_ms_p95": round(float(np.percentile(traffic_ms, 95)), 2) if traffic_ms else 0}
     HISTORY.parent.mkdir(exist_ok=True)
     with HISTORY.open("a") as f:
         f.write(json.dumps(result, ensure_ascii=False) + "\n")

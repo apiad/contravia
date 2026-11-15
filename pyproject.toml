@@ -24,3 +24,6 @@ packages = ["havana"]
 
 [tool.ruff]
 line-length = 110
+
+[tool.pytest.ini_options]
+markers = ["slow: timing tests on city-sized inputs"]
