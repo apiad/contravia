@@ -1,0 +1,26 @@
+[project]
+name = "havana-driver"
+version = "0.1.0"
+description = "An open-world driving game in a procedural, real-size Havana, built on manifoldx."
+requires-python = ">=3.13"
+dependencies = ["numpy", "manifold-gfx"]
+
+[project.scripts]
+havana = "havana.cli:main"
+
+[dependency-groups]
+prepare = ["osmium", "shapely"]
+dev = ["pytest", "ruff", "pillow", "osmium", "shapely"]
+
+[tool.uv.sources]
+manifold-gfx = { git = "https://github.com/gia-uh/manifoldx", branch = "main" }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["havana"]
+
+[tool.ruff]
+line-length = 110

@@ -1,0 +1,21 @@
+import os
+
+import pytest
+
+from havana.citydata import CityData
+from havana.prepare import build_city, read_osm
+
+
+@pytest.fixture(scope="session")
+def city_npz(tmp_path_factory):
+    """The mini.osm fixture prepared into an npz; HAVANA_DATA points at it for cells.build."""
+    path = tmp_path_factory.mktemp("data") / "havana.npz"
+    city, _ = build_city(read_osm("tests/fixtures/mini.osm"))
+    city.save(path)
+    os.environ["HAVANA_DATA"] = str(path)
+    return path
+
+
+@pytest.fixture(scope="session")
+def city(city_npz):
+    return CityData.load(city_npz)
