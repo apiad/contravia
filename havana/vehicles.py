@@ -17,9 +17,9 @@ POOL = {"car": 800, "taxi": 400, "moto": 400, "bus": 60, "truck": 200}
 SLOT = 10_000  # a slot's number is kind · SLOT + its index in the pool
 PARAMS = {
     "car": {},
-    "taxi": dict(length=5.0, width=1.95, height=1.5, wheelbase=3.0, front_overhang=0.95),
-    "moto": dict(length=2.0, width=0.75, height=1.2, wheelbase=1.35, front_overhang=0.35, wheel_radius=0.3,
-                 track=0.1),
+    "taxi": {"length": 5.0, "width": 1.95, "height": 1.5, "wheelbase": 3.0, "front_overhang": 0.95},
+    "moto": {"length": 2.0, "width": 0.75, "height": 1.2, "wheelbase": 1.35, "front_overhang": 0.35, "wheel_radius": 0.3,
+                 "track": 0.1},
 }
 PAINT = {"car": "#8a2b22", "taxi": "#2f5d8c", "bus": "#c9a227", "moto": "#303236", "truck": "#d6d3c8"}
 INSIDE = {"interior", "carpet", "dash", "seat", "liner"}  # pieces never seen from the street
