@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from havana.citydata import CityData
-from havana.geo import cell_of, to_local
+from havana.geo import HAVANA_BOX, cell_of, to_local
 
 # Road width in metres by OSM highway class; anything not listed is not drivable and is dropped.
 WIDTHS = {
@@ -22,7 +22,6 @@ WIDTHS = {
 for _k in ("motorway", "trunk", "primary", "secondary", "tertiary"):
     WIDTHS[f"{_k}_link"] = WIDTHS[_k]
 
-HAVANA_BOX = (22.90, -82.60, 23.25, -82.00)  # (south, west, north, east) degrees around the province
 MAX_SEGMENT = 50.0  # metres; longer segments are split so each piece lands in the cell it crosses
 MAX_BLOCK = 30_000.0  # m², 3 ha: bigger faces of the road network are not city blocks
 TREE_EVERY = 150.0  # m² of green area per scattered tree

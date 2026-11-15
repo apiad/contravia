@@ -9,8 +9,8 @@ dependencies = ["numpy", "manifold-gfx"]
 havana = "havana.cli:main"
 
 [dependency-groups]
-prepare = ["osmium", "shapely"]
-dev = ["pytest", "ruff", "pillow", "osmium", "shapely"]
+prepare = ["osmium", "shapely", "tifffile", "imagecodecs"]
+dev = ["pytest", "ruff", "pillow", "osmium", "shapely", "tifffile", "imagecodecs"]
 
 [tool.uv.sources]
 manifold-gfx = { git = "https://github.com/gia-uh/manifoldx", branch = "main" }
