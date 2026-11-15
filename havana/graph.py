@@ -21,6 +21,7 @@ CLASSES = ("motorway", "trunk", "primary", "secondary", "tertiary", "unclassifie
 DEFAULT_KMH = {"primary": 50, "secondary": 50, "service": 25}
 TURN_WEIGHT = {"motorway": 3, "trunk": 3, "primary": 3, "secondary": 2, "tertiary": 2}
 CONTROL_CODE = {"signal": 1, "stop": 2, "give_way": 3}
+SAMPLE = 10.0  # metres: edge polylines are sampled at least this often, so heights along them follow the road
 BUILT_RADIUS = 100.0  # metres around an edge's midpoint whose building footprints count as its built area
 
 
@@ -66,6 +67,15 @@ def _vfree(highway: str, tags: dict) -> float:
     """Free speed in m/s: the maxspeed tag, else 50 km/h on primary and secondary, 25 on service, 40 elsewhere."""
     kmh = _number(tags.get("maxspeed")) or DEFAULT_KMH.get(_base_class(highway), 40)
     return kmh / 3.6
+
+
+def _densify(line: np.ndarray) -> np.ndarray:
+    """The polyline with extra points so no piece is longer than SAMPLE metres."""
+    out = [line[:1]]
+    for a, b in itertools.pairwise(line):
+        n = max(1, int(np.ceil(np.hypot(*(b - a)) / SAMPLE)))
+        out.append(a + (b - a) * (np.arange(1, n + 1) / n)[:, None])
+    return np.concatenate(out)
 
 
 def _ring_area(ring: np.ndarray) -> float:
@@ -122,7 +132,7 @@ def build_graph(ways, controls, restrictions, municipios, rings, to_local, width
         for a, b in itertools.pairwise(cut):
             if refs[a] == refs[b] and b - a < 2:
                 continue
-            line = xz[a:b + 1]
+            line = _densify(xz[a:b + 1])
             ja, jb = junction(refs[a], xz[a]), junction(refs[b], xz[b])
             if fwd:
                 rows.append((ja, jb, line, hw, tags, widths[hw], fwd and back, way_id, piece, refs[b]))
@@ -293,4 +303,19 @@ class Graph:
         ux, uz = d[:, 0] / seg, d[:, 1] / seg
         off = np.asarray(offset, float)
         return p[:, 0] - uz * off, p[:, 1] + ux * off, np.arctan2(uz, ux)
+
+    def heights(self, edges, s) -> np.ndarray:
+        """The road's height at distance s along each edge, from g_poly_y (roads are level across, so it holds
+        across the whole width); zeros for data prepared without it."""
+        if "g_poly_y" not in self.a:
+            return np.zeros(len(np.atleast_1d(edges)))
+        edges = np.asarray(edges, np.int64)
+        starts = self.a["g_poly_start"]
+        lo, hi = starts[edges], starts[edges + 1] - 2
+        target = self._cum[lo] + np.clip(np.asarray(s, float), 0, self.a["g_len"][edges])
+        k = np.clip(np.searchsorted(self._cum, target, side="right") - 1, lo, hi)
+        seg = np.maximum(self._cum[k + 1] - self._cum[k], 1e-9)
+        f = np.clip((target - self._cum[k]) / seg, 0, 1)
+        y = self.a["g_poly_y"].astype(np.float64)
+        return y[k] + (y[k + 1] - y[k]) * f
 

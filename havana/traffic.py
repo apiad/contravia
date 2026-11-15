@@ -266,6 +266,10 @@ class Cars:
         """Each car's centre (x, y, z) in metres, its heading and its pitch (positive nose up)."""
         L = self.length
         x, z, heading = self.g.points(self.edge, self.s - L / 2, self.offsets())
+        if "g_poly_y" in self.g.a:  # the prepared road profile: cheap, and exact on level-across roads
+            y = self.g.heights(self.edge, self.s - L / 2)
+            pitch = np.arctan2(self.g.heights(self.edge, self.s) - self.g.heights(self.edge, self.s - L), L)
+            return np.stack([x, y, z], axis=1), heading, pitch
         if surface is None:
             return np.stack([x, np.zeros_like(x), z], axis=1), heading, np.zeros_like(x)
         y = surface.height(x, z)

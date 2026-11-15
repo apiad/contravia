@@ -227,6 +227,11 @@ def build_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict
                                   trees, terrain)
     graph = build_graph(raw.ways, raw.controls, raw.restrictions, raw.municipios, rings,
                         lambda lat, lon: to_local(lat, lon), WIDTHS, inside)
+    if graph:  # the road's height at every graph point, so traffic need not ask the surface each frame
+        from havana.surface import Surface
+
+        poly = graph["g_poly"].astype(float)
+        graph["g_poly_y"] = Surface(city, city.terrain).height(poly[:, 0], poly[:, 1]).astype(np.float32)
     city.a.update(graph)
     road_cells = {tuple(c) for c in cell_of((roads[:, 0:2] + roads[:, 2:4]) / 2).tolist()}
     built_cells = {tuple(c) for c in cell_of(cents).tolist()}

@@ -96,3 +96,12 @@ def test_old_data_has_an_empty_graph(city):
     old = CityData({k: v for k, v in city.a.items() if not k.startswith("g_")})
     assert len(old.graph) == 0
     assert len(Graph.from_arrays({})) == 0
+
+
+def test_edges_are_sampled_every_10_m_with_road_heights(g):
+    a = g.a
+    seg = np.hypot(*np.diff(a["g_poly"], axis=0).T)
+    inside = np.ones(len(seg), bool)
+    inside[a["g_poly_start"][1:-1] - 1] = False  # the step from one edge to the next is not a segment
+    assert seg[inside].max() <= 10.0 + 1e-3
+    assert len(a["g_poly_y"]) == len(a["g_poly"])

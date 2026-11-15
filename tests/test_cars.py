@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from graphs import four_way, straight
 
 from havana.traffic import S0, Cars
@@ -97,3 +98,14 @@ def test_a_junction_keeps_up_with_steady_arrivals():
         cars.remove(np.isin(cars.edge, approaches, invert=True) & (cars.s > 100))  # gone down an exit
     waiting = int(np.isin(cars.edge, approaches).sum())
     assert waiting <= 12, f"{waiting} of {added} still on the approaches"
+
+
+def test_cars_take_height_and_pitch_from_the_edge_profile():
+    g = straight(length=400.0)
+    a = g.a
+    a["g_poly_y"] = (a["g_poly"][:, 0] * 0.1).astype(np.float32)  # rises 1 m every 10 m going east
+    cars = Cars(g, seed=1)
+    cars.add([0], [100.0], [0.0], [KIND])
+    xyz, heading, pitch = cars.world()
+    assert xyz[0, 1] == pytest.approx((100.0 - 4.5 / 2) * 0.1, abs=1e-3)
+    assert pitch[0] == pytest.approx(np.arctan(0.1), abs=1e-3)
