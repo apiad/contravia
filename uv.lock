@@ -312,7 +312,7 @@ wheels = [
 [[package]]
 name = "manifold-gfx"
 version = "0.10.0"
-source = { git = "https://github.com/gia-uh/manifoldx?branch=quad-streamer#65cbfd05dae7f97b6c3f278dcd024dff166c2ca3" }
+source = { git = "https://github.com/gia-uh/manifoldx?branch=quad-streamer#c707a71194eb10caad5a60986f943f41b2693da4" }
 dependencies = [
     { name = "numpy" },
     { name = "rendercanvas" },

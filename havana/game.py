@@ -62,7 +62,8 @@ class Game:
         self.stars_shown = 0
         engine.camera.far = FAR
         self.streamer = QuadStreamer(engine, CELL, city.tree.origin, LEVELS, city.exists, build_node,
-                                     error=lambda L: CELL * 2**L / 16, workers="process")
+                                     error=lambda L: CELL * 2**L / 16, workers="process",
+                                     builders=max(1, min(3, (os.cpu_count() or 2) - 1)))
         engine.state.teleport = {"to": None, "error": None}
         if self.walls.landmarks.mesh is not None:  # drawn once, not streamed: they are few and seen from afar
             from manifoldx.components import Material, Mesh, Transform
