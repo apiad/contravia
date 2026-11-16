@@ -59,11 +59,12 @@ def _tagged(tags, pairs) -> bool:
     return any(tags.get(k) == v for k, v in pairs)
 
 
-def read_osm(path, boundary: str = "La Habana", box=HAVANA_BOX) -> Raw:
+def read_osm(path, boundary: str = "La Habana", box=HAVANA_BOX, keep_ways: bool = True) -> Raw:
     """Read the features the rules need from an OSM file (.pbf or .osm).
 
     Anything with no point inside `box` is dropped while reading, so a country-wide extract never sits in
-    memory as Python objects; build_city then clips to the province's real outline.
+    memory as Python objects; build_city then clips to the province's real outline. With keep_ways False
+    the traffic graph's inputs (ways, controls, restrictions) are not kept, which the island's tiles skip.
     """
     import osmium
 
@@ -77,7 +78,7 @@ def read_osm(path, boundary: str = "La Habana", box=HAVANA_BOX) -> Raw:
         def node(self, n):
             if n.tags.get("natural") == "tree" and near([(n.location.lat, n.location.lon)]):
                 raw.trees.append((n.location.lat, n.location.lon))
-            kind = CONTROLS.get(n.tags.get("highway"))
+            kind = CONTROLS.get(n.tags.get("highway")) if keep_ways else None
             if kind and near([(n.location.lat, n.location.lon)]):
                 raw.controls[n.id] = kind
 
@@ -89,8 +90,9 @@ def read_osm(path, boundary: str = "La Habana", box=HAVANA_BOX) -> Raw:
                 pts = [(nd.lat, nd.lon) for nd in valid]
                 if len(pts) >= 2 and near(pts):
                     raw.roads.append((hw, pts))
-                    raw.ways.append((w.id, hw, [nd.ref for nd in valid], pts,
-                                     {k: tags.get(k) for k in ROAD_TAGS if k in tags}))
+                    if keep_ways:
+                        raw.ways.append((w.id, hw, [nd.ref for nd in valid], pts,
+                                         {k: tags.get(k) for k in ROAD_TAGS if k in tags}))
             if "building" in tags and w.is_closed():
                 pts = [(nd.lat, nd.lon) for nd in w.nodes if nd.location.valid()]
                 if near(pts):
@@ -115,7 +117,7 @@ def read_osm(path, boundary: str = "La Habana", box=HAVANA_BOX) -> Raw:
                 raw.municipios.extend((tags["name"], r) for r in rings)
 
         def relation(self, r):
-            if r.tags.get("type") != "restriction" or "restriction" not in r.tags:
+            if not keep_ways or r.tags.get("type") != "restriction" or "restriction" not in r.tags:
                 return
             got = {}
             for m in r.members:
@@ -147,6 +149,21 @@ def _split(line: np.ndarray, width: float) -> np.ndarray:
 def _block_seed(c) -> int:
     """A block's seed from its centroid rounded to the metre, so the same block gets the same boxes."""
     return round(c.x) * 1_000_003 + round(c.y)
+
+
+def choose_fillers(blocks, cents: np.ndarray, no_build: list, nb_tree) -> tuple[list, list]:
+    """The blocks that get filler boxes, as rings, and their seeds: no building centroid and no green inside."""
+    import shapely
+
+    fillers, seeds = [], []
+    for b in blocks:
+        if len(cents) and shapely.contains_xy(b, cents[:, 0], cents[:, 1]).any():
+            continue
+        if any(b.intersection(no_build[k]).area > 1.0 for k in nb_tree.query(b)):
+            continue
+        fillers.append(np.asarray(b.exterior.coords)[:-1])
+        seeds.append(_block_seed(b.centroid))
+    return fillers, seeds
 
 
 def build_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]:
@@ -196,15 +213,7 @@ def build_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict
     blocks = [b for b in blocks if province is None or province.contains(b.representative_point())]
     no_build = [Polygon(_local(r)) for r in raw.not_built if len(r) >= 4]
     no_build = [p if p.is_valid else p.buffer(0) for p in no_build]
-    nb_tree = shapely.STRtree(no_build)
-    fillers, seeds = [], []
-    for b in blocks:
-        if len(cents) and shapely.contains_xy(b, cents[:, 0], cents[:, 1]).any():
-            continue
-        if any(b.intersection(no_build[k]).area > 1.0 for k in nb_tree.query(b)):
-            continue
-        fillers.append(np.asarray(b.exterior.coords)[:-1])
-        seeds.append(_block_seed(b.centroid))
+    fillers, seeds = choose_fillers(blocks, cents, no_build, shapely.STRtree(no_build))
 
     # Trees: tagged points, plus one per TREE_EVERY m² of green, seeded by the area's id.
     trees = [_local(raw.trees)] if raw.trees else []
