@@ -67,13 +67,13 @@ def test_each_tree_is_the_same_tree_moved_to_its_point():
 def tilted():
     """h = 0.1 x + 0.05 z over a large area, on a 10 m grid."""
     r, c = np.mgrid[0:200, 0:200]
-    return Terrain(0.1 * (-1000 + 10.0 * c) + 0.05 * (-1000 + 10.0 * r), (-1000, -1000), (10, 10))
+    return Terrain(0.1 * (-1000 + 10.0 * c) + 0.05 * (-1000 + 10.0 * r), (-1000, -1000), (10, 10), fade=0)
 
 
 def cross():
     """Ground rising 0.15 m per metre southward (+z): a hillside under a road that runs east."""
     r, _ = np.mgrid[0:200, 0:200]
-    return Terrain(0.15 * (-1000 + 10.0 * r), (-1000, -1000), (10, 10))
+    return Terrain(0.15 * (-1000 + 10.0 * r), (-1000, -1000), (10, 10), fade=0)
 
 
 def road_vertices(md):

@@ -19,3 +19,11 @@ def city_npz(tmp_path_factory):
 @pytest.fixture(scope="session")
 def city(city_npz):
     return CityData.load(city_npz)
+
+
+@pytest.fixture(scope="session")
+def island_dir(tmp_path_factory, city):
+    """The island's tiles of tests/test_world.py, for the game tests."""
+    from tests.test_world import island
+
+    return island.__wrapped__(tmp_path_factory, city)

@@ -9,6 +9,11 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
 - `havana prepare ... --dem DIR` adds the ground's heights from the Copernicus GLO-30 tiles
   `Copernicus_DSM_COG_10_N22_00_W083_00_DEM` and `..._N23_00_W083_00_DEM`, each fetched with `curl -L` from
   `https://copernicus-dem-30m.s3.amazonaws.com/<name>/<name>.tif`. Without it the city is flat.
+- `havana tiles <cuba-latest.osm.pbf> --out data/cuba` writes the whole island as quadtree tiles (`havana/tiles.py`):
+  one CityData per leaf and a summary per coarser node, flat and with no traffic outside Havana.
+- `havana play --tiles data/cuba` drives anywhere on the island (`manifoldx emit teleport lat=20.02 lon=-75.83`);
+  `havana bench --tiles data/cuba` adds the scenes of `bench/cuba.json` after the Havana route: a teleport to
+  Santiago, a hill view over Havana and a 300 m flight toward Santa Clara, each with frame times, nodes and triangles.
 - `havana prepare` also builds the road graph traffic drives on (g_* arrays); data from before layer 2 plays with no traffic.
 - Traffic runs on the machine's local clock. `havana play --traffic my.json` changes demand settings
   (`havana/rules/traffic.py`, only the keys the file names); `--time "Sun 08:00"` and `--warp 60` pin and speed up

@@ -70,7 +70,12 @@ def test_counts_of_owned_edges_reach_the_flow(graph):
     runner.tick()
     owned = np.flatnonzero(layer.owned)
     counts = np.bincount(layer.cars.edge, minlength=len(flow.n))[owned]
-    assert np.allclose(flow.n[owned], counts + layer.carry[owned] + layer.waiting[owned] + flow.arrived[owned])
+    transit = np.zeros(len(flow.n))  # arrivals the flow handed over that the layer has not read yet
+    for kind, edges, k in (m[:3] for m in layer.inbox):
+        if kind == "arrive":
+            np.add.at(transit, edges, k)
+    assert np.allclose(flow.n[owned], counts + layer.carry[owned] + layer.waiting[owned] + flow.arrived[owned]
+                       + transit[owned])
 
 
 def test_a_car_leaving_the_circle_returns_to_the_flow(graph):

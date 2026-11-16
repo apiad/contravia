@@ -4,7 +4,9 @@ Every point of the sky is a camera-facing sprite on a dome centred on the camera
 buildings hide what is behind them. The stars are fixed in the equatorial frame: one 3x3 rotation from the
 local sidereal time turns the whole catalogue (havana.sky.equatorial_to_local). That costs milliseconds for
 88 000 sprites, so it happens only at night, and only after 10 s of game time or 2 m of travel; the planets
-and the moon, seven sprites, follow the camera every frame.
+and the moon, seven sprites, follow the camera every frame. The catalogue's sprites exist only while stars
+show: they are spawned when the night starts and destroyed when it ends, because the engine pays for every
+entity on every frame, seen or not.
 
 The sprites are drawn opaque and unlit, without fog. Their colour is the sky's colour plus their own light,
 which looks the same as adding light over the sky as long as the sky behind them is one colour, as the
@@ -21,9 +23,9 @@ import numpy as np
 from havana import sky
 from havana.climate import SKY_DATA
 
-DOME = 660.0  # metres from the camera: well inside the far plane (750), which clips by depth, and past the fog
-MW_DOME = 675.0  # the Milky Way sits behind the stars
-NEAR_DOME = 650.0  # planets and the moon in front of the stars
+DOME = 13_200.0  # metres from the camera: inside the far plane (15 km), which clips by depth, and past the fog
+MW_DOME = 13_500.0  # the Milky Way sits behind the stars
+NEAR_DOME = 13_000.0  # planets and the moon in front of the stars
 MOON_DEG = 0.26  # the moon's angular radius
 PX_DEG = 0.085  # about one pixel at 720 lines and the game's field of view
 KIND_MW, KIND_MOON, KIND_MOON_DARK = 16, 17, 18
@@ -192,14 +194,24 @@ class NightSky:
         self._last = None  # (time, eye) of the last turn of the catalogue
         self._planets_at, self._planets = None, {}
         self.stars_shown = 0
-        engine.spawn(PointCloud(), Material(self.material), Transform(pos=np.zeros((nf, 3), np.float32)),
-                     ScalarValue(value=np.zeros(nf, np.float32)), Radius(radius=np.zeros(nf, np.float32)),
-                     SkyPoint(k=np.arange(nf, dtype=float)), n=nf)
+        self._live = False  # the catalogue's sprites are spawned
+
+        def spawn_catalogue():
+            n = len(self.v)
+            engine.spawn(PointCloud(), Material(self.material), Transform(pos=np.zeros((n, 3), np.float32)),
+                         ScalarValue(value=np.zeros(n, np.float32)), Radius(radius=np.zeros(n, np.float32)),
+                         SkyPoint(k=np.arange(n, dtype=float)), n=n)
+
+        self._spawn_catalogue = spawn_catalogue
         engine.spawn(PointCloud(), Material(self.material), Transform(pos=np.zeros((7, 3), np.float32)),
                      ScalarValue(value=np.zeros(7, np.float32)), Radius(radius=np.zeros(7, np.float32)),
                      SkyMover(k=np.arange(7, dtype=float)), n=7)
 
         def place_fixed(q: mx.Query[Transform, ScalarValue, Radius, SkyPoint], dt: float):
+            if not self._live:  # the night ended: the sprites go at this frame's flush
+                if len(q):
+                    engine.destroy(np.fromiter(q, np.int64, len(q)))
+                return
             if not self._fixed_dirty:
                 return
             self._fixed_dirty = False
@@ -232,9 +244,13 @@ class NightSky:
         showing = look.night > 0.0
         moved = np.inf if self._last is None else float(np.linalg.norm(eye - self._last[1]))
         stale = moved > 2.0 or abs((when - self._last[0]).total_seconds()) > 10.0
-        # At night the catalogue turns at most every 10 s of game time or 2 m of travel. By day it is hidden but
-        # must still keep its distance: sprites left behind a long drive would cover the camera.
-        if (showing and stale) or moved > 300.0:
+        if showing and not self._live:
+            self._spawn_catalogue()
+            self._live, self._fixed_dirty = True, True
+        elif not showing:
+            self._live = False
+        # At night the catalogue turns at most every 10 s of game time or 2 m of travel.
+        if showing and stale:
             rot = sky.equatorial_to_local(when)
             self.pos[:] = eye + (self.v @ rot.T) * self.domes[:, None]
             self._last, self._fixed_dirty = (when, eye.copy()), True
@@ -254,7 +270,7 @@ class NightSky:
         away /= max(np.linalg.norm(away), 1e-9)
         r = NEAR_DOME * np.radians(MOON_DEG)
         self.moving_pos[5] = eye + md * NEAR_DOME
-        self.moving_pos[6] = eye + md * (NEAR_DOME - 1.0) + away * (2.0 * r * moon.lit)
+        self.moving_pos[6] = eye + md * (NEAR_DOME - 20.0) + away * (2.0 * r * moon.lit)
         self.moving_values[5], self.moving_values[6] = pack(KIND_MOON, 0.0), pack(KIND_MOON_DARK, 0.0)
         self.moving_radii[5] = r
         self.moving_radii[6] = r * 1.02 if moon.lit < 0.97 else 0.0

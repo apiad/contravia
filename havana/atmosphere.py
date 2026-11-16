@@ -18,7 +18,7 @@ from havana.weather import Now, SkyConfig
 
 SHADOW_EXTENT = 150.0  # half the side of the square around the player that casts shadows, in metres
 SHADOW_RES = 2048
-FOG_CLEAR = (350.0, 650.0)
+FOG_CLEAR = (2000.0, 12000.0)
 FOG_STORM = (90.0, 220.0)
 
 # Palette of ambient environments: (zenith, horizon, ground) as sRGB colours, as a painter picks them; the

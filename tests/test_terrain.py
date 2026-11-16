@@ -9,7 +9,7 @@ def plane(rows=40, cols=50):
     """h = 0.1 x + 0.05 z on a 10 m grid starting at (-100, -50)."""
     r, c = np.mgrid[0:rows, 0:cols]
     x, z = -100 + 10.0 * c, -50 + 10.0 * r
-    return Terrain(0.1 * x + 0.05 * z, (-100, -50), (10, 10))
+    return Terrain(0.1 * x + 0.05 * z, (-100, -50), (10, 10), fade=0)
 
 
 def test_height_is_exact_on_a_tilted_plane():
@@ -62,3 +62,13 @@ def test_a_box_edge_on_a_whole_degree_needs_no_tile_beyond_it(tmp_path):
     tifffile.imwrite(tmp_path / _tile_name(23, -83), np.ones((36, 36), np.float32), predictor=3, compression="deflate")
     t = read_tiles(tmp_path, box=(23.5, -82.5, 24.0, -82.0))     # north and east edges on whole degrees
     assert t.heights.shape == (19, 18) and float(t.heights.max()) == 1.0
+
+
+def test_relief_fades_to_flat_at_the_edge():
+    r, c = np.mgrid[0:101, 0:101]  # 10 km a side on a 100 m grid
+    bump = 100.0 * np.exp(-(((c - 50) ** 2 + (r - 50) ** 2) / 200.0)) + 100.0 * (c < 20)
+    t = Terrain(bump, (0, 0), (100, 100))
+    assert abs(t.height(5000.0, 5000.0) - 100.0) < 1e-3  # the middle is untouched
+    assert t.height(0.0, 5000.0) == 0 and t.height(-5000.0, 5000.0) == 0  # edge and outside are flat
+    x = np.arange(-500.0, 1900.0, 50.0)  # across the west edge, where the ground is 100 m high
+    assert np.abs(np.diff(t.height(x, np.full_like(x, 5000.0)))).max() < 15.0  # no cliff

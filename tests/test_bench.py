@@ -30,3 +30,20 @@ def test_road_path_follows_connected_segments(city):
 def test_road_path_refuses_stops_with_no_road_between(city):
     with pytest.raises(ValueError):
         road_path(city, [(0.0, 0.0), (-80.0, -100.0)])   # the grid and the separate primary road
+
+
+def test_scene_file_and_flight_path():
+    import json
+
+    from havana.bench import SCENES, flight_path
+    from havana.geo import to_local
+
+    scenes = json.loads(SCENES.read_text())
+    assert {"santiago", "hill", "flight"} <= set(scenes)
+    f = scenes["flight"]
+    path = flight_path(f)
+    step = np.hypot(*np.diff(path, axis=0).T)
+    assert np.allclose(step, f["speed"]) and len(path) == f["seconds"] + 1
+    toward = to_local(*f["toward"]) - path[0]
+    heading = path[-1] - path[0]
+    assert np.dot(toward, heading) / (np.hypot(*toward) * np.hypot(*heading)) > 0.9999  # straight at Santa Clara

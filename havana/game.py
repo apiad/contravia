@@ -1,10 +1,14 @@
 """havana play: the city streamed around a sedan you drive, with traffic.
 
-The engine draws; manifoldx's Streamer asks a worker process for the cells around the car; each frame the
-car reads the keys, moves against the walls near it, and the camera follows. Traffic runs in two layers: the
-flow layer counts vehicles on every street in a thread, on the machine's clock, and the car layer drives the
-cars within 400 m. engine.state shows what an agent needs to check the game without a person at the keyboard;
-the "teleport" event moves the car, "traffic_config" changes the demand settings and "close" closes a street.
+The engine draws; manifoldx's QuadStreamer asks a worker process for the quadtree nodes the camera needs,
+single cells near it and coarse summaries out to the 15 km far plane; each frame the car reads the keys, moves
+against the walls near it, and the camera follows. The engine's origin moves to the camera whenever the camera
+is over 2 km from it, so the whole island draws as precisely as the Capitolio. Systems that write positions
+straight into the engine (the night sky, the traffic cars, the rain, the shadows, the camera) are handed
+positions relative to that origin. Traffic runs in two layers: the flow layer counts vehicles on every street
+in a thread, on the machine's clock, and the car layer drives the cars within 400 m. engine.state shows what
+an agent needs to check the game without a person at the keyboard; the "teleport" event moves the car (x, z or
+lat, lon), "traffic_config" changes the demand settings and "close" closes a street.
 """
 
 import math
@@ -15,28 +19,33 @@ import numpy as np
 
 from havana.camera import chase
 from havana.car import CarState, Controls, settle, step
-from havana.citydata import CityData
-from havana.geo import CELL
+from havana.geo import CELL, to_local
+from havana.quadtree import LEVELS
 from havana.surface import Surface
 from havana.walls import Walls
+from havana.world import World
 
-RADIUS, READY_RADIUS = 3, 4
-FAR = 750.0  # the camera's far plane: past the clear-weather fog's end
+FAR = 15000.0  # the camera's far plane: past the clear-weather fog's end
+RECENTRE = 2000.0  # metres from the engine's origin before it moves to the camera
+BASE = 40_000.0  # side of the plain ground under everything, so empty cells show ground, not sky
+BASE_Y = -1.0  # below every streamed ground, which always wins over it
 
 
 class Game:
     """One drive: the engine, the streamed city, the car and the camera."""
 
-    def __init__(self, engine, city: CityData, at: tuple[float, float] = (0.0, 0.0), traffic=None, clock=None,
+    def __init__(self, engine, city: World, at: tuple[float, float] = (0.0, 0.0), traffic=None, clock=None,
                  sky=None):
         from manifoldx.modeling.assets.car import CarParams, build_car, spawn_car
-        from manifoldx.streaming import Streamer
+        from manifoldx.streaming import QuadStreamer
 
         from havana.atmosphere import Atmosphere
-        from havana.cells import build
+        from havana.cells import build_node
         from havana.clock import Clock
         from havana.weather import SkyConfig, Weather
 
+        if not isinstance(city, World):  # Havana's data alone
+            city = World(city)
         self.engine, self.city, self.walls, self.terrain = engine, city, Walls(city), city.terrain
         self.surface = Surface(city, self.terrain)  # what the wheels stand on: roads level across
         self.clock = clock or Clock()
@@ -52,8 +61,10 @@ class Game:
         self._dt = 0.0
         self.stars_shown = 0
         engine.camera.far = FAR
-        self.streamer = Streamer(engine, cell=CELL, build=build, radius=RADIUS, ready_radius=READY_RADIUS,
-                                 workers="process")
+        self.streamer = QuadStreamer(engine, CELL, city.tree.origin, LEVELS, city.exists, build_node,
+                                     error=lambda L: CELL * 2**L / 16, workers="process", tau=12.0,
+                                     builders=max(1, min(3, (os.cpu_count() or 2) - 1)))
+        engine.state.teleport = {"to": None, "error": None}
         if self.walls.landmarks.mesh is not None:  # drawn once, not streamed: they are few and seen from afar
             from manifoldx.components import Material, Mesh, Transform
             from manifoldx.resources import StandardMaterial
@@ -63,6 +74,8 @@ class Game:
                                "indices": m.indices}),
                          Material(StandardMaterial("#ffffff", roughness=0.9, vertex_colors=True)),
                          Transform(pos=(0, 0, 0)))
+        self.o = np.zeros(3)  # the engine's origin as (x, 0, z)
+        self.base = self._spawn_base()
         self.model = build_car(CarParams())
         self.handles = spawn_car(engine, self.model)
         self.teleport(*at)
@@ -70,11 +83,12 @@ class Game:
         self._last = time.perf_counter()
         self._rng = np.random.default_rng()
         self.autopilot = None  # bench.py sets a function (car) -> Controls
+        self.camera_override = None  # bench.py sets a function () -> (eye, target) in world metres
 
         self._start_traffic(traffic)
         self.sky_ms, self._sky_state_at = 0.0, 0.0
         engine.system(self._frame)
-        engine.on("teleport")(lambda p: self.teleport(float(p["x"]), float(p["z"])))
+        engine.on("teleport")(self._teleport_event)
         engine.on("traffic_config")(self.configure_traffic)
         engine.on("close")(self.close_street)
         engine.on("sky_config")(self.configure_sky)
@@ -159,17 +173,59 @@ class Game:
         return Controls(throttle=float(k("ArrowUp") or k("w")), brake=float(k("ArrowDown") or k("s")),
                         steer=float(steer), handbrake=k("Space"))
 
+    def _spawn_base(self):
+        """One plain square of ground, BASE metres a side, that follows the camera below everything streamed."""
+        from manifoldx.components import Material, Mesh, Transform
+        from manifoldx.resources import StandardMaterial
+
+        from havana.mesh import MeshBuilder
+        from havana.rules.ground import GROUND
+
+        h = BASE / 2
+        mb = MeshBuilder()
+        mb.add([(-h, 0, -h), (h, 0, -h), (h, 0, h), (-h, 0, h)], [(0, 1, 0)] * 4, GROUND, [(0, 1, 2), (0, 2, 3)])
+        m = mb.to_meshdata(0.0, 0.0)
+        return self.engine.spawn(Mesh({"positions": m.positions, "normals": m.normals, "colors": m.colors,
+                                       "indices": m.indices}),
+                                 Material(StandardMaterial("#ffffff", roughness=0.95, vertex_colors=True)),
+                                 Transform(pos=(0.0, BASE_Y, 0.0)))
+
+    def _teleport_event(self, p: dict) -> None:
+        if "lat" in p:
+            x, z = to_local(float(p["lat"]), float(p["lon"]))
+        else:
+            x, z = float(p["x"]), float(p["z"])
+        self.teleport(float(x), float(z))
+
     def teleport(self, x: float, z: float) -> None:
-        """Put the car on the road nearest (x, z), stopped."""
-        x, z, yaw = self.walls.nearest_road(x, z)
+        """Put the car on the road nearest (x, z), stopped; with no road within 5 km it stays and state says why."""
+        found = self.walls.nearest_road(x, z)
+        if found is None:
+            self.engine.state.teleport = {"to": [x, z], "error": "no road within 5 km"}
+            return
+        x, z, yaw = found
         self.car = settle(CarState(x, z, yaw, 0.0), self.surface)
         self.eye = np.array([x, self.car.y + 3.0, z])
+        self.engine.state.teleport = {"to": [x, z], "error": None}
+        self._recentre()
+
+    def _recentre(self) -> np.ndarray:
+        """Move the engine's origin to the camera (behind the car while driving) when it has gone RECENTRE
+        metres; returns the origin as (x, 0, z)."""
+        ox, oz = self.engine.origin
+        x, z = float(self.eye[0]), float(self.eye[2])
+        if math.hypot(x - ox, z - oz) > RECENTRE:
+            self.engine.set_origin(x, z)
+            ox, oz = self.engine.origin
+        return np.array([ox, 0.0, oz])
 
     def waiting(self) -> int:
-        """Cells inside the drawn radius that are not drawn yet."""
-        i, j = math.floor(self.car.x / CELL), math.floor(self.car.z / CELL)
-        ring = {(i + a, j + b) for a in range(-RADIUS, RADIUS + 1) for b in range(-RADIUS, RADIUS + 1)}
-        return len(ring - self.streamer.drawn())
+        """Cells within one cell of the car that hold something and are not drawn yet."""
+        o = self.city.tree.origin
+        i, j = math.floor(self.car.x / CELL) - o[0], math.floor(self.car.z / CELL) - o[1]
+        near = [(0, i + a, j + b) for a in (-1, 0, 1) for b in (-1, 0, 1)]
+        drawn = self.streamer.drawn()
+        return sum(1 for n in near if self.city.exists(*n) and n not in drawn)
 
     def _frame(self, query, dt):
         from manifoldx.modeling.assets.car import place_car
@@ -196,9 +252,15 @@ class Game:
         # manifoldx turns +x toward -z for a positive yaw; the game turns it toward +z.
         place_car(self.handles, self.model, at=(self.car.x, self.car.y, self.car.z), yaw=-self.car.yaw,
                   pitch=self.car.pitch, roll=self.car.roll)
-        self.eye, target = chase(self.eye, self.car, min(dt, 0.05), self.terrain)
-        self.engine.camera.set_pose(position=tuple(self.eye), target=tuple(target))
-        self.streamer.focus(self.car.x, self.car.z)
+        if self.camera_override:
+            eye, target = self.camera_override()
+            self.eye, target = np.asarray(eye, float), np.asarray(target, float)
+        else:
+            self.eye, target = chase(self.eye, self.car, min(dt, 0.05), self.terrain)
+        self.o = self._recentre()
+        self.base.transform.pos = (float(self.eye[0]), BASE_Y, float(self.eye[2]))
+        self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
+        self.streamer.focus(self.eye[0], self.eye[2], height=max(float(self.eye[1]), 1.0))
         t_sky = time.perf_counter()
         self._sky()
         self.sky_ms = (time.perf_counter() - t_sky) * 1000
@@ -209,7 +271,8 @@ class Game:
         st.y = round(self.car.y, 1)
         st.grade = round(math.tan(self.car.pitch) * 100, 1)  # percent, positive uphill
         st.frame_ms = round(self.frame_ms, 2)
-        st.cells_built = self.streamer.stats()["built"]
+        st.tiles = self.streamer.stats()
+        st.cells_built = st.tiles["built"]
         st.cells_waiting = self.waiting()
 
     def _sky(self) -> None:
@@ -220,9 +283,10 @@ class Game:
         when = self.clock.now()
         sun, moon, now = sky.sun(when), sky.moon(when), self.weather.at(when)
         self.look = look(sun, moon, now, self.weather.config)
-        self.atmosphere.apply(self.look, self.eye)
-        self.stars_shown = self.nightsky.update(when, self.eye, self.look, moon, sun)
-        self.rain.update(self._dt, self.eye, now.rain, tuple(1.4 * v for v in self.look.horizon))
+        eye = self.eye - self.o  # these write render-frame positions
+        self.atmosphere.apply(self.look, eye)
+        self.stars_shown = self.nightsky.update(when, eye, self.look, moon, sun)
+        self.rain.update(self._dt, eye, now.rain, tuple(1.4 * v for v in self.look.horizon))
         t = time.perf_counter()
         if t - self._sky_state_at > 0.5:
             self._sky_state_at = t
@@ -246,7 +310,7 @@ class Game:
         self.layer.update(x, z, dt, obstacles)
         cars = self.layer.cars
         xyz, head, pitch = cars.world(self.surface)
-        self.fleet.draw(xyz, head, pitch, cars.kind)
+        self.fleet.draw(xyz - self.o, head, pitch, cars.kind)
         # A contact: the player stopped against a traffic car this frame.
         if len(cars) and abs(before.speed) * 3.6 > 25 and abs(self.car.speed) < abs(before.speed) * 0.5:
             d = np.hypot(xyz[:, 0] - x, xyz[:, 2] - z)
@@ -273,7 +337,8 @@ class Game:
 
 
 def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, size=(1280, 720),
-         traffic: str | None = None, when: str | None = None, warp: float = 1.0, sky: str | None = None) -> None:
+         traffic: str | None = None, when: str | None = None, warp: float = 1.0, sky: str | None = None,
+         tiles: str | None = None) -> None:
     """Open a window and drive, or with `shot`, render offscreen until the city is drawn and save a PNG.
 
     traffic: a JSON file of demand settings. when ("Sun 08:00") and warp pin and speed up the clock, for tests
@@ -286,9 +351,11 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     from havana.weather import load_sky_config
 
     os.environ["HAVANA_DATA"] = os.path.abspath(data)
+    if tiles:
+        os.environ["HAVANA_TILES"] = os.path.abspath(tiles)
     engine = mx.Engine("havana-driver", width=size[0], height=size[1])
     clock = Clock(at=parse_at(when), warp=warp) if when or warp != 1.0 else Clock()
-    game = Game(engine, CityData.load(data), at=at, traffic=load_config(traffic) if traffic else None,
+    game = Game(engine, World.load(data, tiles), at=at, traffic=load_config(traffic) if traffic else None,
                 clock=clock, sky=load_sky_config(sky) if sky else None)
     if not shot:
         engine.run()

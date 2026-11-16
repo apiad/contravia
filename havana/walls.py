@@ -46,8 +46,10 @@ class Walls:
     def _at(self, k: int) -> tuple[float, float, float]:
         return float(self._mid[k, 0]), float(self._mid[k, 1]), float(self._yaw[k])
 
-    def nearest_road(self, x: float, z: float) -> tuple[float, float, float]:
-        """The middle of the road segment closest to (x, z), and the yaw along it."""
+    def nearest_road(self, x: float, z: float) -> tuple[float, float, float] | None:
+        """The middle of the road segment closest to (x, z) and the yaw along it; None past 5 km of any road."""
+        if hasattr(self.city, "nearest_road"):
+            return self.city.nearest_road(x, z)
         return self._at(int(np.argmin(np.hypot(self._mid[:, 0] - x, self._mid[:, 1] - z))))
 
     def random_road(self, rng: np.random.Generator) -> tuple[float, float, float]:
