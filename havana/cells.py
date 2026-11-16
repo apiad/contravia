@@ -1,33 +1,35 @@
-"""build(i, j): the mesh of one streamed cell, made from the city data by the rules.
+"""build_node(L, a, b): the mesh of one streamed quadtree node; build(i, j): the mesh of one cell.
 
-manifoldx's Streamer calls build in a worker process for each cell that comes near the car. The city data
-is loaded once per process, from the file named by HAVANA_DATA, and every rule adds its parts to one
+manifoldx's QuadStreamer calls build_node in a worker process for each node it picks. A level-0 node is
+one cell, built in full by the rules; a coarser node is its summary's boxes, ground and roads
+(havana/summary.py). The world is loaded once per process from the files named by HAVANA_DATA and,
+for the rest of the island, HAVANA_TILES, and every rule adds its parts to one
 MeshBuilder, so a cell is one mesh and one draw call. Buildings, filler and trees a landmark replaces or
 clears are left out; the landmarks themselves are drawn once by the game, not per cell.
 """
 
 import os
 
-from havana.citydata import CityData
 from havana.geo import CELL
 from havana.landmarks import Landmarks
 from havana.mesh import MeshBuilder
 from havana.rules import buildings, ground, roads, trees
 from havana.terrain import seat
+from havana.world import World
 
 SKIPPED_ROOFS = 0  # footprints drawn as walls only in this process, because their roof could not be cut
 
-_city: CityData | None = None
-_city_path: str | None = None
+_city: World | None = None
+_city_path: tuple | None = None
 _landmarks: Landmarks | None = None
 
 
-def city() -> CityData:
-    """The city data of this process, loaded on first use from HAVANA_DATA."""
+def city() -> World:
+    """The world of this process, loaded on first use from HAVANA_DATA and HAVANA_TILES (if set)."""
     global _city, _city_path, _landmarks
-    path = os.environ.get("HAVANA_DATA", "data/havana.npz")
+    path = (os.environ.get("HAVANA_DATA", "data/havana.npz"), os.environ.get("HAVANA_TILES") or None)
     if _city is None or path != _city_path:
-        _city, _city_path = CityData.load(path), path
+        _city, _city_path = World.load(*path), path
         _landmarks = Landmarks(_city)
     return _city
 
@@ -54,3 +56,14 @@ def build(i: int, j: int):
         buildings.filler(mb, block, int(seed), terrain)
     trees.trees(mb, c.trees, terrain.height(c.trees[:, 0], c.trees[:, 1]))
     return mb.to_meshdata(x0, z0)
+
+
+def build_node(L: int, a: int, b: int):
+    """The MeshData of quadtree node (L, a, b), relative to its corner: a full cell at level 0, else its summary."""
+    from havana.summary import summary_mesh
+
+    w = city()
+    i, j = w.tree.origin[0] + (a << L), w.tree.origin[1] + (b << L)
+    if L == 0:
+        return build(i, j)
+    return summary_mesh(w.summary(L, a, b), L, a, b, w.tree.origin, w.terrain)

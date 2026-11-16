@@ -236,7 +236,7 @@ prepare = [
 
 [package.metadata]
 requires-dist = [
-    { name = "manifold-gfx", git = "https://github.com/gia-uh/manifoldx?branch=main" },
+    { name = "manifold-gfx", git = "https://github.com/gia-uh/manifoldx?branch=quad-streamer" },
     { name = "numpy" },
 ]
 
@@ -312,7 +312,7 @@ wheels = [
 [[package]]
 name = "manifold-gfx"
 version = "0.10.0"
-source = { git = "https://github.com/gia-uh/manifoldx?branch=main#9fa62615aeba0c24ece4f22771ee0d063a688723" }
+source = { git = "https://github.com/gia-uh/manifoldx?branch=quad-streamer#65cbfd05dae7f97b6c3f278dcd024dff166c2ca3" }
 dependencies = [
     { name = "numpy" },
     { name = "rendercanvas" },

@@ -19,7 +19,6 @@ from pathlib import Path
 import numpy as np
 
 from havana.car import CarState, Controls
-from havana.citydata import CityData
 from havana.geo import to_local
 
 LOOK_AHEAD = 12.0  # metres
@@ -51,7 +50,7 @@ def _key(x, z):
     return round(float(x), 1), round(float(z), 1)
 
 
-def road_path(city: CityData, stops: list[tuple[float, float]]) -> np.ndarray:
+def road_path(city, stops: list[tuple[float, float]]) -> np.ndarray:
     """The shortest path on the road network through each stop in turn, as (N, 2) points."""
     graph: dict = {}
     for ax, az, bx, bz, _ in city.a["roads"]:
@@ -95,15 +94,19 @@ def _machine(engine) -> dict:
             "gpu_memory_mb": None}  # manifoldx does not report GPU memory yet
 
 
-def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: str = "Tue 08:00") -> dict:
+def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: str = "Tue 08:00",
+         tiles: str | None = None) -> dict:
     """Drive the route offscreen with traffic at `when` and append the run's numbers to the history."""
     import manifoldx as mx
 
     from havana.clock import Clock, parse_at
     from havana.game import Game
+    from havana.world import World
 
     os.environ["HAVANA_DATA"] = os.path.abspath(data)
-    city = CityData.load(data)
+    if tiles:
+        os.environ["HAVANA_TILES"] = os.path.abspath(tiles)
+    city = World.load(data, tiles)
     engine = mx.Engine("havana-bench", width=size[0], height=size[1])
     game = Game(engine, city, clock=Clock(at=parse_at(when)))
     game.atmosphere.prepare(wait=True)

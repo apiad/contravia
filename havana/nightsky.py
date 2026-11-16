@@ -21,9 +21,9 @@ import numpy as np
 from havana import sky
 from havana.climate import SKY_DATA
 
-DOME = 660.0  # metres from the camera: well inside the far plane (750), which clips by depth, and past the fog
-MW_DOME = 675.0  # the Milky Way sits behind the stars
-NEAR_DOME = 650.0  # planets and the moon in front of the stars
+DOME = 13_200.0  # metres from the camera: inside the far plane (15 km), which clips by depth, and past the fog
+MW_DOME = 13_500.0  # the Milky Way sits behind the stars
+NEAR_DOME = 13_000.0  # planets and the moon in front of the stars
 MOON_DEG = 0.26  # the moon's angular radius
 PX_DEG = 0.085  # about one pixel at 720 lines and the game's field of view
 KIND_MW, KIND_MOON, KIND_MOON_DARK = 16, 17, 18
@@ -254,7 +254,7 @@ class NightSky:
         away /= max(np.linalg.norm(away), 1e-9)
         r = NEAR_DOME * np.radians(MOON_DEG)
         self.moving_pos[5] = eye + md * NEAR_DOME
-        self.moving_pos[6] = eye + md * (NEAR_DOME - 1.0) + away * (2.0 * r * moon.lit)
+        self.moving_pos[6] = eye + md * (NEAR_DOME - 20.0) + away * (2.0 * r * moon.lit)
         self.moving_values[5], self.moving_values[6] = pack(KIND_MOON, 0.0), pack(KIND_MOON_DARK, 0.0)
         self.moving_radii[5] = r
         self.moving_radii[6] = r * 1.02 if moon.lit < 0.97 else 0.0

@@ -24,6 +24,7 @@ def main(argv: list[str] | None = None) -> None:
 
     p = sub.add_parser("play", help="drive the city")
     p.add_argument("--data", default="data/havana.npz")
+    p.add_argument("--tiles", help="folder of the island's tiles (havana tiles); without it, Havana alone")
     p.add_argument("--at", type=_xz, default=(0.0, 0.0), help="start point as X,Z in local metres")
     p.add_argument("--shot", help="render offscreen, save this PNG and exit")
     p.add_argument("--frames", type=int, default=120, help="frames to run before --shot is saved")
@@ -33,6 +34,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--warp", type=float, default=1.0, help="run the clock this many times faster; for tests")
 
     p = sub.add_parser("bench", help="drive the fixed route and record frame times")
+    p.add_argument("--tiles", help="folder of the island's tiles; adds the island's scenes to the run")
     p.add_argument("--data", default="data/havana.npz")
     p.add_argument("--time", default="Tue 08:00", help='traffic time for the run, as "Tue 08:00"')
 
@@ -75,7 +77,7 @@ def main(argv: list[str] | None = None) -> None:
         from havana.game import main as play
 
         play(args.data, at=args.at, shot=args.shot, frames=args.frames, traffic=args.traffic, when=args.time,
-             warp=args.warp, sky=args.sky)
+             warp=args.warp, sky=args.sky, tiles=args.tiles)
     elif args.command == "climate":
         import os
 
@@ -99,7 +101,7 @@ def main(argv: list[str] | None = None) -> None:
     else:
         from havana.bench import main as bench
 
-        bench(args.data, when=args.time)
+        bench(args.data, when=args.time, tiles=args.tiles)
 
 
 if __name__ == "__main__":
