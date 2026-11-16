@@ -33,3 +33,27 @@ def test_the_milky_way_is_behind_the_stars_and_half_below_the_horizon():
     assert domes[mw].min() > domes[~mw].max()
     up = (v[mw] @ sky.equatorial_to_local(when).T)[:, 1] > 0
     assert 0.2 < up.mean() < 0.9
+
+
+def test_the_catalogue_exists_only_while_stars_show():
+    from types import SimpleNamespace
+
+    import manifoldx as mx
+
+    from havana.nightsky import NightSky
+
+    engine = mx.Engine("night-test", width=64, height=48)
+    when = datetime(2026, 11, 15, 23, 0)
+    ns = NightSky(engine, when)
+    moon, sun = sky.Body(alt=-20.0, az=90.0, ra=0.0, dec=0.0), sky.Body(alt=-40.0, az=270.0, ra=0.0, dec=0.0)
+
+    def frame(night):
+        ns.update(when, (0.0, 2.0, 0.0), SimpleNamespace(night=night, star_limit=6.0), moon, sun)
+        engine.render_frame(supersample=1)
+        return len(engine.store.get_component_view(["PointCloud"]))
+
+    assert frame(0.0) == 7  # by day: the planets and the moon only
+    assert frame(1.0) == len(ns.v) + 7  # night: the catalogue too
+    frame(0.0)  # dawn: destroyed at this frame's flush
+    assert frame(0.0) == 7
+    assert frame(1.0) == len(ns.v) + 7  # and back the next night
