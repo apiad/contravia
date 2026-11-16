@@ -24,6 +24,7 @@ from havana.geo import to_local
 LOOK_AHEAD = 12.0  # metres
 CRUISE = 15.0  # m/s
 HISTORY = Path("bench/history.jsonl")
+SCENES = Path("bench/cuba.json")
 
 
 def autopilot(s: CarState, path: np.ndarray, i: int) -> tuple[Controls, int]:
@@ -86,6 +87,73 @@ def road_path(city, stops: list[tuple[float, float]]) -> np.ndarray:
     return np.array(out, float)
 
 
+def flight_path(scene: dict, dt: float = 1.0) -> np.ndarray:
+    """The flight's camera points (x, z), one every dt seconds, from its start toward its target at its speed."""
+    a = to_local(*scene["from"])
+    b = to_local(*scene["toward"])
+    d = (b - a) / np.hypot(*(b - a))
+    t = np.arange(0.0, scene["seconds"] + dt / 2, dt)
+    return a + d * (scene["speed"] * t)[:, None]
+
+
+def _scene_numbers(game, frame_ms: list[float]) -> dict:
+    """Frame times of a scene, and the nodes and triangles drawn at its end."""
+    st = game.streamer.stats()
+    tris = sum(len(c.geo["indices"]) // 3 for n, c in game.streamer._ready.items()
+               if c is not None and n in game.streamer.drawn())
+    f = np.asarray(frame_ms or [0.0], float)
+    return {"p50_ms": round(float(np.percentile(f, 50)), 2), "p95_ms": round(float(np.percentile(f, 95)), 2),
+            "max_ms": round(float(f.max()), 2), "frames": len(frame_ms), "nodes_by_level": st["by_level"],
+            "triangles": int(tris)}
+
+
+def island_scenes(engine, game, scenes: dict) -> dict:
+    """Run the island's scenes (bench/cuba.json) and return their numbers by name."""
+    still = Controls(throttle=0.0, brake=1.0, steer=0.0, handbrake=True)
+    game.autopilot = lambda car: still
+    out = {}
+
+    def run(seconds, until=None):
+        ms, t0 = [], time.monotonic()
+        while time.monotonic() - t0 < seconds and not (until and until()):
+            engine.render_frame(supersample=1)
+            ms.append(game.frame_ms)
+        return ms, time.monotonic() - t0
+
+    sc = scenes["santiago"]
+    game.camera_override = None
+    game.teleport(*to_local(*sc["at"]))
+    _, arrive = run(300, until=lambda: game.waiting() == 0)
+    ms, _ = run(sc["still_seconds"])
+    out["santiago"] = {"seconds_to_drawn": round(arrive, 1), **_scene_numbers(game, ms)}
+
+    sc = scenes["hill"]
+    x, z = to_local(*sc["at"])
+    game.teleport(x, z)
+    y = float(game.terrain.height(x, z)) + sc["up"]
+    game.camera_override = lambda: ((x, y, z), (x + 1000.0, y - 60.0, z))
+    ms, _ = run(sc["seconds"])
+    out["hill"] = _scene_numbers(game, ms)
+
+    sc = scenes["flight"]
+    path = flight_path(sc)
+    game.teleport(*path[0])
+    t0 = time.monotonic()
+
+    def fly():
+        t = min(time.monotonic() - t0, sc["seconds"])
+        k = min(int(t), len(path) - 2)
+        p = path[k] + (path[k + 1] - path[k]) * (t - k)
+        ahead = p + (path[-1] - path[0]) / np.hypot(*(path[-1] - path[0])) * 600.0
+        return (p[0], sc["up"], p[1]), (ahead[0], sc["up"] - 80.0, ahead[1])
+
+    game.camera_override = fly
+    ms, _ = run(sc["seconds"])
+    out["flight"] = _scene_numbers(game, ms)
+    game.camera_override = None
+    return out
+
+
 def _machine(engine) -> dict:
     info = dict(getattr(getattr(engine, "_adapter", None), "info", None) or {})
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], check=False, capture_output=True,
@@ -139,8 +207,10 @@ def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: st
             elif not game.waiting() and wait_start is not None:
                 waits.append(now - wait_start)
                 wait_start = None
-    game.streamer.close()
     result = {**summary(frame_ms[5:] or frame_ms, waits), "frames": len(frame_ms), **_machine(engine)}
+    if tiles:
+        result["cuba"] = island_scenes(engine, game, json.loads(SCENES.read_text()))
+    game.streamer.close()
     if game.layer:
         game.runner.stop()
         result["traffic"] = {"time": when, "flow_step_ms": round(game.runner.step_ms, 1),

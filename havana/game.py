@@ -79,6 +79,7 @@ class Game:
         self._last = time.perf_counter()
         self._rng = np.random.default_rng()
         self.autopilot = None  # bench.py sets a function (car) -> Controls
+        self.camera_override = None  # bench.py sets a function () -> (eye, target) in world metres
 
         self._start_traffic(traffic)
         self.sky_ms, self._sky_state_at = 0.0, 0.0
@@ -188,10 +189,12 @@ class Game:
         self._recentre()
 
     def _recentre(self) -> np.ndarray:
-        """Move the engine's origin to the car when it has gone RECENTRE metres; returns the origin as (x, 0, z)."""
+        """Move the engine's origin to the camera (behind the car while driving) when it has gone RECENTRE
+        metres; returns the origin as (x, 0, z)."""
         ox, oz = self.engine.origin
-        if math.hypot(self.car.x - ox, self.car.z - oz) > RECENTRE:
-            self.engine.set_origin(self.car.x, self.car.z)
+        x, z = float(self.eye[0]), float(self.eye[2])
+        if math.hypot(x - ox, z - oz) > RECENTRE:
+            self.engine.set_origin(x, z)
             ox, oz = self.engine.origin
         return np.array([ox, 0.0, oz])
 
@@ -228,7 +231,11 @@ class Game:
         # manifoldx turns +x toward -z for a positive yaw; the game turns it toward +z.
         place_car(self.handles, self.model, at=(self.car.x, self.car.y, self.car.z), yaw=-self.car.yaw,
                   pitch=self.car.pitch, roll=self.car.roll)
-        self.eye, target = chase(self.eye, self.car, min(dt, 0.05), self.terrain)
+        if self.camera_override:
+            eye, target = self.camera_override()
+            self.eye, target = np.asarray(eye, float), np.asarray(target, float)
+        else:
+            self.eye, target = chase(self.eye, self.car, min(dt, 0.05), self.terrain)
         self.o = self._recentre()
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
         self.streamer.focus(self.eye[0], self.eye[2], height=max(float(self.eye[1]), 1.0))
