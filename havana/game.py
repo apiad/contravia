@@ -1,14 +1,14 @@
 """havana play: the city streamed around a sedan you drive, with traffic.
 
 The engine draws; manifoldx's QuadStreamer asks a worker process for the quadtree nodes the camera needs,
-single cells near it and coarse summaries out to the 15 km far plane; each frame the car reads the keys,
-moves against the walls near it, and the camera follows. The engine's origin moves to the car whenever the
-car is over 2 km from it, so the whole island draws as precisely as the Capitolio. Systems that write
-positions straight into the engine (the night sky, the traffic cars, the rain, the shadows, the camera)
-are handed positions relative to that origin. Traffic runs in two layers: the
-flow layer counts vehicles on every street in a thread, on the machine's clock, and the car layer drives the
-cars within 400 m. engine.state shows what an agent needs to check the game without a person at the keyboard;
-the "teleport" event moves the car (x, z or lat, lon), "traffic_config" changes the demand settings and "close" closes a street.
+single cells near it and coarse summaries out to the 15 km far plane; each frame the car reads the keys, moves
+against the walls near it, and the camera follows. The engine's origin moves to the camera whenever the camera
+is over 2 km from it, so the whole island draws as precisely as the Capitolio. Systems that write positions
+straight into the engine (the night sky, the traffic cars, the rain, the shadows, the camera) are handed
+positions relative to that origin. Traffic runs in two layers: the flow layer counts vehicles on every street
+in a thread, on the machine's clock, and the car layer drives the cars within 400 m. engine.state shows what
+an agent needs to check the game without a person at the keyboard; the "teleport" event moves the car (x, z or
+lat, lon), "traffic_config" changes the demand settings and "close" closes a street.
 """
 
 import math
@@ -26,7 +26,7 @@ from havana.walls import Walls
 from havana.world import World
 
 FAR = 15000.0  # the camera's far plane: past the clear-weather fog's end
-RECENTRE = 2000.0  # metres from the engine's origin before it moves to the car
+RECENTRE = 2000.0  # metres from the engine's origin before it moves to the camera
 
 
 class Game:
