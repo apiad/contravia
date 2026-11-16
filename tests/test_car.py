@@ -88,11 +88,14 @@ def test_the_camera_stays_above_the_ground_on_a_downhill():
 
 
 def test_teleport_puts_the_car_on_the_ground(city):
+    from types import SimpleNamespace
+
     from havana.game import Game
     from havana.surface import Surface
     from havana.walls import Walls
 
     g = Game.__new__(Game)
+    g.engine = SimpleNamespace(state=SimpleNamespace(), origin=(0.0, 0.0), set_origin=lambda x, z: None)
     g.walls, g.terrain = Walls(city), _ramp(0.1)
     g.surface = Surface(city, g.terrain)
     g.teleport(100.0, 50.0)
