@@ -27,6 +27,8 @@ from havana.world import World
 
 FAR = 15000.0  # the camera's far plane: past the clear-weather fog's end
 RECENTRE = 2000.0  # metres from the engine's origin before it moves to the camera
+BASE = 40_000.0  # side of the plain ground under everything, so empty cells show ground, not sky
+BASE_Y = -1.0  # below every streamed ground, which always wins over it
 
 
 class Game:
@@ -72,6 +74,7 @@ class Game:
                          Material(StandardMaterial("#ffffff", roughness=0.9, vertex_colors=True)),
                          Transform(pos=(0, 0, 0)))
         self.o = np.zeros(3)  # the engine's origin as (x, 0, z)
+        self.base = self._spawn_base()
         self.model = build_car(CarParams())
         self.handles = spawn_car(engine, self.model)
         self.teleport(*at)
@@ -169,6 +172,23 @@ class Game:
         return Controls(throttle=float(k("ArrowUp") or k("w")), brake=float(k("ArrowDown") or k("s")),
                         steer=float(steer), handbrake=k("Space"))
 
+    def _spawn_base(self):
+        """One plain square of ground, BASE metres a side, that follows the camera below everything streamed."""
+        from manifoldx.components import Material, Mesh, Transform
+        from manifoldx.resources import StandardMaterial
+
+        from havana.mesh import MeshBuilder
+        from havana.rules.ground import GROUND
+
+        h = BASE / 2
+        mb = MeshBuilder()
+        mb.add([(-h, 0, -h), (h, 0, -h), (h, 0, h), (-h, 0, h)], [(0, 1, 0)] * 4, GROUND, [(0, 1, 2), (0, 2, 3)])
+        m = mb.to_meshdata(0.0, 0.0)
+        return self.engine.spawn(Mesh({"positions": m.positions, "normals": m.normals, "colors": m.colors,
+                                       "indices": m.indices}),
+                                 Material(StandardMaterial("#ffffff", roughness=0.95, vertex_colors=True)),
+                                 Transform(pos=(0.0, BASE_Y, 0.0)))
+
     def _teleport_event(self, p: dict) -> None:
         if "lat" in p:
             x, z = to_local(float(p["lat"]), float(p["lon"]))
@@ -237,6 +257,7 @@ class Game:
         else:
             self.eye, target = chase(self.eye, self.car, min(dt, 0.05), self.terrain)
         self.o = self._recentre()
+        self.base.transform.pos = (float(self.eye[0]), BASE_Y, float(self.eye[2]))
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
         self.streamer.focus(self.eye[0], self.eye[2], height=max(float(self.eye[1]), 1.0))
         t_sky = time.perf_counter()
