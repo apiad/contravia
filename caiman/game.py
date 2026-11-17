@@ -23,6 +23,7 @@ import numpy as np
 from caiman.camera import chase
 from caiman.car import CarState, Controls, settle, step
 from caiman.geo import CELL, to_local
+from caiman.input import Driver
 from caiman.kept import kept, source
 from caiman.quadtree import LEVELS
 from caiman.surface import Surface
@@ -90,6 +91,7 @@ class Game:
         self._last = time.perf_counter()
         self._rng = np.random.default_rng()
         self.autopilot = None  # bench.py sets a function (car) -> Controls
+        self.driver = Driver()
         self.camera_override = None  # bench.py sets a function () -> (eye, target) in world metres
 
         self._start_traffic(traffic)
@@ -187,12 +189,11 @@ class Game:
             edge = int(near[np.argmin(np.hypot(mid[:, 0] - float(p["x"]), mid[:, 1] - float(p["z"])))])
         self.layer.accident(edge, float(p.get("minutes", 40)))
 
-    def controls(self) -> Controls:
-        """The keys as controls: arrows or WASD, Space for the handbrake."""
+    def controls(self, dt: float) -> Controls:
+        """The keys as controls, ramped by the driver: arrows or WASD, Space for the handbrake."""
         k = self.engine.input.is_pressed
-        steer = (k("ArrowRight") or k("d")) - (k("ArrowLeft") or k("a"))
-        return Controls(throttle=float(k("ArrowUp") or k("w")), brake=float(k("ArrowDown") or k("s")),
-                        steer=float(steer), handbrake=k("Space"))
+        return self.driver.update(k("ArrowLeft") or k("a"), k("ArrowRight") or k("d"), k("ArrowUp") or k("w"),
+                                  k("ArrowDown") or k("s"), k("Space"), dt)
 
     def _spawn_base(self):
         """One plain square of ground, BASE metres a side, that follows the camera below everything streamed."""
@@ -284,7 +285,7 @@ class Game:
         if inp.just_pressed("t"):
             x, z, _ = self.walls.random_road(self._rng)
             self.teleport(x, z)
-        c = self.autopilot(self.car) if self.autopilot else self.controls()
+        c = self.autopilot(self.car) if self.autopilot else self.controls(self._dt)
         walls = self.walls.near(self.car.x, self.car.z)
         if self.layer:
             walls = np.concatenate([walls.reshape(-1, 2, 2), self.layer.boxes_near(self.car.x, self.car.z)])
@@ -400,8 +401,8 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
          tiles: str | None = None, pipelined: bool = True) -> None:
     """Open a window and drive, or with `shot`, render offscreen until the city is drawn and save a PNG.
 
-    traffic: a JSON file of demand settings. when ("Sun 08:00") and warp pin and speed up the clock, for tests
-    and the dev channel; play without them runs on the machine's clock. pipelined runs the systems of the next
+    traffic: a JSON file of demand settings. when ("Sun 08:00", "17:30") pins the clock, 10:00 today by default,
+    and "now" runs it on the machine's clock; warp speeds it up, for tests and the dev channel. pipelined runs the systems of the next
     frame while the window draws this one; --no-pipeline is the serial path, for comparing the two.
     """
     import manifoldx as mx
@@ -414,7 +415,7 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     if tiles:
         os.environ["HAVANA_TILES"] = os.path.abspath(tiles)
     engine = mx.Engine("caiman", width=size[0], height=size[1], pipelined=pipelined)
-    clock = Clock(at=parse_at(when), warp=warp) if when or warp != 1.0 else Clock()
+    clock = Clock(warp=warp) if when == "now" else Clock(at=parse_at(when or "10:00"), warp=warp)
     game = Game(engine, World.load(data, tiles), at=at, traffic=load_config(traffic) if traffic else None,
                 clock=clock, sky=load_sky_config(sky) if sky else None)
     if not shot:

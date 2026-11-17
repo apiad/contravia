@@ -20,8 +20,11 @@ DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
 
 def parse_at(text: str) -> datetime:
-    """'2026-09-12 17:30' as that moment, or 'Sun 08:00' as that weekday and time in the current week
-    (Monday first)."""
+    """'2026-09-12 17:30' as that moment, 'Sun 08:00' as that weekday and time in the current week
+    (Monday first), or '10:00' as that time today."""
+    if " " not in text.strip():
+        hour, minute = (int(v) for v in text.split(":"))
+        return datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
     day, hm = text.strip().split()
     if "-" in day:
         return datetime.fromisoformat(f"{day} {hm}")
