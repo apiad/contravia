@@ -26,6 +26,7 @@ from shapely.ops import polygonize, unary_union
 
 from contravia.buildingtags import MUNI
 from contravia.geo import CELL
+from contravia.streets import pmap
 
 KERB = 0.15  # metres a pavement stands over the street
 APRON = 1.5  # the width of the platform around a building outside the dense blocks
@@ -55,6 +56,14 @@ def zone_of(muni: str | None) -> int:
     return 0 if muni in CENTRE else 1 if muni in VEDADO else 2
 
 
+def _chunked(fn, *arrays, size=2048) -> np.ndarray:
+    """fn over aligned slices of arrays on the thread pool, the results concatenated in order."""
+    n = len(arrays[0])
+    if n <= size:
+        return fn(*arrays)
+    return np.concatenate(pmap(lambda i: fn(*(x[i:i + size] for x in arrays)), range(0, n, size), chunk=1))
+
+
 def _ground_streets(a, terrain) -> dict:
     """Each cell's street triangles that lie on the ground (not bridges or tunnels), (T, 3, 3)."""
     tris, off, cells = a["street_tris"], a["street_tris_offsets"], a["cells"]
@@ -82,8 +91,11 @@ class StreetHeights:
 
     def _raster(self, i: int, j: int) -> np.ndarray:
         key = (i, j)
-        if key in self._rasters:
-            return self._rasters[key]
+        if key not in self._rasters:
+            self._rasters[key] = self._paint(i, j)
+        return self._rasters[key]
+
+    def _paint(self, i: int, j: int) -> np.ndarray:
         n = round((CELL + 2 * MARGIN) / GRID)
         r = np.full((n, n), -np.inf)
         parts = [self.streets[(i + a, j + b)] for a in (-1, 0, 1) for b in (-1, 0, 1) if (i + a, j + b) in self.streets]
@@ -101,7 +113,6 @@ class StreetHeights:
                 g = np.pad(r, 1, constant_values=-np.inf)
                 nb = np.max([g[1 + dz:1 + dz + n, 1 + dx:1 + dx + n] for dz in (-1, 0, 1) for dx in (-1, 0, 1)], axis=0)
                 r = np.where(np.isfinite(r), r, nb)
-        self._rasters[key] = r
         return r
 
     def top(self, xz: np.ndarray, lift) -> np.ndarray:
@@ -113,7 +124,10 @@ class StreetHeights:
         order = np.argsort(key, kind="stable")
         bounds = np.flatnonzero(np.diff(key[order])) + 1
         n = round((CELL + 2 * MARGIN) / GRID)
-        for group in np.split(order, bounds):
+        groups = np.split(order, bounds)
+        new = list({(int(cell[g[0], 0]), int(cell[g[0], 1])) for g in groups if len(g)} - self._rasters.keys())
+        self._rasters.update(zip(new, pmap(lambda c: self._paint(*c), new, chunk=8)))
+        for group in groups:
             if not len(group):
                 continue
             i, j = cell[group[0]]
@@ -133,7 +147,7 @@ def _pieces(geoms: np.ndarray, land: np.ndarray, boxes: np.ndarray):
     """Every geometry cut by the land of each cell it touches: (pieces, the geometry's index, the cell's index),
     polygons only."""
     gi, ci = shapely.STRtree(boxes).query(geoms)
-    cut = shapely.intersection(geoms[gi], land[ci])
+    cut = _chunked(shapely.intersection, geoms[gi], land[ci])
     parts, k = shapely.get_parts(cut, return_index=True)
     keep = (shapely.get_type_id(parts) == 3) & (shapely.area(parts) > 0.05)
     return parts[keep], gi[k[keep]], ci[k[keep]]
@@ -213,10 +227,10 @@ def build(a, terrain) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
     heights = StreetHeights(streets, terrain)
     cells = np.asarray(a["cells"], np.int64).reshape(-1, 2)
     boxes = _cell_boxes(cells)
-    street = np.array([shapely.union_all(shapely.polygons(streets[c][:, :, [0, 2]])) if c in streets else None
-                       for c in map(tuple, cells.tolist())], dtype=object)
+    street = np.array(pmap(lambda c: shapely.union_all(shapely.polygons(streets[c][:, :, [0, 2]])) if c in streets
+                           else None, list(map(tuple, cells.tolist())), chunk=16), dtype=object)
     street = np.where(shapely.is_missing(street), shapely.Polygon(), street)
-    land = shapely.simplify(shapely.difference(boxes, street), SIMPLIFY)
+    land = _chunked(lambda b, s: shapely.simplify(shapely.difference(b, s), SIMPLIFY), boxes, street, size=256)
 
     rings = _rings(a)
     starts = np.asarray(a["building_starts"])
@@ -272,8 +286,9 @@ def build(a, terrain) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
         pad[reach] = shapely.union(pad[reach], shapely.buffer(line[reach], PATH / 2, cap_style="flat"))
         fi, fc = shapely.STRtree(boxes).query(feet)
         built_cell = np.array([None] * len(cells), dtype=object)
-        for c in np.unique(fc):
-            built_cell[c] = shapely.union_all(feet[fi[fc == c]])
+        order = np.argsort(fc, kind="stable")
+        uc, first = np.unique(fc[order], return_index=True)
+        built_cell[uc] = pmap(lambda g: shapely.union_all(feet[fi[g]]), np.split(order, first[1:]), chunk=16)
         built_cell = np.where(shapely.is_missing(built_cell), shapely.Polygon(), built_cell)
         apron_land = shapely.difference(land, built_cell)
         parts, pi, ci = _pieces(pad, apron_land, boxes)
