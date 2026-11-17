@@ -41,6 +41,7 @@ PAIR_SLACK = 3.0  # metres: carriageways closer than their half widths plus this
 STEP = 2.0  # metres between samples along a rounded corner
 RADIUS = 25.0  # metres: the radius a corner of a street is rounded to, when its runs are long enough
 LANE = 3.3  # metres per lane of a one-way carriageway
+MIN_WIDTH = 7.5  # metres: room for three cars side by side, so every street can be driven
 TAPER = 30.0  # metres over which a street's width eases into the width of the street it continues
 DP = 1.0  # metres: Douglas-Peucker tolerance before rounding corners
 CORNER = 2.0  # metres added to every trim, room for the corner arcs
@@ -182,6 +183,7 @@ def load(a, widths):
         w = widths[cls]
         if oneway:  # a one-way carriageway is as wide as its lanes, not as a whole street of its class
             w = min(w, max(1, int(a["g_lanes"][e])) * LANE + 1.0)
+        w = max(w, MIN_WIDTH)
         edges.append(Edge(F[e], T[e], p, w, cls, oneway))
     return J, edges
 
@@ -530,8 +532,11 @@ def pieces(chains, centre, ends, lens, trim, ew):
             w = (e.w + (w0 - e.w) * ease(sq / (TAPER + 3 * abs(w0 - e.w)))
                  + (w1 - e.w) * ease((L - sq) / (TAPER + 3 * abs(w1 - e.w))))
             left, right = offset(q, w / 2)
-            rib = Polygon(np.vstack([left, right[::-1]]))
-            rib = rib if rib.is_valid else largest(shapely.make_valid(rib))
+            # One piece per segment and a disc at each bend, joined: a single outline offset from a curve folds
+            # over itself on the inside of a tight bend when the street is wide.
+            segs = [LineString(q[i:i + 2]).buffer((w[i] + w[i + 1]) / 4, cap_style="flat") for i in range(len(q) - 1)]
+            bends = [shapely.Point(q[i]).buffer(w[i] / 2, QS) for i in range(1, len(q) - 1)]
+            rib = largest(shapely.union_all(segs + bends))
             h0, h1 = w[0] / 2, w[-1] / 2
         else:
             left, right = offset(q, e.w / 2)

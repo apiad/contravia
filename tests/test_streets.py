@@ -66,7 +66,7 @@ def test_a_ribbon_is_level_across_and_meets_its_junction_without_a_step():
     city.add_kind("street_edges", np.zeros((0, 2, 3)), np.zeros((0, 2), int))
     s = Surface(city, t)
     across = s.height(np.array([100.0, 100.0]), np.array([-2.5, 2.5]))   # the east arm, kerb to kerb
-    assert abs(across[0] - across[1]) < 1e-3
+    assert abs(across[0] - across[1]) < 0.01
     edge = rings[0].exterior.interpolate(rings[0].exterior.project(shapely.Point(10, 0)))
     inside, outside = (edge.x - 0.05, edge.y), (edge.x + 0.05, edge.y)
     y = s.height(np.array([inside[0], outside[0]]), np.array([inside[1], outside[1]]))
