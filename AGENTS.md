@@ -34,7 +34,13 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   (12 % in the old centre) rises 15 cm kerb to kerb; elsewhere each building gets a 1.5 m platform and a path to
   its street. The cells draw them with manifoldx's pavement patterns and the wheels stand on them. `contravia walks`
   rebuilds them in an existing data file in about 4 minutes.
-- `contravia play` starts at the Capitolio at 10:00 today; `--time "Sun 08:00"` or `"17:30"` starts the clock elsewhere,
+- `contravia play` opens on the main menu (`contravia/menu.py`, drawn as `docs/ux/contravia-ux.html` shows): Story and the
+  Cuba map are "próximamente", Free drive sets place, time, day, weather, traffic and clock speed
+  (`contravia/settings.py`), Esc pauses, and the options are kept in the user's config folder
+  (`$CONTRAVIA_CONFIG` in tests). The HUD (`contravia/hud.py`) has the time and weather, the minimap with its N badge,
+  the municipio and the speed with a drawn gearbox. `--screen main|free|options|pause|photo|drive` opens a screen or
+  drives at once; with `--shot` it saves that screen as a PNG (drive by default), and `contravia dev` reloads into the drive.
+  The menu's flags below fill in the free drive's rows. Driving starts at the Capitolio at 10:00 today; `--time "Sun 08:00"` or `"17:30"` starts the clock elsewhere,
   `--time now` runs it on the machine's clock, `--warp 60` speeds it up for tests. The keys ramp the wheel and the
   pedals (`contravia/input.py`). `contravia play --traffic my.json` changes demand settings
   (`contravia/rules/traffic.py`, only the keys the file names). While playing, `manifoldx emit traffic_config population=3000000` changes settings and

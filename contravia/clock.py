@@ -40,12 +40,31 @@ class Clock:
     def __init__(self, at: datetime | None = None, warp: float = 1.0):
         self.at, self.warp = at, warp
         self._t0 = time.monotonic()
+        self.paused = False
 
     def now(self) -> datetime:
+        if self.paused:
+            return self.at
         if self.at is None and self.warp == 1.0:
             return datetime.now()
         start = self.at or datetime.now()
         return start + timedelta(seconds=(time.monotonic() - self._t0) * self.warp)
+
+    def set(self, at: datetime | None, warp: float = 1.0) -> None:
+        """Start again at `at` (None: the machine's clock), running `warp` times faster; keeps a pause."""
+        self.at, self.warp, self._t0 = at, warp, time.monotonic()
+        if self.paused and at is None:
+            self.at = datetime.now()
+
+    def pause(self) -> None:
+        """Stop the time where it is: now() returns the same moment until resume()."""
+        if not self.paused:
+            self.at, self._t0, self.paused = self.now(), time.monotonic(), True
+
+    def resume(self) -> None:
+        """Run on from the moment the clock was paused at."""
+        if self.paused:
+            self._t0, self.paused = time.monotonic(), False
 
 
 class FlowRunner:

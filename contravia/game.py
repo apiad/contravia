@@ -3,7 +3,9 @@
 The engine draws; manifoldx's QuadStreamer asks a worker process for the quadtree nodes the camera needs,
 single cells near it and coarse summaries out to the 15 km far plane; each frame the car reads the keys, moves
 against the walls near it, and the camera follows. The engine's origin moves to the camera whenever the camera
-is over 2 km from it, so the whole island draws as precisely as the Capitolio. Systems that write positions
+is over 2 km from it, so the whole island draws as precisely as the Capitolio. The game is in one of four
+modes (`mode`): "drive", or, under contravia/menu.py's menus, "menu", "paused" and "photo", where the car stands
+and the clock stops. Systems that write positions
 straight into the engine (the night sky, the traffic cars, the rain, the shadows, the camera) are handed
 positions relative to that origin. The frame's last four systems run in one order: the drive moves the car and
 the camera alone, then the streamer, the traffic and the sky run together as one group of parallel systems.
@@ -110,6 +112,11 @@ class Game:
         self.driver = Driver()
         self.hud = Hud(engine)
         self.camera_override = None  # bench.py sets a function () -> (eye, target) in world metres
+        self.mode = "drive"  # or "menu", "paused", "photo": see contravia/menu.py
+        self.photo = None  # the photo mode's camera around the car: (yaw, pitch, distance)
+        self.km, self.area, self._area_at = 0.0, "", 0.0
+        self.weather_state = None
+        self.tau_range, self.rain_on = TAU, True
 
         self._start_traffic(traffic, with_traffic)
         self.sky_ms, self._sky_state_at = 0.0, 0.0
@@ -288,6 +295,66 @@ class Game:
         self.eye = np.array(car["eye"], float)
         self._recentre()
 
+    def start(self, at, when: str, force: str | None = None, traffic: bool = False, warp: float = 1.0) -> None:
+        """Drive from the menu's free drive: the car on the road nearest `at` (None: a random road), the clock
+        at `when` ("tue 17:30") running `warp` times faster, the weather held at `force` or free, the traffic
+        on or off."""
+        from contravia.clock import parse_at
+
+        self.clock.set(parse_at(when), warp)
+        self.clock.paused = False
+        self.configure_sky({"force": force, "force_until": None})  # no force_until: held for good
+        if traffic and not self.layer:
+            self._start_traffic(self.traffic_config, True)
+        elif not traffic and self.layer:
+            self.runner.stop()
+            self.fleet.draw(np.zeros((0, 3)), np.zeros(0), np.zeros(0), np.zeros(0, np.int64))
+            self.layer = None
+            self.engine.state.traffic = {"error": None, "on": False}
+        if at is None:
+            at = self.walls.random_road(self._rng)[:2]
+        self.teleport(*at)
+        self.km, self.area, self.photo = 0.0, "", None
+        self.mode = "drive"
+
+    def pause(self) -> None:
+        """Stop the car, the traffic and the clock where they are."""
+        self.mode = "paused"
+        self.clock.pause()
+
+    def resume(self) -> None:
+        """Drive on from the pause."""
+        self.mode, self.photo = "drive", None
+        self.clock.resume()
+
+    def to_menu(self) -> None:
+        """Stand the car and stop the clock behind the main menu."""
+        self.mode = "menu"
+        self.clock.pause()
+
+    def apply_options(self, options) -> None:
+        """The options screen's choices: view distance, rain on screen, units and minimap."""
+        self.tau_range = options["view"].value
+        self.streamer.tau = min(max(self.streamer.tau, self.tau_range[0]), self.tau_range[1])
+        self.rain_on = options["rain"].value
+        self.hud.configure(options["units"].value, options["minimap"].value)
+
+    def _find_area(self, now: float) -> None:
+        """Twice a second, the municipio of the street nearest the car, from the road graph."""
+        if now - self._area_at < 0.5:
+            return
+        self._area_at = now
+        a = self.city.graph.a
+        if "g_muni" not in a or not len(self.city.graph):
+            return
+        near = self.city.graph.edges_near(self.car.x, self.car.z, 150.0)
+        if not len(near):
+            return
+        mid = a["g_mid"][near]
+        k = int(near[np.argmin(np.hypot(mid[:, 0] - self.car.x, mid[:, 1] - self.car.z))])
+        m = int(a["g_muni"][k])
+        self.area = str(a["g_muni_names"][m]) if 0 <= m < len(a["g_muni_names"]) else ""
+
     def _shutdown(self, _=None) -> None:
         """Stop what the game started itself: the street builders, the wall builder and the traffic thread. A reload under
         contravia dev fires this before it builds the game again from the new code."""
@@ -335,19 +402,22 @@ class Game:
         self.frame_ms, self._last = (now - self._last) * 1000, now
         self._dt = min(dt, 0.05)
         inp = self.engine.input
-        if inp.just_pressed("r"):
-            self.teleport(self.car.x, self.car.z)
-        if inp.just_pressed("F1"):
-            self.hud.toggle_stats()
-        if inp.just_pressed("t"):
-            x, z, _ = self.walls.random_road(self._rng)
-            self.teleport(x, z)
-        c = self.autopilot(self.car) if self.autopilot else self.controls(self._dt)
-        walls = self.walls.near(self.car.x, self.car.z, self.car.y)
-        if self.layer:
-            walls = np.concatenate([walls.reshape(-1, 2, 2), self.layer.boxes_near(self.car.x, self.car.z)])
         self._before = self.car
-        self.car = step(self.car, c, self._dt, walls, self.surface)
+        if self.mode == "drive":
+            if inp.just_pressed("r"):
+                self.teleport(self.car.x, self.car.z)
+            if inp.just_pressed("F1"):
+                self.hud.toggle_stats()
+            if inp.just_pressed("t"):
+                x, z, _ = self.walls.random_road(self._rng)
+                self.teleport(x, z)
+            c = self.autopilot(self.car) if self.autopilot else self.controls(self._dt)
+            walls = self.walls.near(self.car.x, self.car.z, self.car.y)
+            if self.layer:
+                walls = np.concatenate([walls.reshape(-1, 2, 2), self.layer.boxes_near(self.car.x, self.car.z)])
+            self._before = self.car
+            self.car = step(self.car, c, self._dt, walls, self.surface)
+            self.km += math.hypot(self.car.x - self._before.x, self.car.z - self._before.z) / 1000
         # manifoldx turns +x toward -z for a positive yaw; the game turns it toward +z.
         place_car(self.handles, self.model, at=(self.car.x, self.car.y, self.car.z), yaw=-self.car.yaw,
                   pitch=self.car.pitch, roll=self.car.roll)
@@ -358,14 +428,24 @@ class Game:
         if self.camera_override:
             eye, target = self.camera_override()
             self.eye, target = np.asarray(eye, float), np.asarray(target, float)
+        elif self.mode == "photo" and self.photo:
+            yaw, pitch, dist = self.photo
+            target = np.array([self.car.x, self.car.y + 1.0, self.car.z])
+            self.eye = target + dist * np.array([math.cos(pitch) * math.cos(yaw), math.sin(pitch),
+                                                 math.cos(pitch) * math.sin(yaw)])
         else:
             self.eye, target = chase(self.eye, self.car, self._dt, self.surface)
         self.o = self._recentre()
         if not self._sea_still:
             self.base.transform.pos = (float(self.eye[0]), BASE_Y if self._sea else FLAT_BASE_Y, float(self.eye[2]))
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
-        self.hud.update(self.car, self.o)
-        self.hud.show_stats(self._stats_lines())
+        self.hud.show(self.mode == "drive")
+        if self.mode == "drive":
+            self.hud.update(self.car, self.o)
+            self.hud.set_time(self.clock.now(), self.weather_state)
+            self._find_area(now)
+            self.hud.set_area(self.area, self._dt)
+            self.hud.show_stats(self._stats_lines())
         st = self.engine.state
         st.car = {"pose": [self.car.x, self.car.z, self.car.yaw, self.car.speed], "eye": self.eye.tolist()}
         st.pos = [round(self.car.x, 1), round(self.car.z, 1)]
@@ -390,13 +470,13 @@ class Game:
             tau *= 1.2
         elif ms < TARGET_MS * 0.75:
             tau /= 1.1
-        self.streamer.tau = min(max(tau, TAU[0]), TAU[1])
+        self.streamer.tau = min(max(tau, self.tau_range[0]), self.tau_range[1])
 
     def stream(self, query, dt: float) -> None:
         """Point the city's streamer at the camera and publish the cells it holds."""
         self._tune()
         self.streamer.focus(self.eye[0], self.eye[2], height=max(float(self.eye[1]), 1.0))
-        self.detail.radius = 0 if self.streamer.tau >= TAU[1] else 1
+        self.detail.radius = 0 if self.streamer.tau >= self.tau_range[1] else 1
         self.detail.focus(self.car.x, self.car.z)
         tiles = self.streamer.stats()
         with self._state_lock:
@@ -445,7 +525,7 @@ class Game:
 
     def traffic(self, query, dt: float) -> None:
         """Drive the cars around the player, draw them and publish their numbers, timed for the bench."""
-        if not self.layer:
+        if not self.layer or self.mode != "drive":
             return
         started = time.perf_counter()
         self._traffic(self._before, self._dt)
@@ -468,7 +548,8 @@ class Game:
         eye = self.eye - self.o  # these write render-frame positions
         self.atmosphere.apply(self.look, eye)
         self.stars_shown = self.nightsky.update(when, eye, self.look, moon, sun)
-        self.rain.update(self._dt, eye, now.rain, tuple(1.4 * v for v in self.look.horizon))
+        self.weather_state = now.state
+        self.rain.update(self._dt, eye, now.rain if self.rain_on else 0.0, tuple(1.4 * v for v in self.look.horizon))
         t = time.perf_counter()
         if t - self._sky_state_at > 0.5:
             self._sky_state_at = t
@@ -520,8 +601,13 @@ class Game:
 
 def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, size=(1280, 720),
          traffic: str | None = None, when: str | None = None, warp: float = 1.0, sky: str | None = None,
-         tiles: str | None = None, pipelined: bool = True, with_traffic: bool = False) -> None:
-    """Open a window and drive, or with `shot`, render offscreen until the city is drawn and save a PNG.
+         tiles: str | None = None, pipelined: bool = True, with_traffic: bool = False,
+         screen: str | None = None) -> None:
+    """Open a window on the main menu, or with `shot`, render offscreen until the city is drawn and save a PNG.
+
+    screen opens a menu screen ("main", "free", "options", "pause", "photo") or "drive" straight away; a window
+    opens on "main" and a shot on "drive" by default. The flags fill in the free drive's rows, and "drive"
+    starts with them as they are.
 
     with_traffic turns the traffic on, as a traffic file does: traffic: a JSON file of demand settings. when ("Sun 08:00", "17:30") pins the clock, 10:00 today by default,
     and "now" runs it on the machine's clock; warp speeds it up, for tests and the dev channel. pipelined runs the systems of the next
@@ -538,8 +624,20 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
         os.environ["HAVANA_TILES"] = os.path.abspath(tiles)
     engine = mx.Engine("contravia", width=size[0], height=size[1], pipelined=pipelined)
     clock = Clock(warp=warp) if when == "now" else Clock(at=parse_at(when or "10:00"), warp=warp)
+    sky_config = load_sky_config(sky) if sky else None
     game = Game(engine, World.load(data, tiles), at=at, traffic=load_config(traffic) if traffic else None,
-                clock=clock, sky=load_sky_config(sky) if sky else None, with_traffic=with_traffic or bool(traffic))
+                clock=clock, sky=sky_config, with_traffic=with_traffic or bool(traffic))
+    screen = screen or ("drive" if shot else "main")
+    if "car" in engine.state:  # a reload under contravia dev drives on
+        screen = "drive"
+    from contravia.menu import Menu
+    from contravia.settings import FreeDrive, Options
+
+    free = FreeDrive.from_flags(at=at, when=when, force=sky_config.force if sky_config else None,
+                                traffic=with_traffic or bool(traffic), warp=warp)
+    menu = Menu(engine, game, free, Options.load(), screen=screen if screen in ("main", "free", "options") else None)
+    if screen in ("pause", "photo"):
+        engine.on("startup")(lambda _=None: (menu.pause(), screen == "photo" and menu.show("photo")))
     if not shot:
         engine.run()
         return
