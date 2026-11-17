@@ -15,6 +15,7 @@ from caiman.landmarks import capitolio, focsa, gran_teatro, habana_libre, maleco
 from caiman.landmarks.shapes import inside
 from caiman.mesh import MeshBuilder
 
+SERVICE = 4.0  # metres: the width of a service road, the narrowest road prepare keeps
 MODULES = (capitolio, gran_teatro, morro, nacional, focsa, habana_libre, plaza, malecon)
 
 
@@ -34,6 +35,8 @@ class Landmarks:
             self.clear += [np.asarray(r, float) for r in piece.clear]
             rings += piece.walls
         self.mesh = mb.to_meshdata(0.0, 0.0) if self.names else None
+        self.blocked = self._block_service_roads(city, rings)
+        self._blocked_rows = {tuple(r) for r in np.asarray(city.a["roads"], np.float32).reshape(-1, 5)[self.blocked].tolist()}
         self._boxes = [(r.min(axis=0), r.max(axis=0)) for r in self.clear]
         edges = (np.concatenate([np.stack([r, np.roll(r, -1, axis=0)], axis=1) for r in
                                  (np.asarray(r, np.float32) for r in rings)]) if rings
@@ -42,6 +45,20 @@ class Landmarks:
         self._walls: dict[tuple[int, int], np.ndarray] = {}
         for key in {tuple(k) for k in keys.tolist()}:
             self._walls[key] = edges[(keys == key).all(axis=1)]
+
+    @staticmethod
+    def _block_service_roads(city, rings) -> np.ndarray:
+        """Which of Havana's road segments are service roads a landmark's walls cross: the paths through a
+        landmark's grounds. They are not drawn and the car is never put on one, so it never starts inside a
+        landmark. A wider road is never blocked; a landmark leaves out its own pieces that cross one."""
+        from caiman.clearance import entering
+
+        roads = np.asarray(city.a["roads"], float).reshape(-1, 5)
+        blocked = np.zeros(len(roads), bool)
+        service = np.flatnonzero(roads[:, 4] <= SERVICE)
+        for ring in rings:
+            blocked[service] |= entering(ring, roads[service])
+        return blocked
 
     def _cleared(self, points, lo, hi) -> np.ndarray:
         """True for each point inside a clear ring; only rings whose box meets [lo, hi] are tested."""
@@ -52,14 +69,18 @@ class Landmarks:
         return out
 
     def keep(self, i: int, j: int, cell: Cell) -> Cell:
-        """Cell (i, j) without the buildings landmarks replace and the features inside their clear rings."""
+        """Cell (i, j) without the buildings landmarks replace, the features inside their clear rings and the
+        service roads their walls cross."""
         lo, hi = np.array([i * CELL, j * CELL]), np.array([(i + 1) * CELL, (j + 1) * CELL])
         b_mid = np.array([r.mean(axis=0) for r in cell.buildings]).reshape(-1, 2)
         f_mid = np.array([r.mean(axis=0) for r in cell.fillers]).reshape(-1, 2)
         b_keep = ~self._cleared(b_mid, lo, hi) & ~np.isin(cell.building_ids, list(self.replaces))
         f_keep = ~self._cleared(f_mid, lo, hi)
         t_keep = ~self._cleared(cell.trees, lo, hi)
-        return Cell(roads=cell.roads,
+        roads = cell.roads
+        if self._blocked_rows and len(roads):
+            roads = roads[[tuple(r) not in self._blocked_rows for r in roads.tolist()]]
+        return Cell(roads=roads,
                     buildings=[r for r, k in zip(cell.buildings, b_keep, strict=True) if k],
                     building_ids=cell.building_ids[b_keep],
                     fillers=[r for r, k in zip(cell.fillers, f_keep, strict=True) if k],

@@ -10,6 +10,7 @@ clears are left out; the landmarks themselves are drawn once by the game, not pe
 
 import os
 
+from caiman.clearance import boxes, roads_around
 from caiman.geo import CELL
 from caiman.landmarks import Landmarks
 from caiman.mesh import MeshBuilder
@@ -49,11 +50,9 @@ def build(i: int, j: int):
     terrain = city().terrain
     ground.ground(mb, i, j, terrain)
     roads.ribbon(mb, c.roads, terrain)
-    for ring, osm_id in zip(c.buildings, c.building_ids, strict=True):
-        if not buildings.box(mb, ring, int(osm_id), base=seat(ring, terrain)):
+    for ring, style_id in boxes(c, roads_around(city(), i, j)):
+        if not buildings.box(mb, ring, style_id, base=seat(ring, terrain)):
             SKIPPED_ROOFS += 1
-    for block, seed in zip(c.fillers, c.filler_seeds, strict=True):
-        buildings.filler(mb, block, int(seed), terrain)
     trees.trees(mb, c.trees, terrain.height(c.trees[:, 0], c.trees[:, 1]))
     return mb.to_meshdata(x0, z0)
 
