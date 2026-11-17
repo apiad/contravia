@@ -23,6 +23,7 @@ import numpy as np
 from caiman.camera import chase
 from caiman.car import CarState, Controls, settle, step
 from caiman.geo import CELL, to_local
+from caiman.hud import Hud
 from caiman.input import Driver
 from caiman.kept import kept, source
 from caiman.quadtree import LEVELS
@@ -92,6 +93,7 @@ class Game:
         self._rng = np.random.default_rng()
         self.autopilot = None  # bench.py sets a function (car) -> Controls
         self.driver = Driver()
+        self.hud = Hud(engine)
         self.camera_override = None  # bench.py sets a function () -> (eye, target) in world metres
 
         self._start_traffic(traffic)
@@ -302,6 +304,7 @@ class Game:
         self.o = self._recentre()
         self.base.transform.pos = (float(self.eye[0]), BASE_Y, float(self.eye[2]))
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
+        self.hud.update(self.car, self.o)
         st = self.engine.state
         st.car = {"pose": [self.car.x, self.car.z, self.car.yaw, self.car.speed], "eye": self.eye.tolist()}
         st.pos = [round(self.car.x, 1), round(self.car.z, 1)]
