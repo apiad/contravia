@@ -39,6 +39,8 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--time", help='start the clock at "17:30", "Sun 08:00" or "2026-09-12 17:30" (10:00 by default); "now" is the machine\'s clock')
     p.add_argument("--sky", help="JSON file of sky settings to change (see contravia/weather.py, SkyConfig)")
     p.add_argument("--warp", type=float, default=1.0, help="run the clock this many times faster; for tests")
+    p.add_argument("--screen", choices=["main", "free", "options", "pause", "photo", "drive"],
+                   help="open on this menu screen, or drive at once; main for a window, drive for --shot")
     p.add_argument("--no-pipeline", dest="pipeline", action="store_false",
                    help="run the systems and the render one after the other instead of overlapping them")
 
@@ -109,7 +111,7 @@ def main(argv: list[str] | None = None) -> None:
 
         play(args.data, at=args.at, shot=args.shot, frames=args.frames, traffic=args.traffic, when=args.time,
              warp=args.warp, sky=args.sky, tiles=args.tiles, pipelined=args.pipeline,
-             with_traffic=args.with_traffic)
+             with_traffic=args.with_traffic, screen=args.screen)
     elif args.command == "dev":
         from manifoldx.cli import main as manifoldx
 
