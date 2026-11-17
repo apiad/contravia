@@ -57,6 +57,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--year", type=int, default=2026)
     p.add_argument("--sky", help="JSON file of sky settings to change")
 
+    p = sub.add_parser("dev", help="play under hot reload: a saved file in caiman/ rebuilds the game in the same "
+                                   "window, with the car where it was; takes the options of play")
+
     p = sub.add_parser("timelapse", help="render a day of sky over the Capitolio as a video")
     p.add_argument("out")
     p.add_argument("--data", default="data/havana.npz")
@@ -66,7 +69,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--step", type=float, default=1.0, help="game minutes per frame")
     p.add_argument("--sky", help="JSON file of sky settings to change")
 
-    args = parser.parse_args(argv)
+    args, extra = parser.parse_known_args(argv)
+    if extra and args.command != "dev":
+        parser.error(f"unrecognized arguments: {' '.join(extra)}")
     if args.command == "prepare":
         from caiman.prepare import main as prepare
 
@@ -80,6 +85,10 @@ def main(argv: list[str] | None = None) -> None:
 
         play(args.data, at=args.at, shot=args.shot, frames=args.frames, traffic=args.traffic, when=args.time,
              warp=args.warp, sky=args.sky, tiles=args.tiles, pipelined=args.pipeline)
+    elif args.command == "dev":
+        from manifoldx.cli import main as manifoldx
+
+        manifoldx(["run", "-m", "caiman.cli", "--", "play", *extra])
     elif args.command == "climate":
         import os
 

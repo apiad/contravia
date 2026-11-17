@@ -10,6 +10,7 @@ import functools
 
 import numpy as np
 
+from caiman.kept import kept, source
 from caiman.rules.traffic import KINDS
 
 PARKED = -1000.0  # the height of unused slots
@@ -159,7 +160,7 @@ class Fleet:
             n = self.pool[kind]
             if not n:
                 continue
-            m = merged(kind)
+            m = kept(engine.state, f"vehicle {kind}", source(__file__), functools.partial(merged, kind))
             pos = np.zeros((n, 3))
             pos[:, 1] = PARKED
             engine.spawn(Mesh({"positions": m["positions"], "normals": m["normals"], "colors": m["colors"],

@@ -11,6 +11,10 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   `https://copernicus-dem-30m.s3.amazonaws.com/<name>/<name>.tif`. Without it the city is flat.
 - `caiman tiles <cuba-latest.osm.pbf> --out data/cuba` writes the whole island as quadtree tiles (`caiman/tiles.py`):
   one CityData per leaf and a summary per coarser node, flat and with no traffic outside Havana.
+- `caiman dev` takes the options of `caiman play` and runs it under manifoldx's hot reload: a saved file in
+  `caiman/` rebuilds the game in the same window in about 3 s, with the car where it was (`engine.state.car`).
+  Results that take seconds and depend only on their inputs (car meshes, traffic tables) survive a save through
+  `caiman/kept.py`; the game stops its builders and its traffic thread on `shutdown`.
 - `caiman play --tiles data/cuba` drives anywhere on the island (`manifoldx emit teleport lat=20.02 lon=-75.83`);
   `caiman bench --tiles data/cuba` adds the scenes of `bench/cuba.json` after the Havana route: a teleport to
   Santiago, a hill view over Havana and a 300 m flight toward Santa Clara, each with frame times, nodes and triangles.

@@ -60,3 +60,29 @@ def test_teleport_far_keeps_precision_and_sea_reports(city, city_npz, island_dir
             game.runner.stop()
     finally:
         del os.environ["HAVANA_TILES"]
+
+
+def test_a_reload_drives_on_from_the_same_place_and_stops_the_old_game(city):
+    import manifoldx as mx
+
+    from caiman.game import Game
+    from caiman.world import World
+
+    engine = mx.Engine("old", width=64, height=48)
+    game = Game(engine, World(city))
+    x, z, _ = game.walls.nearest_road(300.0, 200.0)
+    game.teleport(x, z)
+    for _ in range(3):
+        engine.render_frame(supersample=1)
+    pose = list(engine.state.car["pose"])
+    game._shutdown()
+    assert not game.layer or not game.runner._thread.is_alive()
+
+    engine2 = mx.Engine("new", width=64, height=48)  # under caiman dev both engines share one state
+    engine2.state.update(engine.state)
+    game2 = Game(engine2, World(city))
+    try:
+        assert [game2.car.x, game2.car.z, game2.car.yaw] == pose[:3]
+        assert abs(game2.car.x) > 50  # not back at the start
+    finally:
+        game2._shutdown()

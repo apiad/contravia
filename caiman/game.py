@@ -24,6 +24,7 @@ from caiman.camera import chase
 from caiman.car import CarState, Controls, settle, step
 from caiman.geo import CELL, to_local
 from caiman.input import Driver
+from caiman.kept import kept, source
 from caiman.quadtree import LEVELS
 from caiman.surface import Surface
 from caiman.walls import Walls
@@ -80,9 +81,12 @@ class Game:
                          Transform(pos=(0, 0, 0)))
         self.o = np.zeros(3)  # the engine's origin as (x, 0, z)
         self.base = self._spawn_base()
-        self.model = build_car(CarParams())
+        self.model = kept(engine.state, "player car", "CarParams()", lambda: build_car(CarParams()))
         self.handles = spawn_car(engine, self.model)
-        self.teleport(*at)
+        if "car" in engine.state:  # a reload under caiman dev: drive on from where the old code left the car
+            self._resume(engine.state.car)
+        else:
+            self.teleport(*at)
         self.frame_ms = 0.0
         self._last = time.perf_counter()
         self._rng = np.random.default_rng()
@@ -106,6 +110,7 @@ class Game:
         engine.on("close")(self.close_street)
         engine.on("sky_config")(self.configure_sky)
         engine.on("weather")(self.force_weather)
+        engine.on("shutdown")(self._shutdown)
 
     def _start_traffic(self, config) -> None:
         """The flow layer over the whole graph, warmed up to now, and the cars around the player."""
@@ -124,7 +129,12 @@ class Game:
             return
         self.runner = FlowRunner(Flow(graph, self.traffic_config), self.clock)
         self.runner.warm_up(minutes=30)
-        self.layer = TrafficLayer(graph, self.runner)
+        from caiman import traffic
+        from caiman.traffic import Cars
+
+        tables = kept(self.engine.state, "traffic tables", (source(traffic.__file__), len(graph)),
+                      lambda: Cars(graph).tables())
+        self.layer = TrafficLayer(graph, self.runner, tables=tables)
         self.fleet = Fleet(self.engine)
         self.runner.start()
 
@@ -221,6 +231,20 @@ class Game:
         self.engine.state.teleport = {"to": [x, z], "error": None}
         self._recentre()
 
+    def _resume(self, car: dict) -> None:
+        """Put the car and the camera back where engine.state.car says, at the same speed."""
+        x, z, yaw, speed = car["pose"]
+        self.car = settle(CarState(x, z, yaw, speed), self.surface)
+        self.eye = np.array(car["eye"], float)
+        self._recentre()
+
+    def _shutdown(self, _=None) -> None:
+        """Stop what the game started itself, the street builders and the traffic thread. A reload under
+        caiman dev fires this before it builds the game again from the new code."""
+        self.streamer.close()
+        if self.layer:
+            self.runner.stop()
+
     def _recentre(self) -> np.ndarray:
         """Move the engine's origin to the camera (behind the car while driving) when it has gone RECENTRE
         metres; returns the origin as (x, 0, z)."""
@@ -279,6 +303,7 @@ class Game:
         self.base.transform.pos = (float(self.eye[0]), BASE_Y, float(self.eye[2]))
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
         st = self.engine.state
+        st.car = {"pose": [self.car.x, self.car.z, self.car.yaw, self.car.speed], "eye": self.eye.tolist()}
         st.pos = [round(self.car.x, 1), round(self.car.z, 1)]
         st.cell = [math.floor(self.car.x / CELL), math.floor(self.car.z / CELL)]
         st.speed_kmh = round(abs(self.car.speed) * 3.6, 1)

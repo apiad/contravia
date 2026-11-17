@@ -37,9 +37,21 @@ SPACING_QUEUE = 7.0  # metres between queued cars placed from the flow
 class Cars:
     """The cars near the player, as arrays, on one road graph."""
 
-    def __init__(self, graph: Graph, seed: int = 0):
+    def __init__(self, graph: Graph, seed: int = 0, tables: dict | None = None):
         self.g = graph
         self.rng = np.random.default_rng(seed)
+        if tables is None:
+            self._index(graph)
+        else:  # built before, by an earlier Cars on the same graph (caiman dev keeps them across saves)
+            self.__dict__.update(tables)
+        self._clear()
+
+    def tables(self) -> dict:
+        """What _index derived from the graph, which another Cars on the same graph can take as it is."""
+        return {k: v for k, v in vars(self).items() if k not in ("g", "rng")}
+
+    def _index(self, graph: Graph) -> None:
+        """The graph's lanes, turns, directions and signal groups, as arrays and lists by edge and junction."""
         a = graph.a
         E = len(graph)
         self.lanes = a["g_lanes"].astype(np.int64)
@@ -81,7 +93,6 @@ class Cars:
             self.into_node[j] = np.flatnonzero(self.to == j)
             self.out_of_node[j] = np.flatnonzero(a["g_from"] == j)
         self.kind_len = np.array([LENGTH[k] for k in KINDS])
-        self._clear()
 
     def _clear(self) -> None:
         self.edge = np.zeros(0, np.int64)
@@ -289,13 +300,13 @@ class TrafficLayer:
 
     MAX_ENTER = 200  # edges taken over per update, nearest first, so a teleport does not stall one frame
 
-    def __init__(self, graph: Graph, runner, radius: float = 400.0, seed: int = 0):
+    def __init__(self, graph: Graph, runner, radius: float = 400.0, seed: int = 0, tables: dict | None = None):
         from collections import deque
 
         from caiman.geo import CELL
 
         self.g, self.runner, self.radius = graph, runner, radius
-        self.cars = Cars(graph, seed)
+        self.cars = Cars(graph, seed, tables)
         E = len(graph)
         self.centre = (graph.a["g_cell"].astype(np.float64) + 0.5) * CELL if E else np.zeros((0, 2))
         self.owned = np.zeros(E, bool)  # edges the cars own or have asked for
