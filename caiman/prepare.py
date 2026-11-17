@@ -247,6 +247,9 @@ def build_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict
         from caiman.streets import add_to
 
         street_report = add_to(city, WIDTHS)
+        from caiman import walks
+
+        street_report.update(walks.add_to(city))
     road_cells = {tuple(c) for c in cell_of((roads[:, 0:2] + roads[:, 2:4]) / 2).tolist()}
     built_cells = {tuple(c) for c in cell_of(cents).tolist()}
     sizes = {tuple(c): 0 for c in city.cells().tolist()}

@@ -34,14 +34,17 @@ class Surface:
         self._roofs: dict[tuple[int, int], tuple | None] = {}
 
     def _streets(self, i: int, j: int):
-        """Cell (i, j)'s street triangles as (corner a, inverse of the 2x2 edge matrix, heights), or None
-        when the data has no street surface there."""
+        """Cell (i, j)'s street and pavement triangles as (corner a, inverse of the 2x2 edge matrix, heights), or
+        None when the data has no street surface there. Kerbs and edges are upright, so they drop out."""
         return self._prepared(self._tris, i, j, "street_tris")
 
     def _prepared(self, cache, i, j, kind):
         key = (i, j)
         if key not in cache:
-            t = getattr(self.city.cell(i, j), kind)
+            c = self.city.cell(i, j)
+            t = getattr(c, kind)
+            if kind == "street_tris" and t is not None and c.walk_tris is not None and len(c.walk_tris):
+                t = np.concatenate([np.asarray(t, float).reshape(-1, 3, 3), np.asarray(c.walk_tris, float)])
             if t is None:
                 cache[key] = None
             else:

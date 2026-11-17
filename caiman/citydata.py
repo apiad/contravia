@@ -35,6 +35,8 @@ class Cell:
     struct_walls: np.ndarray | None = None  # (W, 6) ax, az, bx, bz and the heights a car hits the wall between
     street_cuts: np.ndarray | None = None  # (C, 3, 2) where the ground is left out over a street below it
     street_roofs: np.ndarray | None = None  # (R, 3, 3) tunnel roofs, from below
+    walk_tris: np.ndarray | None = None  # (W, 3, 3) pavements and building platforms (caiman.walks)
+    walk_paint: np.ndarray | None = None  # (W,) the caiman.walks paint of each
 
 
 def _rings_to_arrays(rings):
@@ -171,7 +173,8 @@ class CityData:
             s0, s1 = self._span("street_tris", k)
             e0, e1 = self._span("street_edges", k)
             streets = {"street_tris": self.a["street_tris"][s0:s1], "street_edges": self.a["street_edges"][e0:e1]}
-            for name in ("street_marks", "struct_tris", "struct_paint", "struct_walls", "street_cuts", "street_roofs"):
+            for name in ("street_marks", "struct_tris", "struct_paint", "struct_walls", "street_cuts", "street_roofs",
+                         "walk_tris", "walk_paint"):
                 if name in self.a:
                     m0, m1 = self._span(name, k)
                     streets[name] = self.a[name][m0:m1]

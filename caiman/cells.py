@@ -55,6 +55,8 @@ def build(i: int, j: int):
         roads.streets(mb, c.street_tris, c.street_edges, terrain, c.street_marks)
         if c.struct_tris is not None:
             roads.structures(mb, c.struct_tris, c.struct_paint)
+        if c.walk_tris is not None:
+            roads.walks(mb, c.walk_tris, c.walk_paint)
     near = roads_around(city(), i, j)
     for ring, style_id, plan in boxes(c, near):
         portals = facades.portal_walls(ring, near) if plan.portal else None

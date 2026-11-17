@@ -20,6 +20,9 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("streets", help="rebuild the street surface of a prepared data file in place")
     p.add_argument("--data", default="data/havana.npz")
 
+    p = sub.add_parser("walks", help="rebuild the pavements and building platforms of a prepared data file in place")
+    p.add_argument("--data", default="data/havana.npz")
+
     p = sub.add_parser("tiles", help="turn a Cuba OSM extract into the island's quadtree tiles")
     p.add_argument("pbf")
     p.add_argument("--out", default="data/cuba")
@@ -93,6 +96,10 @@ def main(argv: list[str] | None = None) -> None:
         from caiman.streets import main as streets
 
         streets(args.data)
+    elif args.command == "walks":
+        from caiman.walks import main as walks
+
+        walks(args.data)
     elif args.command == "tiles":
         from caiman.tiles_prepare import main as tiles
 
