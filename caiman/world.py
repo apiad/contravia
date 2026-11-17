@@ -11,6 +11,7 @@ node inside a leaf) or pooled from its children, and kept.
 import numpy as np
 
 from caiman.citydata import Cell, CityData
+from caiman.geo import cell_of
 from caiman.quadtree import Tree
 
 
@@ -68,15 +69,20 @@ class World:
         """Havana's road midpoints, for random respawns."""
         return self.core.road_points()
 
-    def nearest_road(self, x: float, z: float, within: float = 5000.0):
-        """The middle of the road segment nearest (x, z) and its yaw, or None past `within` metres."""
+    def nearest_road(self, x: float, z: float, within: float = 5000.0, skip=None):
+        """The middle of the road segment nearest (x, z) and its yaw, or None past `within` metres. skip marks
+        Havana's road segments the car must not be put on (Landmarks.blocked)."""
         found = None
         if self.tiles is not None:
             found = self.tiles.nearest_road(x, z, within)
+            if found is not None and tuple(cell_of(np.array([found[:2]]))[0].tolist()) in self.core._index:
+                found = None  # Havana's own data answers for its cells, as cell() does
         r = self.core.a["roads"]
         if len(r):
             mid = (r[:, 0:2] + r[:, 2:4]) / 2
             d = np.hypot(mid[:, 0] - x, mid[:, 1] - z)
+            if skip is not None:
+                d[skip] = np.inf
             k = int(np.argmin(d))
             if d[k] <= within and (found is None or d[k] < np.hypot(found[0] - x, found[1] - z)):
                 found = (float(mid[k, 0]), float(mid[k, 1]), float(np.arctan2(r[k, 3] - r[k, 1], r[k, 2] - r[k, 0])))

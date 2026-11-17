@@ -241,9 +241,10 @@ class Game:
         self._recentre()
 
     def _shutdown(self, _=None) -> None:
-        """Stop what the game started itself, the street builders and the traffic thread. A reload under
+        """Stop what the game started itself: the street builders, the wall builder and the traffic thread. A reload under
         caiman dev fires this before it builds the game again from the new code."""
         self.streamer.close()
+        self.walls.close()
         if self.layer:
             self.runner.stop()
 

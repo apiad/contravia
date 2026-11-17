@@ -35,13 +35,24 @@ LINE = np.array([
 
 
 def place(city, mb) -> Piece:
-    """Add the wall, each piece on the lower ground of its two ends, and the flat sea north of it."""
+    """Add the wall, each piece on the lower ground of its two ends, and the flat sea north of it.
+
+    LINE is coarse, so at a few bends a piece of wall cuts across the coast road; those pieces are left out,
+    and the wall has a gap there rather than a wall in the road.
+    """
+    from caiman.clearance import entering
+
     z = np.array([np.median(LINE[max(0, k - 1):k + 2, 1]) for k in range(len(LINE))])  # drop one-point kinks
     wall = np.stack([LINE[:, 0], z - GAP], axis=1)
-    strip = np.concatenate([wall, (wall - (0, THICK))[::-1]])
     sea = np.concatenate([wall - (0, THICK), (wall - (0, SEA_DEPTH))[::-1]])
     ground = city.terrain.height(wall[:, 0], wall[:, 1])
+    roads = np.asarray(city.a["roads"], float).reshape(-1, 5)
+    pieces = []
     for (a, b), y in zip(pairwise(wall), np.minimum(ground[:-1], ground[1:]), strict=True):
-        prism(mb, [a, b, b - (0, THICK), a - (0, THICK)], y, y + HEIGHT, WALL)
         flat(mb, [a - (0, THICK), b - (0, THICK), b - (0, SEA_DEPTH), a - (0, SEA_DEPTH)], SEA_LEVEL, SEA)
-    return Piece(clear=[sea], walls=[strip])
+        piece = np.array([a, b, b - (0, THICK), a - (0, THICK)])
+        if entering(piece, roads).any():
+            continue
+        prism(mb, piece, y, y + HEIGHT, WALL)
+        pieces.append(piece)
+    return Piece(clear=[sea], walls=pieces)

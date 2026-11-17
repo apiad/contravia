@@ -60,6 +60,10 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("dev", help="play under hot reload: a saved file in caiman/ rebuilds the game in the same "
                                    "window, with the car where it was; takes the options of play")
 
+    p = sub.add_parser("walls-check", help="count footprints, filler boxes and landmark walls inside a road; "
+                                           "all must be 0")
+    p.add_argument("--data", default="data/havana.npz")
+
     p = sub.add_parser("timelapse", help="render a day of sky over the Capitolio as a video")
     p.add_argument("out")
     p.add_argument("--data", default="data/havana.npz")
@@ -89,6 +93,12 @@ def main(argv: list[str] | None = None) -> None:
         from manifoldx.cli import main as manifoldx
 
         manifoldx(["run", "-m", "caiman.cli", "--", "play", *extra])
+    elif args.command == "walls-check":
+        import sys
+
+        from caiman.walls_check import main as walls_check
+
+        sys.exit(walls_check(args.data))
     elif args.command == "climate":
         import os
 
