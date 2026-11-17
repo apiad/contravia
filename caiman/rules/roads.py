@@ -144,6 +144,10 @@ def structures(mb, tris: np.ndarray, paint: np.ndarray) -> None:
 WALK_TONES = (  # the pavement's tone by zone: the old centre's worn cement, Vedado's light cement, the rest
     (0.46, 0.44, 0.40), (0.54, 0.53, 0.50), (0.43, 0.42, 0.39))
 KERB_SHADE = (0.82, 1.0, 0.9, 0.75)  # each part of caiman.walks (top, kerb, platform, platform edge) against its tone
+# The manifoldx surface pattern of each zone's pavement top and of a platform: square slabs for now, until
+# manifoldx has a worn pavement for the old centre and the outskirts; kerbs stay plain.
+WALK_PATTERN = (5, 5, 5)
+PLATFORM_PATTERN = 5
 
 
 def walks(mb, tris: np.ndarray, paint: np.ndarray) -> None:
@@ -157,7 +161,8 @@ def walks(mb, tris: np.ndarray, paint: np.ndarray) -> None:
     zone, part = np.minimum(code // 4, 2), code % 4
     col = np.asarray(WALK_TONES)[zone] * np.asarray(KERB_SHADE)[part][:, None]
     col *= (0.9 + 0.2 * fbm(p[:, 0], p[:, 2], 3.0, seed=23))[:, None]
-    mb.add(p, np.repeat(_normal(t), 3, axis=0), col, np.arange(len(p)).reshape(-1, 3))
+    surface = np.where(part == 0, np.asarray(WALK_PATTERN)[zone], np.where(part == 2, PLATFORM_PATTERN, 0))
+    mb.add(p, np.repeat(_normal(t), 3, axis=0), col, np.arange(len(p)).reshape(-1, 3), surface=surface)
 
 
 def _normal(t: np.ndarray) -> np.ndarray:

@@ -15,10 +15,13 @@ class MeshBuilder:
         self._pos, self._nrm, self._col, self._idx, self._fac = [], [], [], [], []
         self._count = 0
         self._faced = False
+        self._srf, self._surfaced = [], False
 
-    def add(self, positions, normals, color, indices, facade=None) -> None:
+    def add(self, positions, normals, color, indices, facade=None, surface=0) -> None:
         """Add vertices with one colour, or one per vertex, and triangles indexing them from 0. facade is
-        one (bays along, floors up, building type, seed) per vertex for walls the shader draws windows on.
+        one (bays along, floors up, building type, seed) per vertex for walls the shader draws windows on;
+        surface is the manifoldx surface pattern the shader paints over the colour (0: none), one for all the
+        vertices or one per vertex.
 
         Each triangle is turned, if needed, so its winding faces the way its vertices' normals point, which
         lets the rules list corners in any order.
@@ -36,6 +39,9 @@ class MeshBuilder:
         self._idx.append(t + self._count)
         self._fac.append(np.zeros((len(p), 4), np.float32) if facade is None else np.asarray(facade, np.float32))
         self._faced = self._faced or facade is not None
+        srf = np.broadcast_to(np.asarray(surface, np.int32), (len(p),)).copy()
+        self._srf.append(srf)
+        self._surfaced = self._surfaced or bool(srf.any())
         self._count += len(p)
 
     def to_meshdata(self, origin_x: float, origin_z: float) -> MeshData:
@@ -46,7 +52,8 @@ class MeshBuilder:
         pos = np.vstack(self._pos) - (origin_x, 0.0, origin_z)
         return MeshData(pos.astype(np.float32), np.vstack(self._nrm).astype(np.float32),
                         np.vstack(self._col).astype(np.float32), np.vstack(self._idx).astype(np.uint32).ravel(),
-                        facade=np.vstack(self._fac) if self._faced else None)
+                        facade=np.vstack(self._fac) if self._faced else None,
+                        surfaces=np.concatenate(self._srf) if self._surfaced else None)
 
 
 def signed_area(ring: np.ndarray) -> float:
