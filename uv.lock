@@ -180,22 +180,21 @@ source = { editable = "." }
 dependencies = [
     { name = "manifold-gfx", extra = ["desktop", "svg"] },
     { name = "numpy" },
+    { name = "pillow" },
+    { name = "shapely" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "imagecodecs" },
     { name = "osmium" },
-    { name = "pillow" },
     { name = "pytest" },
     { name = "ruff" },
-    { name = "shapely" },
     { name = "tifffile" },
 ]
 prepare = [
     { name = "imagecodecs" },
     { name = "osmium" },
-    { name = "shapely" },
     { name = "tifffile" },
 ]
 
@@ -203,22 +202,21 @@ prepare = [
 requires-dist = [
     { name = "manifold-gfx", extras = ["desktop", "svg"], git = "https://github.com/gia-uh/manifoldx?branch=main" },
     { name = "numpy" },
+    { name = "pillow" },
+    { name = "shapely" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "imagecodecs" },
     { name = "osmium" },
-    { name = "pillow" },
     { name = "pytest" },
     { name = "ruff" },
-    { name = "shapely" },
     { name = "tifffile" },
 ]
 prepare = [
     { name = "imagecodecs" },
     { name = "osmium" },
-    { name = "shapely" },
     { name = "tifffile" },
 ]
 

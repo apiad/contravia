@@ -3,7 +3,7 @@ name = "contravia"
 version = "0.1.0"
 description = "An open-world driving game in a procedural, real-size Havana, built on manifoldx."
 requires-python = ">=3.14"
-dependencies = ["numpy", "manifold-gfx[desktop,svg]"]
+dependencies = ["numpy", "shapely", "pillow", "manifold-gfx[desktop,svg]"]
 
 classifiers = [
     "Programming Language :: Python :: 3.14",
@@ -14,8 +14,8 @@ classifiers = [
 contravia = "contravia.cli:main"
 
 [dependency-groups]
-prepare = ["osmium", "shapely", "tifffile", "imagecodecs"]
-dev = ["pytest", "ruff", "pillow", "osmium", "shapely", "tifffile", "imagecodecs"]
+prepare = ["osmium", "tifffile", "imagecodecs"]
+dev = ["pytest", "ruff", "osmium", "tifffile", "imagecodecs"]
 
 [tool.uv.sources]
 manifold-gfx = { git = "https://github.com/gia-uh/manifoldx", branch = "main" }
