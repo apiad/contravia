@@ -34,9 +34,13 @@ class Surface:
             else:
                 t = np.asarray(t, float).reshape(-1, 3, 3)
                 a = t[:, 0, [0, 2]]
-                m = np.stack([t[:, 1, [0, 2]] - a, t[:, 2, [0, 2]] - a], axis=2)
-                ok = np.abs(np.linalg.det(m)) > 1e-9
-                self._tris[key] = (a[ok], np.linalg.inv(m[ok]), t[ok][:, :, 1])
+                u, v = t[:, 1, [0, 2]] - a, t[:, 2, [0, 2]] - a
+                det = u[:, 0] * v[:, 1] - v[:, 0] * u[:, 1]
+                ok = np.abs(det) > 1e-9
+                # The inverse of the 2x2 matrix with columns u, v, written out: numpy.linalg calls OpenBLAS, which
+                # can deadlock when the game's other threads call it at the same time.
+                inv = np.stack([np.stack([v[:, 1], -v[:, 0]], axis=1), np.stack([-u[:, 1], u[:, 0]], axis=1)], axis=1)
+                self._tris[key] = (a[ok], inv[ok] / det[ok, None, None], t[ok][:, :, 1])
         return self._tris[key]
 
     def _roads(self, i: int, j: int) -> np.ndarray:
