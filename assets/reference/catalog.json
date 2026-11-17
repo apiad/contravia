@@ -1,0 +1,372 @@
+[
+ {
+  "kind": "vehicle",
+  "name": "almendron",
+  "description": "a 1950s American four-door sedan as used for shared taxis in Havana, two-tone turquoise body and cream roof, chrome bumpers and grille, whitewall tyres, rear tail fins, no badges",
+  "photos": {
+   "almendron-1": "https://commons.wikimedia.org/wiki/File%3AClassic_cars_in_Cuba%2C_Havana_-_Laslovarga037.JPG",
+   "almendron-0": "https://commons.wikimedia.org/wiki/File%3AClassic_cars_in_Cuba%2C_Havana_-_Laslovarga028.JPG"
+  },
+  "views": {
+   "ref": "Three-quarter view from the front left, slightly above, of a 1950s American four-door sedan as used for shared taxis in Havana, two-tone turquoise body and cream roof, chrome bumpers and grille, whitewall tyres, rear tail fins, no badges, the whole vehicle visible with margin. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "left": "Strict side profile of this same vehicle seen from its left side, its front pointing to the left edge of the image, orthographic, no perspective: a 1950s American four-door sedan as used for shared taxis in Havana, two-tone turquoise body and cream roof, chrome bumpers and grille, whitewall tyres, rear tail fins, no badges. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "This same vehicle seen exactly from the front, orthographic, symmetric, no perspective: a 1950s American four-door sedan as used for shared taxis in Havana, two-tone turquoise body and cream roof, chrome bumpers and grille, whitewall tyres, rear tail fins, no badges. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "rear": "This same vehicle seen exactly from behind, orthographic, symmetric, no perspective: a 1950s American four-door sedan as used for shared taxis in Havana, two-tone turquoise body and cream roof, chrome bumpers and grille, whitewall tyres, rear tail fins, no badges. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": false
+ },
+ {
+  "kind": "vehicle",
+  "name": "lada",
+  "description": "a boxy 1980s Soviet four-door sedan of the Lada 2107 shape, dark blue paint, chrome bumpers, square headlights, no badges",
+  "photos": {
+   "lada-1": "https://commons.wikimedia.org/wiki/File%3ALada_2107_in_Cuba.jpg",
+   "lada-0": "https://commons.wikimedia.org/wiki/File%3APolic%C3%ADa_Nacional_Revolucionaria_Lada_VAZ-2107.jpg"
+  },
+  "views": {
+   "ref": "Three-quarter view from the front left, slightly above, of a boxy 1980s Soviet four-door sedan of the Lada 2107 shape, dark blue paint, chrome bumpers, square headlights, no badges, the whole vehicle visible with margin. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "left": "Strict side profile of this same vehicle seen from its left side, its front pointing to the left edge of the image, orthographic, no perspective: a boxy 1980s Soviet four-door sedan of the Lada 2107 shape, dark blue paint, chrome bumpers, square headlights, no badges. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "This same vehicle seen exactly from the front, orthographic, symmetric, no perspective: a boxy 1980s Soviet four-door sedan of the Lada 2107 shape, dark blue paint, chrome bumpers, square headlights, no badges. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "rear": "This same vehicle seen exactly from behind, orthographic, symmetric, no perspective: a boxy 1980s Soviet four-door sedan of the Lada 2107 shape, dark blue paint, chrome bumpers, square headlights, no badges. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": false
+ },
+ {
+  "kind": "vehicle",
+  "name": "moskvich",
+  "description": "a small boxy 1970s Soviet four-door sedan of the Moskvich 412 shape, pink paint, no badges",
+  "photos": {
+   "moskvich-0": "https://commons.wikimedia.org/wiki/File%3AMoskvich_Pinar_Cuba_4625.JPG"
+  },
+  "views": {
+   "ref": "Three-quarter view from the front left, slightly above, of a small boxy 1970s Soviet four-door sedan of the Moskvich 412 shape, pink paint, no badges, the whole vehicle visible with margin. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "left": "Strict side profile of this same vehicle seen from its left side, its front pointing to the left edge of the image, orthographic, no perspective: a small boxy 1970s Soviet four-door sedan of the Moskvich 412 shape, pink paint, no badges. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "This same vehicle seen exactly from the front, orthographic, symmetric, no perspective: a small boxy 1970s Soviet four-door sedan of the Moskvich 412 shape, pink paint, no badges. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "rear": "This same vehicle seen exactly from behind, orthographic, symmetric, no perspective: a small boxy 1970s Soviet four-door sedan of the Moskvich 412 shape, pink paint, no badges. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": false
+ },
+ {
+  "kind": "vehicle",
+  "name": "triciclo",
+  "description": "a yellow electric passenger tricycle as used in Havana: one front wheel, two rear wheels, a cab for the driver, an open rear bench for six passengers under a flat roof on posts",
+  "photos": {
+   "triciclo-1": "https://oncubanews.com/wp-content/uploads/2020/03/cooperativa-triciclos-eléctricos.jpg",
+   "triciclo-0": "https://oncubanews.com/wp-content/uploads/2024/10/triciclos-electricos.jpg"
+  },
+  "views": {
+   "ref": "Three-quarter view from the front left, slightly above, of a yellow electric passenger tricycle as used in Havana: one front wheel, two rear wheels, a cab for the driver, an open rear bench for six passengers under a flat roof on posts, the whole vehicle visible with margin. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "left": "Strict side profile of this same vehicle seen from its left side, its front pointing to the left edge of the image, orthographic, no perspective: a yellow electric passenger tricycle as used in Havana: one front wheel, two rear wheels, a cab for the driver, an open rear bench for six passengers under a flat roof on posts. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "This same vehicle seen exactly from the front, orthographic, symmetric, no perspective: a yellow electric passenger tricycle as used in Havana: one front wheel, two rear wheels, a cab for the driver, an open rear bench for six passengers under a flat roof on posts. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "rear": "This same vehicle seen exactly from behind, orthographic, symmetric, no perspective: a yellow electric passenger tricycle as used in Havana: one front wheel, two rear wheels, a cab for the driver, an open rear bench for six passengers under a flat roof on posts. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": false
+ },
+ {
+  "kind": "vehicle",
+  "name": "metroguagua",
+  "description": "an articulated city bus of Havana's metrobus network, about 18 m long with a bellows joint in the middle, white body with a green and blue stripe, large windows, three doors",
+  "photos": {
+   "metroguagua-0": "https://commons.wikimedia.org/wiki/File:Havana_MetroBus_Route_P-5.jpg",
+   "metroguagua-1": "https://commons.wikimedia.org/wiki/File:La_Habana_(33200534714).jpg"
+  },
+  "views": {
+   "ref": "Three-quarter view from the front left, slightly above, of an articulated city bus of Havana's metrobus network, about 18 m long with a bellows joint in the middle, white body with a green and blue stripe, large windows, three doors, the whole vehicle visible with margin. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "left": "Strict side profile of this same vehicle seen from its left side, its front pointing to the left edge of the image, orthographic, no perspective: an articulated city bus of Havana's metrobus network, about 18 m long with a bellows joint in the middle, white body with a green and blue stripe, large windows, three doors. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "This same vehicle seen exactly from the front, orthographic, symmetric, no perspective: an articulated city bus of Havana's metrobus network, about 18 m long with a bellows joint in the middle, white body with a green and blue stripe, large windows, three doors. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "rear": "This same vehicle seen exactly from behind, orthographic, symmetric, no perspective: an articulated city bus of Havana's metrobus network, about 18 m long with a bellows joint in the middle, white body with a green and blue stripe, large windows, three doors. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": false,
+  "note": "the left view lost the bellows joint the reference shows"
+ },
+ {
+  "kind": "vehicle",
+  "name": "moto",
+  "description": "a 1980s East German MZ road motorcycle, light blue tank, chrome exhaust, black seat, no badges",
+  "photos": {
+   "moto-0": "https://commons.wikimedia.org/wiki/File%3AMZ_ETZ_150_captured_in_1993.jpg"
+  },
+  "views": {
+   "ref": "Three-quarter view from the front left, slightly above, of a 1980s East German MZ road motorcycle, light blue tank, chrome exhaust, black seat, no badges, the whole vehicle visible with margin. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "left": "Strict side profile of this same vehicle seen from its left side, its front pointing to the left edge of the image, orthographic, no perspective: a 1980s East German MZ road motorcycle, light blue tank, chrome exhaust, black seat, no badges. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "This same vehicle seen exactly from the front, orthographic, symmetric, no perspective: a 1980s East German MZ road motorcycle, light blue tank, chrome exhaust, black seat, no badges. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "rear": "This same vehicle seen exactly from behind, orthographic, symmetric, no perspective: a 1980s East German MZ road motorcycle, light blue tank, chrome exhaust, black seat, no badges. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": false,
+  "note": "front view shows extra wheels; build from left and rear"
+ },
+ {
+  "kind": "vehicle",
+  "name": "bicitaxi",
+  "description": "a Havana pedal rickshaw: a bicycle front with the rider, a two-seat passenger bench behind on two wheels, a striped fabric canopy on a frame",
+  "photos": {
+   "bicitaxi-0": "https://commons.wikimedia.org/wiki/File%3ABicitaxi_in_Havana.jpg"
+  },
+  "views": {
+   "ref": "Three-quarter view from the front left, slightly above, of a Havana pedal rickshaw: a bicycle front with the rider, a two-seat passenger bench behind on two wheels, a striped fabric canopy on a frame, the whole vehicle visible with margin. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "left": "Strict side profile of this same vehicle seen from its left side, its front pointing to the left edge of the image, orthographic, no perspective: a Havana pedal rickshaw: a bicycle front with the rider, a two-seat passenger bench behind on two wheels, a striped fabric canopy on a frame. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "This same vehicle seen exactly from the front, orthographic, symmetric, no perspective: a Havana pedal rickshaw: a bicycle front with the rider, a two-seat passenger bench behind on two wheels, a striped fabric canopy on a frame. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "rear": "This same vehicle seen exactly from behind, orthographic, symmetric, no perspective: a Havana pedal rickshaw: a bicycle front with the rider, a two-seat passenger bench behind on two wheels, a striped fabric canopy on a frame. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": false
+ },
+ {
+  "kind": "vehicle",
+  "name": "motoelectrica",
+  "description": "a small Chinese electric moped scooter as common in Cuba today, step-through frame, red plastic body panels, a basket on the front, no badges",
+  "photos": {},
+  "views": {
+   "ref": "Three-quarter view from the front left, slightly above, of a small Chinese electric moped scooter as common in Cuba today, step-through frame, red plastic body panels, a basket on the front, no badges, the whole vehicle visible with margin. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "left": "Strict side profile of this same vehicle seen from its left side, its front pointing to the left edge of the image, orthographic, no perspective: a small Chinese electric moped scooter as common in Cuba today, step-through frame, red plastic body panels, a basket on the front, no badges. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "This same vehicle seen exactly from the front, orthographic, symmetric, no perspective: a small Chinese electric moped scooter as common in Cuba today, step-through frame, red plastic body panels, a basket on the front, no badges. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "rear": "This same vehicle seen exactly from behind, orthographic, symmetric, no perspective: a small Chinese electric moped scooter as common in Cuba today, step-through frame, red plastic body panels, a basket on the front, no badges. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": false
+ },
+ {
+  "kind": "landmark",
+  "name": "capitolio",
+  "description": "El Capitolio in Havana: a long white neoclassical building with a tall central dome on a drum, a grand staircase and portico of columns in the middle, two long wings",
+  "photos": {
+   "capitolio-0": "https://commons.wikimedia.org/wiki/File%3AEl_Capitolio_Havana_Cuba.jpg"
+  },
+  "views": {
+   "ref": "Three-quarter view from slightly above of El Capitolio in Havana: a long white neoclassical building with a tall central dome on a drum, a grand staircase and portico of columns in the middle, two long wings, the whole building alone with nothing around it, isolated like a scale model. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "Front elevation of this same building, seen exactly from the front, orthographic, no perspective: El Capitolio in Havana: a long white neoclassical building with a tall central dome on a drum, a grand staircase and portico of columns in the middle, two long wings. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": false
+ },
+ {
+  "kind": "landmark",
+  "name": "memorial-marti",
+  "description": "the José Martí Memorial in Havana's Plaza de la Revolución: a 109 m grey star-shaped stepped tower on a raised base, with a large white seated marble statue of Martí in front",
+  "photos": {
+   "memorial-marti-0": "https://commons.wikimedia.org/wiki/File%3AMemorial_Jose_Marti.jpg",
+   "memorial-marti-1": "https://commons.wikimedia.org/wiki/File%3AJose_Marti_memorial_%283214220586%29.jpg"
+  },
+  "views": {
+   "ref": "Three-quarter view from slightly above of the José Martí Memorial in Havana's Plaza de la Revolución: a 109 m grey star-shaped stepped tower on a raised base, with a large white seated marble statue of Martí in front, the whole building alone with nothing around it, isolated like a scale model. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "Front elevation of this same building, seen exactly from the front, orthographic, no perspective: the José Martí Memorial in Havana's Plaza de la Revolución: a 109 m grey star-shaped stepped tower on a raised base, with a large white seated marble statue of Martí in front. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": false
+ },
+ {
+  "kind": "landmark",
+  "name": "morro-habana",
+  "description": "the Morro Castle at the entrance of Havana bay: a stone fortress on a rocky point with thick sloping walls and a tall cylindrical stone lighthouse on its corner",
+  "photos": {
+   "morro-habana-0": "https://commons.wikimedia.org/wiki/File%3AHabana_-_Castillo_del_Morro%2C_1920s.jpg",
+   "morro-habana-1": "https://commons.wikimedia.org/wiki/File%3AHabana_-_Castillo_del_Morro_1910.jpg"
+  },
+  "views": {
+   "ref": "Three-quarter view from slightly above of the Morro Castle at the entrance of Havana bay: a stone fortress on a rocky point with thick sloping walls and a tall cylindrical stone lighthouse on its corner, the whole building alone with nothing around it, isolated like a scale model. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "Front elevation of this same building, seen exactly from the front, orthographic, no perspective: the Morro Castle at the entrance of Havana bay: a stone fortress on a rocky point with thick sloping walls and a tall cylindrical stone lighthouse on its corner. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": false
+ },
+ {
+  "kind": "landmark",
+  "name": "catedral-habana",
+  "description": "the Havana Cathedral: a baroque limestone facade with curving undulating parapets between two unequal bell towers",
+  "photos": {
+   "catedral-habana-0": "https://commons.wikimedia.org/wiki/File%3ALa_Havane_cathedrale_face.JPG"
+  },
+  "views": {
+   "ref": "Three-quarter view from slightly above of the Havana Cathedral: a baroque limestone facade with curving undulating parapets between two unequal bell towers, the whole building alone with nothing around it, isolated like a scale model. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "Front elevation of this same building, seen exactly from the front, orthographic, no perspective: the Havana Cathedral: a baroque limestone facade with curving undulating parapets between two unequal bell towers. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": false
+ },
+ {
+  "kind": "landmark",
+  "name": "hotel-nacional",
+  "description": "the Hotel Nacional de Cuba: a large cream-coloured 1930 hotel with two tall twin towers topped by small cupolas, red tile roofs and long wings",
+  "photos": {
+   "hotel-nacional-0": "https://commons.wikimedia.org/wiki/File%3AHotel_Nacional_de_Cuba_-_II.jpg"
+  },
+  "views": {
+   "ref": "Three-quarter view from slightly above of the Hotel Nacional de Cuba: a large cream-coloured 1930 hotel with two tall twin towers topped by small cupolas, red tile roofs and long wings, the whole building alone with nothing around it, isolated like a scale model. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "Front elevation of this same building, seen exactly from the front, orthographic, no perspective: the Hotel Nacional de Cuba: a large cream-coloured 1930 hotel with two tall twin towers topped by small cupolas, red tile roofs and long wings. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": false
+ },
+ {
+  "kind": "landmark",
+  "name": "trinidad-campanario",
+  "description": "the yellow bell tower of the San Francisco convent in Trinidad, Cuba: a tall square tower in stages, yellow with white trim, arched openings and a small dome on top, beside a low colonial church",
+  "photos": {
+   "trinidad-campanario-0": "https://commons.wikimedia.org/wiki/File%3ATrinidad-Iglesia_San_Francisco.jpg"
+  },
+  "views": {
+   "ref": "Three-quarter view from slightly above of the yellow bell tower of the San Francisco convent in Trinidad, Cuba: a tall square tower in stages, yellow with white trim, arched openings and a small dome on top, beside a low colonial church, the whole building alone with nothing around it, isolated like a scale model. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "Front elevation of this same building, seen exactly from the front, orthographic, no perspective: the yellow bell tower of the San Francisco convent in Trinidad, Cuba: a tall square tower in stages, yellow with white trim, arched openings and a small dome on top, beside a low colonial church. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": false
+ },
+ {
+  "kind": "landmark",
+  "name": "san-pedro-roca",
+  "description": "the Castillo de San Pedro de la Roca in Santiago de Cuba: a stone fortress stepping down a cliff over the sea in terraces, with ramparts, bastions and a drawbridge",
+  "photos": {
+   "san-pedro-roca-1": "https://commons.wikimedia.org/wiki/File%3ASan_Pedro_de_la_Roca_Castle%2C_Santiago_de_Cuba-112468.jpg",
+   "san-pedro-roca-0": "https://commons.wikimedia.org/wiki/File%3ASan_Pedro_de_la_Roca_Castle%2C_Santiago_de_Cuba-112478.jpg"
+  },
+  "views": {
+   "ref": "Three-quarter view from slightly above of the Castillo de San Pedro de la Roca in Santiago de Cuba: a stone fortress stepping down a cliff over the sea in terraces, with ramparts, bastions and a drawbridge, the whole building alone with nothing around it, isolated like a scale model. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "Front elevation of this same building, seen exactly from the front, orthographic, no perspective: the Castillo de San Pedro de la Roca in Santiago de Cuba: a stone fortress stepping down a cliff over the sea in terraces, with ramparts, bastions and a drawbridge. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": false,
+  "note": "front is a three-quarter view like the reference; use the OSM footprint"
+ },
+ {
+  "kind": "npc",
+  "name": "almendronero",
+  "description": "a Cuban shared-taxi driver, about fifty, grey moustache, aviator sunglasses, white guayabera shirt, dark trousers, straw fedora",
+  "photos": {},
+  "views": {
+   "ref": "Full-body three-quarter view of a Cuban shared-taxi driver, about fifty, grey moustache, aviator sunglasses, white guayabera shirt, dark trousers, straw fedora, standing in a relaxed A-pose with the arms slightly away from the body, the whole figure from head to feet visible with margin. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "This same person seen exactly from the front, standing in the same A-pose, orthographic, symmetric: a Cuban shared-taxi driver, about fifty, grey moustache, aviator sunglasses, white guayabera shirt, dark trousers, straw fedora. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "left": "The same person turned 90 degrees to stand in strict side profile, nose pointing at the left edge of the image, only one eye visible, arms hanging at the sides, orthographic. a Cuban shared-taxi driver, about fifty, grey moustache, aviator sunglasses, white guayabera shirt, dark trousers, straw fedora. Stylized low-poly 3D game asset, flat-shaded facets, solid saturated tropical colours, plain flat white background, no shadow, no ground, no text, even soft light, one single view, not a sheet",
+   "back": "This same person seen exactly from behind, same A-pose, orthographic: a Cuban shared-taxi driver, about fifty, grey moustache, aviator sunglasses, white guayabera shirt, dark trousers, straw fedora. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": false
+ },
+ {
+  "kind": "npc",
+  "name": "bicitaxista",
+  "description": "a lean Cuban pedal rickshaw rider, about thirty, red cap, sleeveless striped shirt, shorts and sandals",
+  "photos": {},
+  "views": {
+   "ref": "Full-body three-quarter view of a lean Cuban pedal rickshaw rider, about thirty, red cap, sleeveless striped shirt, shorts and sandals, standing in a relaxed A-pose with the arms slightly away from the body, the whole figure from head to feet visible with margin. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "This same person seen exactly from the front, standing in the same A-pose, orthographic, symmetric: a lean Cuban pedal rickshaw rider, about thirty, red cap, sleeveless striped shirt, shorts and sandals. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "left": "The same person turned 90 degrees to stand in strict side profile, nose pointing at the left edge of the image, only one eye visible, arms hanging at the sides, orthographic. a lean Cuban pedal rickshaw rider, about thirty, red cap, sleeveless striped shirt, shorts and sandals. Stylized low-poly 3D game asset, flat-shaded facets, solid saturated tropical colours, plain flat white background, no shadow, no ground, no text, even soft light, one single view, not a sheet",
+   "back": "This same person seen exactly from behind, same A-pose, orthographic: a lean Cuban pedal rickshaw rider, about thirty, red cap, sleeveless striped shirt, shorts and sandals. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": false
+ },
+ {
+  "kind": "npc",
+  "name": "manisero",
+  "description": "a Cuban street peanut seller, an old man in a white shirt and straw hat carrying a tin of paper cones of roasted peanuts",
+  "photos": {},
+  "views": {
+   "ref": "Full-body three-quarter view of a Cuban street peanut seller, an old man in a white shirt and straw hat carrying a tin of paper cones of roasted peanuts, standing in a relaxed A-pose with the arms slightly away from the body, the whole figure from head to feet visible with margin. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "This same person seen exactly from the front, standing in the same A-pose, orthographic, symmetric: a Cuban street peanut seller, an old man in a white shirt and straw hat carrying a tin of paper cones of roasted peanuts. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "left": "The same person turned 90 degrees to stand in strict side profile, nose pointing at the left edge of the image, only one eye visible, arms hanging at the sides, orthographic. a Cuban street peanut seller, an old man in a white shirt and straw hat carrying a tin of paper cones of roasted peanuts. Stylized low-poly 3D game asset, flat-shaded facets, solid saturated tropical colours, plain flat white background, no shadow, no ground, no text, even soft light, one single view, not a sheet",
+   "back": "This same person seen exactly from behind, same A-pose, orthographic: a Cuban street peanut seller, an old man in a white shirt and straw hat carrying a tin of paper cones of roasted peanuts. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": true
+ },
+ {
+  "kind": "npc",
+  "name": "senora-jaba",
+  "description": "a Cuban woman of about sixty in a flowered dress and plastic sandals, carrying a reusable shopping bag (jaba) in each hand",
+  "photos": {},
+  "views": {
+   "ref": "Full-body three-quarter view of a Cuban woman of about sixty in a flowered dress and plastic sandals, carrying a reusable shopping bag (jaba) in each hand, standing in a relaxed A-pose with the arms slightly away from the body, the whole figure from head to feet visible with margin. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "This same person seen exactly from the front, standing in the same A-pose, orthographic, symmetric: a Cuban woman of about sixty in a flowered dress and plastic sandals, carrying a reusable shopping bag (jaba) in each hand. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "left": "The same person turned 90 degrees to stand in strict side profile, nose pointing at the left edge of the image, only one eye visible, arms hanging at the sides, orthographic. a Cuban woman of about sixty in a flowered dress and plastic sandals, carrying a reusable shopping bag (jaba) in each hand. Stylized low-poly 3D game asset, flat-shaded facets, solid saturated tropical colours, plain flat white background, no shadow, no ground, no text, even soft light, one single view, not a sheet",
+   "back": "This same person seen exactly from behind, same A-pose, orthographic: a Cuban woman of about sixty in a flowered dress and plastic sandals, carrying a reusable shopping bag (jaba) in each hand. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": true,
+  "note": "profile is mirrored and turned a little toward the viewer"
+ },
+ {
+  "kind": "npc",
+  "name": "estudiante",
+  "description": "a Cuban secondary school girl in her uniform: white short-sleeved shirt, mustard-yellow skirt, white socks, school backpack",
+  "photos": {},
+  "views": {
+   "ref": "Full-body three-quarter view of a Cuban secondary school girl in her uniform: white short-sleeved shirt, mustard-yellow skirt, white socks, school backpack, standing in a relaxed A-pose with the arms slightly away from the body, the whole figure from head to feet visible with margin. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "This same person seen exactly from the front, standing in the same A-pose, orthographic, symmetric: a Cuban secondary school girl in her uniform: white short-sleeved shirt, mustard-yellow skirt, white socks, school backpack. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "left": "The same person turned 90 degrees to stand in strict side profile, nose pointing at the left edge of the image, only one eye visible, arms hanging at the sides, orthographic. a Cuban secondary school girl in her uniform: white short-sleeved shirt, mustard-yellow skirt, white socks, school backpack. Stylized low-poly 3D game asset, flat-shaded facets, solid saturated tropical colours, plain flat white background, no shadow, no ground, no text, even soft light, one single view, not a sheet",
+   "back": "This same person seen exactly from behind, same A-pose, orthographic: a Cuban secondary school girl in her uniform: white short-sleeved shirt, mustard-yellow skirt, white socks, school backpack. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": false
+ },
+ {
+  "kind": "npc",
+  "name": "jubilado",
+  "description": "a Cuban retired man of about seventy in a light blue guayabera, beige trousers and a flat cap, holding a newspaper",
+  "photos": {},
+  "views": {
+   "ref": "Full-body three-quarter view of a Cuban retired man of about seventy in a light blue guayabera, beige trousers and a flat cap, holding a newspaper, standing in a relaxed A-pose with the arms slightly away from the body, the whole figure from head to feet visible with margin. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "This same person seen exactly from the front, standing in the same A-pose, orthographic, symmetric: a Cuban retired man of about seventy in a light blue guayabera, beige trousers and a flat cap, holding a newspaper. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "left": "The same person turned 90 degrees to stand in strict side profile, nose pointing at the left edge of the image, only one eye visible, arms hanging at the sides, orthographic. a Cuban retired man of about seventy in a light blue guayabera, beige trousers and a flat cap, holding a newspaper. Stylized low-poly 3D game asset, flat-shaded facets, solid saturated tropical colours, plain flat white background, no shadow, no ground, no text, even soft light, one single view, not a sheet",
+   "back": "This same person seen exactly from behind, same A-pose, orthographic: a Cuban retired man of about seventy in a light blue guayabera, beige trousers and a flat cap, holding a newspaper. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": false
+ },
+ {
+  "kind": "npc",
+  "name": "turista",
+  "description": "a foreign tourist of about forty with a sun hat, sunglasses, a camera on a strap, a backpack, shorts and trainers",
+  "photos": {},
+  "views": {
+   "ref": "Full-body three-quarter view of a foreign tourist of about forty with a sun hat, sunglasses, a camera on a strap, a backpack, shorts and trainers, standing in a relaxed A-pose with the arms slightly away from the body, the whole figure from head to feet visible with margin. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "This same person seen exactly from the front, standing in the same A-pose, orthographic, symmetric: a foreign tourist of about forty with a sun hat, sunglasses, a camera on a strap, a backpack, shorts and trainers. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "left": "The same person turned 90 degrees to stand in strict side profile, nose pointing at the left edge of the image, only one eye visible, arms hanging at the sides, orthographic. a foreign tourist of about forty with a sun hat, sunglasses, a camera on a strap, a backpack, shorts and trainers. Stylized low-poly 3D game asset, flat-shaded facets, solid saturated tropical colours, plain flat white background, no shadow, no ground, no text, even soft light, one single view, not a sheet",
+   "back": "This same person seen exactly from behind, same A-pose, orthographic: a foreign tourist of about forty with a sun hat, sunglasses, a camera on a strap, a backpack, shorts and trainers. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": true
+ },
+ {
+  "kind": "npc",
+  "name": "joven",
+  "description": "a Cuban young man of about twenty in a baseball cap, a sports shirt, jeans and trainers, holding a phone",
+  "photos": {},
+  "views": {
+   "ref": "Full-body three-quarter view of a Cuban young man of about twenty in a baseball cap, a sports shirt, jeans and trainers, holding a phone, standing in a relaxed A-pose with the arms slightly away from the body, the whole figure from head to feet visible with margin. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "front": "This same person seen exactly from the front, standing in the same A-pose, orthographic, symmetric: a Cuban young man of about twenty in a baseball cap, a sports shirt, jeans and trainers, holding a phone. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light",
+   "left": "The same person turned 90 degrees to stand in strict side profile, nose pointing at the left edge of the image, only one eye visible, arms hanging at the sides, orthographic. a Cuban young man of about twenty in a baseball cap, a sports shirt, jeans and trainers, holding a phone. Stylized low-poly 3D game asset, flat-shaded facets, solid saturated tropical colours, plain flat white background, no shadow, no ground, no text, even soft light, one single view, not a sheet",
+   "back": "This same person seen exactly from behind, same A-pose, orthographic: a Cuban young man of about twenty in a baseball cap, a sports shirt, jeans and trainers, holding a phone. One single view of one object, not a sheet, centred, the whole object visible with margin, same colours, parts and details as the reference. stylized low-poly 3D game asset in a diorama style: flat-shaded facets, no textures, solid saturated tropical colours (coral, mustard, turquoise, mint, cream), chrome and glass as flat light greys, normal proportions, not photorealistic, not a caricature, no rust or decay. Plain flat white background, no shadow, no ground, no text, no logos, even soft light"
+  },
+  "seed": 1,
+  "style": "A diorama",
+  "mirrored_left": false
+ }
+]

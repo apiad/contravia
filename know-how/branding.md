@@ -38,6 +38,23 @@ The game is stylized low-poly, colourful and warm, never photorealistic and neve
 - Reference sheets for manifoldx assets are drawn in this style ("A diorama", chosen 2026-11-17): flat-shaded
   facets, solid colours, on white with no shadow.
 
+## Reference sheets for 3D assets
+
+`assets/reference/<name>/` holds klein drawings in the 3D look for manifoldx's asset pipeline
+(`repos/manifoldx/know-how/making-an-asset.md`), and `assets/reference/catalog.json` records each object's
+kind, description, prompts, seed, the photos given as input (URLs only; press photos are never committed) and
+notes on weak views. There are 8 vehicles, 7 landmarks and 8 typical people:
+
+- vehicles: `ref` (three-quarter), `left` (strict profile, front at the image's left), `front`, `rear`;
+- landmarks: `ref` and `front`; their footprint and height come from OSM, not from a drawing;
+- people: `ref`, `front`, `left` (strict profile looking left), `back`.
+
+How they are made, in two passes on our GPU machine: first the three-quarter reference from the description and
+real photos, then each view from that reference with "one single view of one object, not a sheet". klein does
+not turn an object to a view it has not seen: plans from above and the side of a building come back as another
+three-quarter or the facade again, so those views are left out. A person's profile works only when drawn from
+their front view rather than the reference; one that looks right is mirrored.
+
 ## Assets the game uses
 
 `assets/` holds what the game draws, all as plain SVG that manifoldx's GUI draws with thorvg at any size
