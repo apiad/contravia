@@ -37,6 +37,22 @@ def test_keep_drops_the_replaced_footprint_and_keeps_the_rest():
     assert capitolio.OSM_ID not in kept.building_ids.tolist() and 7 in kept.building_ids.tolist()
 
 
+def test_keep_carries_the_tags_of_the_buildings_it_keeps():
+    """The facade plans read each building's tags and municipio: a kept cell must still hold them."""
+    from dataclasses import replace
+
+    cap, other = square((30, 30), 40), square((150, 150), 10)
+    city = city_with([(capitolio.OSM_ID, cap), (7, other)])
+    lm = Landmarks(city)
+    i, j = cell_of(np.array([[30.0, 30.0]]))[0]
+    cell = city.cell(i, j)
+    attrs = np.arange(len(cell.buildings) * 5, dtype=float).reshape(-1, 5)
+    kept = lm.keep(i, j, replace(cell, building_attrs=attrs, muni_names=("Centro Habana",)))
+    k = cell.building_ids.tolist().index(7)
+    assert kept.muni_names == ("Centro Habana",)
+    assert kept.building_attrs.tolist() == [attrs[k].tolist()]
+
+
 def test_the_car_hits_the_landmark_where_the_box_was():
     cap = square((30, 30), 40)
     walls = Walls(city_with([(capitolio.OSM_ID, cap)])).near(30, 30)

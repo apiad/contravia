@@ -84,6 +84,8 @@ class Landmarks:
         return Cell(roads=roads,
                     buildings=[r for r, k in zip(cell.buildings, b_keep, strict=True) if k],
                     building_ids=cell.building_ids[b_keep],
+                    building_attrs=None if cell.building_attrs is None else cell.building_attrs[b_keep],
+                    muni_names=cell.muni_names,
                     fillers=[r for r, k in zip(cell.fillers, f_keep, strict=True) if k],
                     filler_seeds=cell.filler_seeds[f_keep],
                     trees=cell.trees[t_keep],
