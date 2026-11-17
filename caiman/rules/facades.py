@@ -132,11 +132,11 @@ def plan(osm_id: int, attrs=None, muni: str | None = None, area: float = 100.0) 
                 tuple(float(c) for c in color), tuple(float(c) for c in roof), portal)
 
 
-def portal_walls(ring: np.ndarray, roads: np.ndarray) -> np.ndarray:
-    """Which edges of a counter-clockwise or clockwise ring face a main road closely and run along it: one
-    bool per edge (edge k joins corner k to k + 1). roads are (ax, az, bx, bz, width) rows."""
+def portal_walls(ring: np.ndarray, roads: np.ndarray, min_width: float = PORTAL_ROAD) -> np.ndarray:
+    """Which edges of a counter-clockwise or clockwise ring face a road at least min_width wide closely and run
+    along it: one bool per edge (edge k joins corner k to k + 1). roads are (ax, az, bx, bz, width) rows."""
     ring = np.asarray(ring, float)
-    main = roads[roads[:, 4] >= PORTAL_ROAD] if len(roads) else roads
+    main = roads[roads[:, 4] >= min_width] if len(roads) else roads
     out = np.zeros(len(ring), bool)
     if not len(main):
         return out

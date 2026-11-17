@@ -14,7 +14,7 @@ from caiman.clearance import boxes, roads_around
 from caiman.geo import CELL
 from caiman.landmarks import Landmarks
 from caiman.mesh import MeshBuilder
-from caiman.rules import buildings, facades, ground, roads, trees
+from caiman.rules import buildings, detail, facades, ground, roads, trees
 from caiman.terrain import seat
 from caiman.world import World
 
@@ -65,6 +65,21 @@ def build(i: int, j: int):
         spots, size, tone = trees.wild(i, j, terrain, roads_around(city(), i, j))
         trees.trees(mb, spots, terrain.height(spots[:, 0], spots[:, 1]), size, tone)
     return mb.to_meshdata(x0, z0)
+
+
+def build_detail(i: int, j: int):
+    """The detail ring's MeshData of cell (i, j): cornices, balconies, sills, coping and roof tanks of the
+    buildings the cell's massing draws (rules/detail.py), or None for a cell with no buildings."""
+    c = landmarks().keep(i, j, city().cell(i, j))
+    terrain = city().terrain
+    near = roads_around(city(), i, j)
+    mb = MeshBuilder()
+    for ring, style_id, plan in boxes(c, near):
+        portals = facades.portal_walls(ring, near) if plan.portal else None
+        detail.dress(mb, ring, style_id, seat(ring, terrain), plan, near, portals)
+    if not mb._pos:
+        return None
+    return mb.to_meshdata(i * CELL, j * CELL)
 
 
 def build_node(L: int, a: int, b: int):

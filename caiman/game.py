@@ -27,7 +27,7 @@ from caiman.hud import Hud
 from caiman.input import Driver
 from caiman.kept import kept, source
 from caiman.quadtree import LEVELS
-from caiman.rules.ground import GROUND, relief
+from caiman.rules.ground import GROUND, WATER_Y, relief
 from caiman.surface import Surface
 from caiman.walls import Walls
 from caiman.world import World
@@ -38,7 +38,8 @@ TUNE_EVERY = 60  # frames between two tunings, over whose median frame time
 FAR = 15000.0  # the camera's far plane: past the clear-weather fog's end
 RECENTRE = 2000.0  # metres from the engine's origin before it moves to the camera
 BASE = 40_000.0  # side of the plain ground under everything, so empty cells show ground, not sky
-BASE_Y = 0.1  # sea level, a little up: the ground under SEA is not drawn, so the water shows there
+BASE_Y = WATER_Y  # sea level, a little up: the ground under SEA is not drawn, so the water shows there
+SEA_TILE = 1000.0  # metres: the side of the squares the sea is laid in when it has holes
 WATER = (0.10, 0.24, 0.32)
 FLAT_BASE_Y = -1.0  # with flat data: below every streamed ground, which always wins over it
 SHADOW = (5.0, 2.3)  # metres: the dark ellipse under the car, along and across it
@@ -51,10 +52,10 @@ class Game:
     def __init__(self, engine, city: World, at: tuple[float, float] = (0.0, 0.0), traffic=None, clock=None,
                  sky=None, with_traffic: bool = False):
         from manifoldx.modeling.assets.car import CarParams, build_car, spawn_car
-        from manifoldx.streaming import QuadStreamer
+        from manifoldx.streaming import QuadStreamer, Streamer
 
         from caiman.atmosphere import Atmosphere
-        from caiman.cells import build_node
+        from caiman.cells import build_detail, build_node
         from caiman.clock import Clock
         from caiman.weather import SkyConfig, Weather
 
@@ -78,6 +79,9 @@ class Game:
         self.streamer = QuadStreamer(engine, CELL, city.tree.origin, LEVELS, city.exists, build_node,
                                      error=lambda L: CELL * 2**L / 16, workers="process", tau=TAU[0],
                                      builders=max(1, min(3, (os.cpu_count() or 2) - 1)))
+        # The detail ring: cornices, balconies, sills and roof tanks in the 3 x 3 cells around the car, drawn over
+        # the massing (rules/detail.py). It narrows to the car's own cell when the frame time pushes tau to its top.
+        self.detail = Streamer(engine, CELL, build_detail, radius=1, ready_radius=2, workers="process")
         engine.state.teleport = {"to": None, "error": None}
         if self.walls.landmarks.mesh is not None:  # drawn once, not streamed: they are few and seen from afar
             from manifoldx.components import Material, Mesh, Transform
@@ -212,17 +216,26 @@ class Game:
 
     def _spawn_base(self):
         """One plain square of water, BASE metres a side, at sea level, that follows the camera: the sea and the
-        bay wherever the streamed ground leaves out what lies below caiman.rules.ground.SEA."""
+        bay wherever the streamed ground leaves out what lies below caiman.rules.ground.SEA. Where the data
+        holds holes in the sea (caiman.structures: over cuts and tunnels that run lower than the water), the
+        water is laid once instead, over the whole city and BASE / 2 around it, without them."""
         from manifoldx.components import Material, Mesh, Transform
         from manifoldx.resources import StandardMaterial
 
         from caiman.mesh import MeshBuilder
 
-        h = BASE / 2
-        mb = MeshBuilder()
         sea = relief(self.terrain)  # flat data has no sea: the plane is ground under everything, as before
-        mb.add([(-h, 0, -h), (h, 0, -h), (h, 0, h), (-h, 0, h)], [(0, 1, 0)] * 4, WATER if sea else GROUND,
-               [(0, 1, 2), (0, 2, 3)])
+        holes = self.city.a.get("sea_holes") if sea else None
+        self._sea_still = holes is not None and len(holes) > 0
+        mb = MeshBuilder()
+        if self._sea_still:
+            t = _water_without(np.asarray(holes, float), self.city.a["g_poly"])
+            mb.add(np.c_[t[:, 0], np.zeros(len(t)), t[:, 1]], [(0, 1, 0)] * len(t), WATER,
+                   np.arange(len(t)).reshape(-1, 3))
+        else:
+            h = BASE / 2
+            mb.add([(-h, 0, -h), (h, 0, -h), (h, 0, h), (-h, 0, h)], [(0, 1, 0)] * 4, WATER if sea else GROUND,
+                   [(0, 1, 2), (0, 2, 3)])
         m = mb.to_meshdata(0.0, 0.0)
         return self.engine.spawn(Mesh({"positions": m.positions, "normals": m.normals, "colors": m.colors,
                                        "indices": m.indices}),
@@ -279,6 +292,7 @@ class Game:
         """Stop what the game started itself: the street builders, the wall builder and the traffic thread. A reload under
         caiman dev fires this before it builds the game again from the new code."""
         self.streamer.close()
+        self.detail.close()
         self.walls.close()
         if self.layer:
             self.runner.stop()
@@ -294,12 +308,15 @@ class Game:
         return np.array([ox, 0.0, oz])
 
     def waiting(self) -> int:
-        """Cells within one cell of the car that hold something and are not drawn yet."""
+        """Cells within one cell of the car that hold something and are not drawn yet, in the city's streamer
+        or in the detail ring."""
         o = self.city.tree.origin
-        i, j = math.floor(self.car.x / CELL) - o[0], math.floor(self.car.z / CELL) - o[1]
-        near = [(0, i + a, j + b) for a in (-1, 0, 1) for b in (-1, 0, 1)]
-        drawn = self.streamer.drawn()
-        return sum(1 for n in near if self.city.exists(*n) and n not in drawn)
+        ci, cj = math.floor(self.car.x / CELL), math.floor(self.car.z / CELL)
+        drawn, ring, r = self.streamer.drawn(), self.detail.drawn(), self.detail.radius
+        cells = [(ci + a, cj + b) for a in (-1, 0, 1) for b in (-1, 0, 1)]
+        full = [(i, j) for i, j in cells if self.city.exists(0, i - o[0], j - o[1])]
+        return (sum(1 for i, j in full if (0, i - o[0], j - o[1]) not in drawn)
+                + sum(1 for i, j in full if max(abs(i - ci), abs(j - cj)) <= r and (i, j) not in ring))
 
     def _publish(self, key: str, value) -> None:
         """Write one engine.state key: the parallel systems share that dict, so they take turns."""
@@ -344,7 +361,8 @@ class Game:
         else:
             self.eye, target = chase(self.eye, self.car, self._dt, self.surface)
         self.o = self._recentre()
-        self.base.transform.pos = (float(self.eye[0]), BASE_Y if self._sea else FLAT_BASE_Y, float(self.eye[2]))
+        if not self._sea_still:
+            self.base.transform.pos = (float(self.eye[0]), BASE_Y if self._sea else FLAT_BASE_Y, float(self.eye[2]))
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
         self.hud.update(self.car, self.o)
         self.hud.show_stats(self._stats_lines())
@@ -378,6 +396,8 @@ class Game:
         """Point the city's streamer at the camera and publish the cells it holds."""
         self._tune()
         self.streamer.focus(self.eye[0], self.eye[2], height=max(float(self.eye[1]), 1.0))
+        self.detail.radius = 0 if self.streamer.tau >= TAU[1] else 1
+        self.detail.focus(self.car.x, self.car.z)
         tiles = self.streamer.stats()
         with self._state_lock:
             st = self.engine.state
@@ -399,7 +419,7 @@ class Game:
         return [
             f"fps {1000 / max(f.mean(), 1e-3):5.1f}   frame {f.mean():5.1f} ms   worst {f.max():6.1f} ms",
             "drawn  " + "  ".join(f"L{L}:{levels[L]}" for L in sorted(levels, key=int)),
-            f"nodes  {sum(levels.values())}   tau {self.streamer.tau:.1f}   held {tiles.get('held', 0)}   waiting {getattr(st, 'cells_waiting', 0)}",
+            f"nodes  {sum(levels.values())}   detail {len(self.detail.drawn())}   tau {self.streamer.tau:.1f}   held {tiles.get('held', 0)}   waiting {getattr(st, 'cells_waiting', 0)}",
             f"built {tiles.get('built', 0)}  uploaded {tiles.get('uploaded', 0)}  dropped {tiles.get('dropped', 0)}",
             f"longest gap {tiles.get('max_frame_ms', 0.0):.0f} ms",
             f"cars {traffic.get('cars', 0)}   flow step {traffic.get('flow_step_ms', 0)} ms",
@@ -533,3 +553,23 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
         n += 1
     Image.fromarray(img).save(shot)
     game.streamer.close()
+    game.detail.close()
+
+
+def _water_without(holes, points) -> np.ndarray:
+    """The (3N, 2) corners of triangles covering the box of points, widened by BASE / 2, but for the holes
+    (H, 3, 2): laid in SEA_TILE squares, of which only those the holes reach are cut."""
+    import shapely
+
+    lo = np.floor((points.min(axis=0) - BASE / 2) / SEA_TILE) * SEA_TILE
+    hi = np.ceil((points.max(axis=0) + BASE / 2) / SEA_TILE) * SEA_TILE
+    gx, gz = np.meshgrid(np.arange(lo[0], hi[0], SEA_TILE), np.arange(lo[1], hi[1], SEA_TILE))
+    gx, gz = gx.ravel(), gz.ravel()
+    hole = shapely.union_all(shapely.polygons(holes))
+    tiles = shapely.box(gx, gz, gx + SEA_TILE, gz + SEA_TILE)
+    hit = shapely.intersects(tiles, hole)
+    x0, z0, x1, z1 = gx[~hit], gz[~hit], gx[~hit] + SEA_TILE, gz[~hit] + SEA_TILE
+    plain = np.stack([np.c_[x0, z0], np.c_[x1, z0], np.c_[x1, z1], np.c_[x0, z0], np.c_[x1, z1], np.c_[x0, z1]], 1)
+    cut = shapely.constrained_delaunay_triangles(shapely.difference(tiles[hit], hole))
+    rest = shapely.get_coordinates(cut).reshape(-1, 4, 2)[:, :3]
+    return np.concatenate([plain.reshape(-1, 2), rest.reshape(-1, 2)])
