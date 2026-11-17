@@ -32,6 +32,8 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--time", help='pin the clock, as "Sun 08:00" or "2026-09-12 17:30"; play uses the machine\'s clock')
     p.add_argument("--sky", help="JSON file of sky settings to change (see havana/weather.py, SkyConfig)")
     p.add_argument("--warp", type=float, default=1.0, help="run the clock this many times faster; for tests")
+    p.add_argument("--no-pipeline", dest="pipeline", action="store_false",
+                   help="run the systems and the render one after the other instead of overlapping them")
 
     p = sub.add_parser("bench", help="drive the fixed route and record frame times")
     p.add_argument("--tiles", help="folder of the island's tiles; adds the island's scenes to the run")
@@ -77,7 +79,7 @@ def main(argv: list[str] | None = None) -> None:
         from havana.game import main as play
 
         play(args.data, at=args.at, shot=args.shot, frames=args.frames, traffic=args.traffic, when=args.time,
-             warp=args.warp, sky=args.sky, tiles=args.tiles)
+             warp=args.warp, sky=args.sky, tiles=args.tiles, pipelined=args.pipeline)
     elif args.command == "climate":
         import os
 

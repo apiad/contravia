@@ -47,3 +47,25 @@ def test_scene_file_and_flight_path():
     toward = to_local(*f["toward"]) - path[0]
     heading = path[-1] - path[0]
     assert np.dot(toward, heading) / (np.hypot(*toward) * np.hypot(*heading)) > 0.9999  # straight at Santa Clara
+
+
+def test_pipelined_table_puts_both_runs_under_each_time():
+    from bench.pipelined import table
+
+    run = {"frame_ms": 21.5, "update_ms": 20.1, "render_ms": 1.2, "overlap_ms": 0.0,
+           "slowest": [(9.9, "Game._frame")]}
+    text = table({"Tue 08:00": {"serial": run, "pipelined": run}}, ["Tue 08:00"])
+    assert "| Tue 08:00 | serial | 21.5 | 20.1 | 1.2 | 0.0 | Game._frame 9.9 |" in text
+    assert "| Tue 08:00 | pipelined |" in text
+
+
+def test_play_takes_pipelining_off(monkeypatch):
+    import havana.cli
+    import havana.game
+
+    seen = {}
+    monkeypatch.setattr(havana.game, "main", lambda *a, **k: seen.update(k))
+    havana.cli.main(["play"])
+    assert seen["pipelined"] is True
+    havana.cli.main(["play", "--no-pipeline"])
+    assert seen["pipelined"] is False

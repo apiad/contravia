@@ -182,6 +182,10 @@ class NightSky:
         class SkyMover(Component):
             k: Float  # 0-4 the planets, 5 the moon's lit disc, 6 its dark part
 
+        # The catalogue is spawned when night falls, but its system queries the type every frame: register
+        # it now, so a day-time query names a component the store knows.
+        SkyPoint.register(engine.store)
+
         self.engine = engine
         self.material = NightSkyMaterial()
         self._load(when)

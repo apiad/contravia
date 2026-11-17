@@ -21,6 +21,9 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   `manifoldx emit close x=... z=... minutes=40` closes a street; `engine.state.traffic` reports the numbers.
 - `havana flowmap out.png --time "Tue 08:00" [--traffic my.json]` draws the flow layer over the province without a
   window; `havana bench --time ...` adds traffic numbers to the run.
+- `bench/pipelined.py` drives the bench route's first leg offscreen and measures a frame serial against pipelined,
+  where the engine draws this frame while the next frame's systems run on a worker; `--check` drives the same leg
+  under `MANIFOLDX_PIPELINE=check` to catch a system that writes what the render reads.
 - The sky follows the same clock: sun, moon, planets and stars (`havana/sky.py`) and Havana's weather from a chain
   learnt from ERA5 (`havana/weather.py`). `havana climate` rebuilds the tables in `havana/sky_data/` (needs network;
   the game never does). `--time "2026-07-18 23:00"` takes a full date; `--sky my.json` changes `SkyConfig` keys;
