@@ -14,6 +14,22 @@ from caiman.citydata import Cell, CityData
 from caiman.geo import cell_of
 from caiman.quadtree import Tree
 
+LAND = 0.3  # metres: a cell whose ground rises this high anywhere is land, and is drawn even with nothing on it
+
+
+def _land_cells(terrain) -> list[tuple[int, int]]:
+    """The cells of the relief grid where the ground rises above LAND: without them an empty cell on a hill
+    would show the flat plain under everything instead of its ground."""
+    from caiman.geo import CELL
+
+    h = np.asarray(terrain.heights)
+    if not h.size or h.max() <= LAND:
+        return []
+    r, c = np.nonzero(h > LAND)
+    i = np.floor((terrain.origin[0] + c * terrain.step[0]) / CELL).astype(np.int64)
+    j = np.floor((terrain.origin[1] + r * terrain.step[1]) / CELL).astype(np.int64)
+    return [tuple(k) for k in np.unique(np.stack([i, j], axis=1), axis=0).tolist()]
+
 
 class World:
     """Havana's CityData joined with the island's Tiles, if any."""
@@ -26,12 +42,12 @@ class World:
             self.tree = tiles.tree
             self._cells = np.unique(np.vstack([core.cells(), tiles.cells()]).reshape(-1, 2), axis=0)
         else:
-            weights: dict = {}
+            weights: dict = {key: 0.01 for key in _land_cells(self.terrain)}  # bare ground: drawn, but light
             for i, j in core.cells().tolist():
                 c = core.cell(i, j)
                 weights[(i, j)] = len(c.buildings) + 0.25 * len(c.roads)
             self.tree = Tree.build(weights)
-            self._cells = core.cells()
+            self._cells = np.array(sorted(weights), np.int64).reshape(-1, 2)
         self.tree = Tree(self.tree.origin, self.tree.leaves, self._cells)
 
     @classmethod

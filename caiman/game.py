@@ -351,6 +351,22 @@ class Game:
             st.tiles = tiles
             st.cells_built = tiles["built"]
             st.cells_waiting = self.waiting()
+            st.car_node = self._car_node()
+
+    def _car_node(self) -> list:
+        """Where the streamer stands on the car's cell and each node above it: selected, building, built, on the
+        GPU, drawn. For finding a cell that never shows."""
+        sm, o = self.streamer, self.streamer.origin
+        i, j = math.floor(self.car.x / CELL), math.floor(self.car.z / CELL)
+        out = []
+        for L in range(sm.levels + 1):
+            n = (L, (i - o[0]) >> L, (j - o[1]) >> L)
+            ready = sm._ready.get(n, "absent")
+            out.append({"node": list(n), "exists": bool(sm.exists(*n)), "selected": n in sm._selected,
+                        "in_cut": sm._cut is not None and n in sm._cut, "building": n in sm._pending,
+                        "built": ready != "absent", "empty": ready is None,
+                        "gpu": sm._gpu.get(n, {}).get("done", False), "drawn": n in sm._drawn})
+        return out
 
     def traffic(self, query, dt: float) -> None:
         """Drive the cars around the player, draw them and publish their numbers, timed for the bench."""
