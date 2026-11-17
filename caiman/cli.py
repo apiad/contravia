@@ -64,6 +64,11 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("dev", help="play under hot reload: a saved file in caiman/ rebuilds the game in the same "
                                    "window, with the car where it was; takes the options of play")
 
+    p = sub.add_parser("building-tags", help="add what OSM says about each building (kind, levels, height, use, "
+                                             "municipio) to a data file prepared before")
+    p.add_argument("pbf")
+    p.add_argument("--data", default="data/havana.npz")
+
     p = sub.add_parser("walls-check", help="count footprints, filler boxes and landmark walls inside a road; "
                                            "all must be 0")
     p.add_argument("--data", default="data/havana.npz")
@@ -102,6 +107,10 @@ def main(argv: list[str] | None = None) -> None:
         from manifoldx.cli import main as manifoldx
 
         manifoldx(["run", "-m", "caiman.cli", "--", "play", *extra])
+    elif args.command == "building-tags":
+        from caiman.buildingtags import main as building_tags
+
+        building_tags(args.pbf, args.data)
     elif args.command == "walls-check":
         import sys
 

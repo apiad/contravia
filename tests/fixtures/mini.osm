@@ -88,7 +88,9 @@
     <nd ref="16"/>
     <nd ref="17"/>
     <nd ref="14"/>
-    <tag k="building" v="yes"/>
+    <tag k="building" v="apartments"/>
+    <tag k="building:levels" v="5"/>
+    <tag k="amenity" v="school"/>
   </way>
   <way id="10" version="1">
     <nd ref="18"/>

@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from caiman import buildingtags
 from caiman.citydata import CityData
 from caiman.geo import HAVANA_BOX, cell_of, to_local
 from caiman.graph import build_graph
@@ -45,6 +46,7 @@ class Raw:
 
     roads: list = field(default_factory=list)  # (highway, [(lat, lon), ...])
     buildings: list = field(default_factory=list)  # (osm_id, [(lat, lon), ...]) outer ring
+    building_tags: dict = field(default_factory=dict)  # osm_id -> the tags buildingtags.TAGS keeps
     green: list = field(default_factory=list)  # (osm_id, ring) areas that get scattered trees
     not_built: list = field(default_factory=list)  # rings of areas that never get filler
     trees: list = field(default_factory=list)  # (lat, lon)
@@ -97,6 +99,7 @@ def read_osm(path, boundary: str = "La Habana", box=HAVANA_BOX, keep_ways: bool 
                 pts = [(nd.lat, nd.lon) for nd in w.nodes if nd.location.valid()]
                 if near(pts):
                     raw.buildings.append((w.id, pts))
+                    raw.building_tags[w.id] = buildingtags.kept(tags)
 
         def area(self, a):
             tags = a.tags
@@ -105,6 +108,7 @@ def read_osm(path, boundary: str = "La Habana", box=HAVANA_BOX, keep_ways: bool 
                 return
             if "building" in tags and not a.from_way():
                 raw.buildings.append((a.orig_id(), rings[0]))
+                raw.building_tags[a.orig_id()] = buildingtags.kept(tags)
             if _tagged(tags, GREEN):
                 raw.green.extend((a.orig_id(), r) for r in rings)
             if _tagged(tags, NOT_BUILT):
@@ -237,6 +241,7 @@ def build_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict
     graph = build_graph(raw.ways, raw.controls, raw.restrictions, raw.municipios, rings,
                         lambda lat, lon: to_local(lat, lon), WIDTHS, inside)
     city.a.update(graph)
+    city.a.update(buildingtags.encode(city, raw.building_tags, raw.municipios))
     street_report = {}
     if graph:  # the street surface, and the road's height at every graph point, so traffic need not ask each frame
         from caiman.streets import add_to
