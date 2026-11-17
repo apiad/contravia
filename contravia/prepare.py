@@ -159,14 +159,17 @@ def choose_fillers(blocks, cents: np.ndarray, no_build: list, nb_tree) -> tuple[
     """The blocks that get filler boxes, as rings, and their seeds: no building centroid and no green inside."""
     import shapely
 
-    fillers, seeds = [], []
-    for b in blocks:
-        if len(cents) and shapely.contains_xy(b, cents[:, 0], cents[:, 1]).any():
-            continue
-        if any(b.intersection(no_build[k]).area > 1.0 for k in nb_tree.query(b)):
-            continue
-        fillers.append(np.asarray(b.exterior.coords)[:-1])
-        seeds.append(_block_seed(b.centroid))
+    blocks = np.asarray(blocks, dtype=object)
+    free = np.ones(len(blocks), bool)
+    if len(cents) and len(blocks):
+        _, hit = shapely.STRtree(blocks).query(shapely.points(cents), predicate="within")
+        free[hit] = False
+    if len(no_build) and free.any():
+        bi, ki = nb_tree.query(blocks[free])
+        big = shapely.area(shapely.intersection(blocks[free][bi], np.asarray(no_build, dtype=object)[ki])) > 1.0
+        free[np.flatnonzero(free)[bi[big]]] = False
+    fillers = [np.asarray(b.exterior.coords)[:-1] for b in blocks[free]]
+    seeds = [_block_seed(b.centroid) for b in blocks[free]]
     return fillers, seeds
 
 
