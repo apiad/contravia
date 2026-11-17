@@ -35,6 +35,8 @@ FAR = 15000.0  # the camera's far plane: past the clear-weather fog's end
 RECENTRE = 2000.0  # metres from the engine's origin before it moves to the camera
 BASE = 40_000.0  # side of the plain ground under everything, so empty cells show ground, not sky
 BASE_Y = -1.0  # below every streamed ground, which always wins over it
+SHADOW = (5.0, 2.3)  # metres: the dark ellipse under the car, along and across it
+SHADOW_LIFT = 0.04  # metres above what the wheels stand on, so it shows over the road
 
 
 class Game:
@@ -82,6 +84,7 @@ class Game:
                          Transform(pos=(0, 0, 0)))
         self.o = np.zeros(3)  # the engine's origin as (x, 0, z)
         self.base = self._spawn_base()
+        self.shadow = self._spawn_shadow()
         self.model = kept(engine.state, "player car", "CarParams()", lambda: build_car(CarParams()))
         self.handles = spawn_car(engine, self.model)
         if "car" in engine.state:  # a reload under caiman dev: drive on from where the old code left the car
@@ -214,6 +217,25 @@ class Game:
                                  Material(StandardMaterial("#ffffff", roughness=0.95, vertex_colors=True)),
                                  Transform(pos=(0.0, BASE_Y, 0.0)))
 
+    def _spawn_shadow(self):
+        """A dark ellipse under the car, at the height its wheels stand on: where the drawn ground lies lower,
+        it floats with the car, so a road the data has but the screen does not show yet can be seen."""
+        from manifoldx.components import Material, Mesh, Transform
+        from manifoldx.resources import StandardMaterial
+
+        from caiman.mesh import MeshBuilder
+
+        a = np.linspace(0, 2 * np.pi, 24, endpoint=False)
+        ring = np.c_[np.cos(a) * SHADOW[0] / 2, np.zeros(len(a)), np.sin(a) * SHADOW[1] / 2]
+        mb = MeshBuilder()
+        mb.add(np.vstack([[0, 0, 0], ring]), [(0, 1, 0)] * (len(a) + 1), (0.02, 0.02, 0.02),
+               [(0, 1 + k, 1 + (k + 1) % len(a)) for k in range(len(a))])
+        m = mb.to_meshdata(0.0, 0.0)
+        return self.engine.spawn(Mesh({"positions": m.positions, "normals": m.normals, "colors": m.colors,
+                                       "indices": m.indices}),
+                                 Material(StandardMaterial("#ffffff", roughness=1.0, vertex_colors=True)),
+                                 Transform(pos=(0.0, BASE_Y, 0.0)))
+
     def _teleport_event(self, p: dict) -> None:
         if "lat" in p:
             x, z = to_local(float(p["lat"]), float(p["lon"]))
@@ -297,6 +319,9 @@ class Game:
         # manifoldx turns +x toward -z for a positive yaw; the game turns it toward +z.
         place_car(self.handles, self.model, at=(self.car.x, self.car.y, self.car.z), yaw=-self.car.yaw,
                   pitch=self.car.pitch, roll=self.car.roll)
+        half = -self.car.yaw / 2  # the same turn as the car's, about the vertical
+        self.shadow.transform.pos = (self.car.x, self.car.y + SHADOW_LIFT, self.car.z)
+        self.shadow.transform.rot = (0.0, float(np.sin(half)), 0.0, float(np.cos(half)))
         if self.camera_override:
             eye, target = self.camera_override()
             self.eye, target = np.asarray(eye, float), np.asarray(target, float)
