@@ -72,3 +72,10 @@ def test_clock_follows_the_machine_or_a_fixed_start():
     fixed = Clock(at=TUE_8, warp=60)
     assert fixed.now() >= TUE_8
     assert fixed.now() - TUE_8 < timedelta(minutes=1)
+
+
+def test_a_bare_time_is_today_at_that_time():
+    from datetime import datetime
+
+    at = parse_at("10:00")
+    assert (at.date(), at.hour, at.minute) == (datetime.now().date(), 10, 0)

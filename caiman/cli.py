@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--shot", help="render offscreen, save this PNG and exit")
     p.add_argument("--frames", type=int, default=120, help="frames to run before --shot is saved")
     p.add_argument("--traffic", help="JSON file of traffic settings to change (see caiman/rules/traffic.py)")
-    p.add_argument("--time", help='pin the clock, as "Sun 08:00" or "2026-09-12 17:30"; play uses the machine\'s clock')
+    p.add_argument("--time", help='start the clock at "17:30", "Sun 08:00" or "2026-09-12 17:30" (10:00 by default); "now" is the machine\'s clock')
     p.add_argument("--sky", help="JSON file of sky settings to change (see caiman/weather.py, SkyConfig)")
     p.add_argument("--warp", type=float, default=1.0, help="run the clock this many times faster; for tests")
     p.add_argument("--no-pipeline", dest="pipeline", action="store_false",
