@@ -5,8 +5,6 @@ only what the rules need: road centrelines with a width, building footprints wit
 blocks that OSM left empty (they get filler boxes), and tree points.
 """
 
-import itertools
-import math
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -139,15 +137,62 @@ def _local(points) -> np.ndarray:
     return to_local(p[:, 0], p[:, 1])
 
 
+def _locals(items) -> list[np.ndarray]:
+    """_local of each list of points, projected in one call."""
+    arrs = [np.asarray(p, float).reshape(-1, 2) for p in items]
+    if not arrs:
+        return []
+    return np.split(_local(np.concatenate(arrs)), np.cumsum([len(a) for a in arrs])[:-1])
+
+
 def _split(line: np.ndarray, width: float) -> np.ndarray:
     """Cut a polyline into segments no longer than MAX_SEGMENT, as rows (ax, az, bx, bz, width)."""
-    rows = []
-    for a, b in itertools.pairwise(line):
-        n = max(1, math.ceil(np.hypot(*(b - a)) / MAX_SEGMENT))
-        t = np.linspace(0, 1, n + 1)[:, None]
-        pts = a + (b - a) * t
-        rows.append(np.hstack([pts[:-1], pts[1:], np.full((n, 1), width)]))
-    return np.vstack(rows)
+    return _split_all([line], [width])
+
+
+def _split_all(lines, widths) -> np.ndarray:
+    """_split of every line, stacked in order, computed at once: the same numbers as np.linspace gives."""
+    a = np.concatenate([ln[:-1] for ln in lines])
+    b = np.concatenate([ln[1:] for ln in lines])
+    w = np.repeat(np.asarray(widths, float), [len(ln) - 1 for ln in lines])
+    n = np.maximum(1, np.ceil(np.hypot(*(b - a).T) / MAX_SEGMENT)).astype(np.int64)
+    seg = np.repeat(np.arange(len(n)), n)
+    j = np.arange(len(seg)) - np.repeat(np.cumsum(n) - n, n)
+    step = 1.0 / n[seg]
+    t0 = (j * step)[:, None]
+    t1 = np.where(j + 1 == n[seg], 1.0, (j + 1) * step)[:, None]
+    d = (b - a)[seg]
+    return np.hstack([a[seg] + d * t0, a[seg] + d * t1, w[seg][:, None]])
+
+
+def _closed(rings) -> np.ndarray:
+    """Whether each ring's last point is np.allclose to its first."""
+    if not rings:
+        return np.zeros(0, bool)
+    first = np.array([r[0] for r in rings])
+    last = np.array([r[-1] for r in rings])
+    return np.isclose(first, last).all(axis=1)
+
+
+def _valid_rings(rings) -> np.ndarray:
+    """Whether each ring has three distinct points and makes a polygon shapely calls valid, all at once."""
+    import shapely
+
+    ok = np.zeros(len(rings), bool)
+    if not rings:
+        return ok
+    n = np.array([len(r) for r in rings])
+    rid = np.repeat(np.arange(len(rings)), n)
+    xz = np.concatenate(rings)
+    distinct = np.bincount(np.unique(np.column_stack([rid, xz]), axis=0)[:, 0].astype(np.int64),
+                           minlength=len(rings))
+    three = distinct >= 3
+    if three.any():
+        sel = np.repeat(three, n)
+        dense = (np.cumsum(three) - 1)[rid[sel]]
+        polys = shapely.polygons(shapely.linearrings(xz[sel], indices=dense))
+        ok[np.flatnonzero(three)] = shapely.is_valid(polys)
+    return ok
 
 
 def _block_seed(c) -> int:
@@ -190,25 +235,19 @@ def build_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict
         return shapely.contains_xy(province, xz[:, 0], xz[:, 1])
 
     # Roads: split, then keep the segments whose midpoint is in the province.
-    lines, seg_rows = [], []
-    for hw, pts in raw.roads:
-        line = _local(pts)
-        lines.append(LineString(line))
-        seg_rows.append(_split(line, WIDTHS[hw]))
-    roads = np.vstack(seg_rows) if seg_rows else np.zeros((0, 5))
+    road_xz = _locals(pts for _, pts in raw.roads)
+    lines = [LineString(line) for line in road_xz]
+    roads = _split_all(road_xz, [WIDTHS[hw] for hw, _ in raw.roads]) if road_xz else np.zeros((0, 5))
     roads = roads[inside((roads[:, 0:2] + roads[:, 2:4]) / 2)]
 
     # Buildings: skip rings shapely calls invalid or with fewer than three distinct points.
-    rings, ids, skipped = [], [], 0
-    for osm_id, pts in raw.buildings:
-        ring = _local(pts)
-        if len(ring) > 1 and np.allclose(ring[0], ring[-1]):
-            ring = ring[:-1]
-        if len(np.unique(ring, axis=0)) < 3 or not Polygon(ring).is_valid:
-            skipped += 1
-            continue
-        rings.append(ring)
-        ids.append(osm_id)
+    rings = _locals(pts for _, pts in raw.buildings)
+    rings = [r[:-1] if len(r) > 1 and c else r
+             for r, c in zip(rings, _closed(rings))]
+    ok = _valid_rings(rings)
+    skipped = int((~ok).sum())
+    rings = [r for r, k in zip(rings, ok) if k]
+    ids = [i for (i, _), k in zip(raw.buildings, ok) if k]
     cents = np.array([r.mean(axis=0) for r in rings]).reshape(-1, 2)
     keep = inside(cents)
     rings = [r for r, k in zip(rings, keep) if k]
