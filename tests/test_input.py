@@ -1,6 +1,6 @@
 import pytest
 
-from caiman.input import Driver
+from contravia.input import Driver
 
 DT = 1 / 60
 

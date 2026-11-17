@@ -1,7 +1,7 @@
 import numpy as np
 
-from caiman.buildingtags import KINDS
-from caiman.rules.facades import TYPES, plan
+from contravia.buildingtags import KINDS
+from contravia.rules.facades import TYPES, plan
 
 
 def attrs(kind="yes", levels=np.nan, height=np.nan, uses=0, muni=-1):
@@ -34,7 +34,7 @@ def test_a_plan_is_seeded_and_within_its_type():
 
 
 def test_portals_face_main_roads_only():
-    from caiman.rules.facades import portal_walls
+    from contravia.rules.facades import portal_walls
 
     ring = np.array([[0, 0], [20, 0], [20, 12], [0, 12]], float)  # its first edge runs along z = 0
     main = np.array([[-50, -9, 70, -9, 10.0]])  # a 10 m road whose edge is 4 m from the wall
@@ -45,8 +45,8 @@ def test_portals_face_main_roads_only():
 
 
 def test_a_portal_stands_on_columns():
-    from caiman.mesh import MeshBuilder
-    from caiman.rules import buildings
+    from contravia.mesh import MeshBuilder
+    from contravia.rules import buildings
 
     ring = np.array([[0, 0], [20, 0], [20, 12], [0, 12]], float)
     p = plan(3, attrs(levels=3), "Centro Habana")

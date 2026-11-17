@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-from caiman.mesh import MeshBuilder
-from caiman.rules import buildings, facades, roads, trees
-from caiman.terrain import Terrain
+from contravia.mesh import MeshBuilder
+from contravia.rules import buildings, facades, roads, trees
+from contravia.terrain import Terrain
 
 L = np.array([[0, 0], [20, 0], [20, 10], [10, 10], [10, 20], [0, 20]], float)
 
@@ -116,7 +116,7 @@ def test_a_skirt_drops_to_the_ground_on_the_low_side_only():
 
 
 def test_neighbouring_cells_share_their_ground_edge():
-    from caiman.rules.ground import N, ground
+    from contravia.rules.ground import N, ground
 
     t = tilted()
     a, b = MeshBuilder(), MeshBuilder()
@@ -130,7 +130,7 @@ def test_neighbouring_cells_share_their_ground_edge():
 
 
 def test_a_box_on_a_slope_stands_on_its_lowest_corner():
-    from caiman.terrain import seat
+    from contravia.terrain import seat
 
     t, ring = tilted(), np.array([(0, 0), (30, 0), (30, 20), (0, 20)], float)
     mb = MeshBuilder()
@@ -146,8 +146,8 @@ def test_trees_stand_on_the_ground():
 
 
 def test_wild_trees_grow_the_same_in_clumps_off_the_roads_and_out_of_the_sea():
-    from caiman.rules.trees import WILD_CLEAR, wild
-    from caiman.terrain import Terrain
+    from contravia.rules.trees import WILD_CLEAR, wild
+    from contravia.terrain import Terrain
 
     r, c = np.mgrid[0:300, 0:300]
     land = Terrain(np.where(c < 150, 5.0, 0.0), (-1500, -1500), (10, 10))   # land west of x = 0, sea east

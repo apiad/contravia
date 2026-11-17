@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from caiman.quadtree import Tree
+from contravia.quadtree import Tree
 
 
 def _random_weights(seed=0, n=2000):

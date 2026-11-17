@@ -3,9 +3,9 @@
 import numpy as np
 import pytest
 
-from caiman.quadtree import Tree
-from caiman.tiles import Tiles, write_tiles
-from caiman.world import World
+from contravia.quadtree import Tree
+from contravia.tiles import Tiles, write_tiles
+from contravia.world import World
 
 FAR_EAST = 900_000.0  # a road this far east of the Capitolio, in the tiles only
 

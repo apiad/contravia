@@ -1,6 +1,6 @@
 import numpy as np
 
-from caiman.prepare import build_city, read_osm
+from contravia.prepare import build_city, read_osm
 
 FIX = "tests/fixtures/mini.osm"
 
@@ -57,9 +57,9 @@ def test_features_outside_the_box_are_not_read():
 def test_heights_from_glo30_tiles_reach_the_city_data(tmp_path):
     import tifffile
 
-    from caiman.citydata import CityData
-    from caiman.prepare import main
-    from caiman.terrain import _tile_name
+    from contravia.citydata import CityData
+    from contravia.prepare import main
+    from contravia.terrain import _tile_name
 
     dem = tmp_path / "dem"
     dem.mkdir()

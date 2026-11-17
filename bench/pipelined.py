@@ -1,4 +1,4 @@
-"""caiman pipelined: what a frame costs with the systems overlapped by the render.
+"""contravia pipelined: what a frame costs with the systems overlapped by the render.
 
 The bench route's first leg is driven offscreen, at a pinned clock, once with the systems and the render one
 after the other (serial) and once with next frame's systems running on the engine's worker while this frame is
@@ -22,11 +22,11 @@ from pathlib import Path
 
 import numpy as np
 
-from caiman.bench import autopilot, road_path
-from caiman.clock import Clock, parse_at
-from caiman.game import Game
-from caiman.geo import to_local
-from caiman.world import World
+from contravia.bench import autopilot, road_path
+from contravia.clock import Clock, parse_at
+from contravia.game import Game
+from contravia.geo import to_local
+from contravia.world import World
 
 DT = 1 / 30  # the fixed timestep the window's frames use
 ROUTE = Path("bench/route.json")
@@ -34,7 +34,7 @@ SLOWEST = 5  # systems in the report
 
 
 def leg_path(city, route: str | Path = ROUTE, leg: int = 0) -> np.ndarray:
-    """The first leg's road path, as `caiman bench` drives it."""
+    """The first leg's road path, as `contravia bench` drives it."""
     stops = json.loads(Path(route).read_text())["legs"][leg]["stops"]
     return road_path(city, [tuple(to_local(np.array([lat]), np.array([lon]))[0]) for lat, lon, _ in stops])
 
@@ -43,9 +43,9 @@ def open_run(city: World, when: str, pipeline: bool, size=(1920, 1080), sky: str
     """An engine on a headless canvas and a Game at `when`, with the pipeline set as `run()` would set it."""
     import manifoldx as mx
 
-    from caiman.weather import load_sky_config
+    from contravia.weather import load_sky_config
 
-    engine = mx.Engine("caiman-pipelined", width=size[0], height=size[1], pipelined=pipeline)
+    engine = mx.Engine("contravia-pipelined", width=size[0], height=size[1], pipelined=pipeline)
     game = Game(engine, city, clock=Clock(at=parse_at(when)), sky=load_sky_config(sky) if sky else None)
     game.atmosphere.prepare(wait=True)  # draw with the ambient light, not without it
     engine._ensure_offscreen(1)
@@ -210,7 +210,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--check", action="store_true",
                         help="drive pipelined with MANIFOLDX_PIPELINE=check and a teleport and weather at half")
     parser.add_argument("--weather", default="storm", help="weather state the check run forces at half")
-    parser.add_argument("--sky", help="JSON file of sky settings (see caiman/weather.py, SkyConfig)")
+    parser.add_argument("--sky", help="JSON file of sky settings (see contravia/weather.py, SkyConfig)")
     args = parser.parse_args(argv)
     w, h = (int(v) for v in args.size.lower().split("x"))
     os.environ["HAVANA_DATA"] = os.path.abspath(args.data)

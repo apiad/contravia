@@ -1,4 +1,4 @@
-from caiman.kept import kept
+from contravia.kept import kept
 
 
 def test_kept_builds_once_per_stamp_and_stays_out_of_the_state_dump():

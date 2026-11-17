@@ -3,11 +3,11 @@ from datetime import datetime, timedelta
 import numpy as np
 import pytest
 
-from caiman.clock import FlowRunner
-from caiman.flow import Flow
-from caiman.prepare import build_city, read_osm
-from caiman.rules.traffic import TrafficConfig
-from caiman.traffic import TrafficLayer
+from contravia.clock import FlowRunner
+from contravia.flow import Flow
+from contravia.prepare import build_city, read_osm
+from contravia.rules.traffic import TrafficConfig
+from contravia.traffic import TrafficLayer
 
 TUE_8 = datetime(2026, 11, 17, 8, 30)
 

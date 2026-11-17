@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from caiman.hud import bearing, heading_text
+from contravia.hud import bearing, heading_text
 
 
 @pytest.mark.parametrize("yaw, deg", [(0.0, 90), (math.pi / 2, 180), (math.pi, 270), (-math.pi / 2, 0)])

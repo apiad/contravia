@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from caiman.bench import autopilot, road_path, summary
-from caiman.car import CarState, step
+from contravia.bench import autopilot, road_path, summary
+from contravia.car import CarState, step
 
 
 def test_autopilot_follows_a_square():
@@ -35,8 +35,8 @@ def test_road_path_refuses_stops_with_no_road_between(city):
 def test_scene_file_and_flight_path():
     import json
 
-    from caiman.bench import SCENES, flight_path
-    from caiman.geo import to_local
+    from contravia.bench import SCENES, flight_path
+    from contravia.geo import to_local
 
     scenes = json.loads(SCENES.read_text())
     assert {"santiago", "hill", "flight"} <= set(scenes)
@@ -60,12 +60,12 @@ def test_pipelined_table_puts_both_runs_under_each_time():
 
 
 def test_play_takes_pipelining_off(monkeypatch):
-    import caiman.cli
-    import caiman.game
+    import contravia.cli
+    import contravia.game
 
     seen = {}
-    monkeypatch.setattr(caiman.game, "main", lambda *a, **k: seen.update(k))
-    caiman.cli.main(["play"])
+    monkeypatch.setattr(contravia.game, "main", lambda *a, **k: seen.update(k))
+    contravia.cli.main(["play"])
     assert seen["pipelined"] is True
-    caiman.cli.main(["play", "--no-pipeline"])
+    contravia.cli.main(["play", "--no-pipeline"])
     assert seen["pipelined"] is False

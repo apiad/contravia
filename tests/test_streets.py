@@ -4,13 +4,13 @@ import numpy as np
 import shapely
 from shapely.geometry import Polygon
 
-from caiman.citydata import CityData
-from caiman.geo import CELL
-from caiman.graph import CLASSES
-from caiman.prepare import WIDTHS
-from caiman.streets import LIFT, build, mesh
-from caiman.surface import Surface
-from caiman.terrain import Terrain
+from contravia.citydata import CityData
+from contravia.geo import CELL
+from contravia.graph import CLASSES
+from contravia.prepare import WIDTHS
+from contravia.streets import LIFT, build, mesh
+from contravia.surface import Surface
+from contravia.terrain import Terrain
 from tests.graphs import four_way
 
 

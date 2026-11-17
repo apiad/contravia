@@ -4,8 +4,8 @@ from datetime import datetime
 
 import numpy as np
 
-from caiman import sky
-from caiman.nightsky import KIND_MW, colour_bin, load_points, pack, unpack
+from contravia import sky
+from contravia.nightsky import KIND_MW, colour_bin, load_points, pack, unpack
 
 
 def test_pack_and_unpack():
@@ -40,7 +40,7 @@ def test_the_catalogue_exists_only_while_stars_show():
 
     import manifoldx as mx
 
-    from caiman.nightsky import NightSky
+    from contravia.nightsky import NightSky
 
     engine = mx.Engine("night-test", width=64, height=48)
     when = datetime(2026, 11, 15, 23, 0)

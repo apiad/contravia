@@ -2,10 +2,10 @@
 
 import numpy as np
 
-from caiman.citydata import CityData
-from caiman.geo import CELL
-from caiman.quadtree import Tree
-from caiman.tiles import Tiles, write_tiles
+from contravia.citydata import CityData
+from contravia.geo import CELL
+from contravia.quadtree import Tree
+from contravia.tiles import Tiles, write_tiles
 
 
 def _square(cx, cz, r=5.0):
@@ -23,8 +23,8 @@ def _features():
 
 
 def _write(tmp_path, roads, rings, ids, trees, split=150.0):
-    from caiman.citydata import _centroids
-    from caiman.geo import cell_of
+    from contravia.citydata import _centroids
+    from contravia.geo import cell_of
 
     weights = {}
     for c in map(tuple, cell_of(_centroids(rings)).tolist()):

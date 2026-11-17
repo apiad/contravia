@@ -1,8 +1,8 @@
 import numpy as np
 
-from caiman.buildingtags import HEIGHT, KIND, KINDS, LEVELS, MUNI, USES, encode, kind, number
-from caiman.citydata import CityData
-from caiman.geo import to_latlon
+from contravia.buildingtags import HEIGHT, KIND, KINDS, LEVELS, MUNI, USES, encode, kind, number
+from contravia.citydata import CityData
+from contravia.geo import to_latlon
 
 
 def test_numbers_and_kinds_from_tag_values():

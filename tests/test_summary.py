@@ -2,10 +2,10 @@
 
 import numpy as np
 
-from caiman.citydata import Cell
-from caiman.geo import CELL
-from caiman.rules import buildings, facades
-from caiman.summary import pool, summarize, summary_mesh
+from contravia.citydata import Cell
+from contravia.geo import CELL
+from contravia.rules import buildings, facades
+from contravia.summary import pool, summarize, summary_mesh
 
 
 def _cells(L, origin, seed=1):
@@ -54,7 +54,7 @@ def test_mesh_budget_and_roads_by_level():
 
 
 def test_style_matches_box():
-    from caiman.mesh import MeshBuilder
+    from contravia.mesh import MeshBuilder
 
     mb = MeshBuilder()
     ring = np.array([(0, 0), (10, 0), (10, 10), (0, 10)], float)
