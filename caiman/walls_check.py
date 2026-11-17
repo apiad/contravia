@@ -36,9 +36,9 @@ def count(city) -> Counter:
         c = kept.cell(i, j)
         roads = roads_around(kept, i, j)
         drawn = {"footprint": boxes(replace(c, fillers=[], filler_seeds=no), roads_around(city, i, j)),
-                 "filler": boxes(replace(c, buildings=[], building_ids=no), roads_around(city, i, j))}
+                 "filler": boxes(replace(c, buildings=[], building_ids=no, building_attrs=None), roads_around(city, i, j))}
         for source, items in drawn.items():
-            out[source] += sum(bool(entering(ring, roads).any()) for ring, _ in items)
+            out[source] += sum(bool(entering(ring, roads).any()) for ring, *_ in items)
         out["landmark"] += sum(bool(entering(seg, roads).any()) for seg in landmarks.walls(i, j))
     return out
 

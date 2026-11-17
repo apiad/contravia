@@ -55,8 +55,8 @@ def build(i: int, j: int):
         roads.streets(mb, c.street_tris, c.street_edges, terrain, c.street_marks)
         if c.struct_tris is not None:
             roads.structures(mb, c.struct_tris, c.struct_paint)
-    for ring, style_id in boxes(c, roads_around(city(), i, j)):
-        if not buildings.box(mb, ring, style_id, base=seat(ring, terrain)):
+    for ring, style_id, plan in boxes(c, roads_around(city(), i, j)):
+        if not buildings.box(mb, ring, style_id, base=seat(ring, terrain), plan=plan):
             SKIPPED_ROOFS += 1
     trees.trees(mb, c.trees, terrain.height(c.trees[:, 0], c.trees[:, 1]))
     if not (len(c.buildings) or len(c.fillers) or len(c.trees)):  # land OSM says nothing about

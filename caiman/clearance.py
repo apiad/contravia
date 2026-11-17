@@ -11,7 +11,9 @@ leave out the same ones.
 import numpy as np
 
 from caiman.citydata import Cell
+from caiman.mesh import signed_area
 from caiman.rules.buildings import filler_rings
+from caiman.rules.facades import Plan, municipio, plan
 
 MARGIN = 0.5  # metres of a road's half-width a box may reach into, for the kerb
 
@@ -102,11 +104,20 @@ def roads_around(city, i: int, j: int) -> np.ndarray:
     return np.concatenate([city.cell(i + di, j + dj).roads for di in (-1, 0, 1) for dj in (-1, 0, 1)]).reshape(-1, 5)
 
 
-def boxes(cell: Cell, roads: np.ndarray) -> list[tuple[np.ndarray, int]]:
+def boxes(cell: Cell, roads: np.ndarray) -> list[tuple[np.ndarray, int, Plan]]:
     """The footprints of a cell's buildings and filler boxes that leave every road clear, each with the id
-    its height and colour are drawn from (the OSM id, or the block's seed for a filler box)."""
-    items = [(np.asarray(r, float), int(i)) for r, i in zip(cell.buildings, cell.building_ids, strict=True)]
+    its draws are seeded by (the OSM id, or the block's seed for a filler box) and its facade plan."""
+    attrs = cell.building_attrs if cell.building_attrs is not None else [None] * len(cell.buildings)
+    items, munis = [], []
+    for r, i, a in zip(cell.buildings, cell.building_ids, attrs, strict=True):
+        r = np.asarray(r, float)
+        muni = municipio(a, cell.muni_names)
+        munis.append(muni)
+        items.append((r, int(i), plan(int(i), a, muni, abs(signed_area(r)))))
+    zone = max(set(munis), key=munis.count) if munis else None  # filler boxes take the cell's usual municipio
     for block, seed in zip(cell.fillers, cell.filler_seeds, strict=True):
-        items += [(r, abs(int(seed)) * 131 + k) for k, r in enumerate(filler_rings(block, int(seed)))]
-    keep = ~crossing([r for r, _ in items], roads)
+        for k, r in enumerate(filler_rings(block, int(seed))):
+            sid = abs(int(seed)) * 131 + k
+            items.append((r, sid, plan(sid, None, zone, abs(signed_area(r)))))
+    keep = ~crossing([r for r, *_ in items], roads)
     return [item for item, k in zip(items, keep, strict=True) if k]

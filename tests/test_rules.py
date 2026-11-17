@@ -1,7 +1,8 @@
 import numpy as np
+import pytest
 
 from caiman.mesh import MeshBuilder
-from caiman.rules import buildings, roads, trees
+from caiman.rules import buildings, facades, roads, trees
 from caiman.terrain import Terrain
 
 L = np.array([[0, 0], [20, 0], [20, 10], [10, 10], [10, 20], [0, 20]], float)
@@ -13,7 +14,7 @@ def test_box_height_is_seeded_and_in_range():
         mb = MeshBuilder()
         buildings.box(mb, L, osm_id=123)
         hs.append(mb.to_meshdata(0, 0).positions[:, 1].max())
-    assert hs[0] == hs[1] and 6.0 <= hs[0] <= 30.0
+    assert hs[0] == hs[1] and hs[0] == pytest.approx(facades.plan(123, area=300.0).height)
 
 
 def test_different_ids_give_different_buildings():

@@ -22,6 +22,8 @@ class Cell:
     roads: np.ndarray = field(default_factory=lambda: np.zeros((0, 5), np.float32))  # ax, az, bx, bz, width
     buildings: list = field(default_factory=list)  # rings, (K, 2) float32, not closed
     building_ids: np.ndarray = field(default_factory=lambda: np.zeros(0, np.int64))
+    building_attrs: np.ndarray | None = None  # (N, 5) buildingtags rows; None for data prepared before them
+    muni_names: tuple = ()  # what building_attrs' municipio column indexes
     fillers: list = field(default_factory=list)  # block rings that get filler boxes
     filler_seeds: np.ndarray = field(default_factory=lambda: np.zeros(0, np.int64))
     trees: np.ndarray = field(default_factory=lambda: np.zeros((0, 2), np.float32))
@@ -177,11 +179,18 @@ class CityData:
             roads=self.a["roads"][r0:r1],
             buildings=self._rings("building", b0, b1),
             building_ids=self.a["building_ids"][b0:b1],
+            building_attrs=self.a["building_attrs"][b0:b1] if "building_attrs" in self.a else None,
+            muni_names=self._muni_names(),
             fillers=self._rings("filler", f0, f1),
             filler_seeds=self.a["filler_seeds"][f0:f1],
             trees=self.a["trees"][t0:t1],
             **streets,
         )
+
+    def _muni_names(self) -> tuple:
+        if not hasattr(self, "_munis"):
+            self._munis = tuple(str(n) for n in self.a.get("building_muni_names", ()))
+        return self._munis
 
     def building(self, osm_id: int) -> np.ndarray | None:
         """The footprint ring of one OSM building, or None when the data does not hold it."""

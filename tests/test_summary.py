@@ -4,7 +4,7 @@ import numpy as np
 
 from caiman.citydata import Cell
 from caiman.geo import CELL
-from caiman.rules import buildings
+from caiman.rules import buildings, facades
 from caiman.summary import pool, summarize, summary_mesh
 
 
@@ -58,4 +58,4 @@ def test_style_matches_box():
     ring = np.array([(0, 0), (10, 0), (10, 10), (0, 10)], float)
     buildings.box(mb, ring, 12345)
     top = mb.to_meshdata(0, 0).positions[:, 1].max()
-    assert abs(top - buildings.style(12345)[0]) < 1e-4
+    assert abs(top - facades.plan(12345, area=100.0).height) < 1e-4

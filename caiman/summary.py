@@ -14,7 +14,7 @@ from manifoldx.streaming import MeshData
 from caiman.citydata import Cell
 from caiman.geo import CELL
 from caiman.mesh import MeshBuilder, signed_area
-from caiman.rules import buildings
+from caiman.rules import facades
 from caiman.rules.ground import GROUND, SEA, relief
 from caiman.rules.roads import ROAD
 from caiman.rules.trees import LEAVES
@@ -46,20 +46,24 @@ def summarize(cells: list[tuple[int, int, Cell]], L: int, a: int, b: int, origin
     """The summary of node (L, a, b) made straight from the cells inside it."""
     built, hsum, green = np.zeros((GRID, GRID)), np.zeros((GRID, GRID)), np.zeros((GRID, GRID))
     roads = []
-    filler_h = (buildings.MIN_H + buildings.MAX_H) / 2
     for _i, _j, c in cells:
-        for ring, osm_id in zip(c.buildings, c.building_ids, strict=True):
+        attrs = c.building_attrs if c.building_attrs is not None else [None] * len(c.buildings)
+        munis = []
+        for ring, osm_id, at in zip(c.buildings, c.building_ids, attrs, strict=True):
             ring = np.asarray(ring, float)
             (sx, sz), = _square_of(ring.mean(axis=0), L, a, b, origin)
             area = abs(signed_area(ring))
+            muni = facades.municipio(at, c.muni_names)
+            munis.append(muni)
             built[sz, sx] += area
-            hsum[sz, sx] += area * buildings.style(int(osm_id))[0]
-        for ring in c.fillers:
+            hsum[sz, sx] += area * facades.plan(int(osm_id), at, muni, area).height
+        zone = max(set(munis), key=munis.count) if munis else None
+        for ring, seed in zip(c.fillers, c.filler_seeds, strict=True):
             ring = np.asarray(ring, float)
             (sx, sz), = _square_of(ring.mean(axis=0), L, a, b, origin)
             area = abs(signed_area(ring)) * FILLER_SHARE
             built[sz, sx] += area
-            hsum[sz, sx] += area * filler_h
+            hsum[sz, sx] += area * facades.plan(abs(int(seed)) * 131, None, zone, 150.0).height
         if len(c.trees):
             sq = _square_of(c.trees, L, a, b, origin)
             np.add.at(green, (sq[:, 1], sq[:, 0]), 1.0)
