@@ -14,7 +14,7 @@ from caiman.clearance import boxes, roads_around
 from caiman.geo import CELL
 from caiman.landmarks import Landmarks
 from caiman.mesh import MeshBuilder
-from caiman.rules import buildings, ground, roads, trees
+from caiman.rules import buildings, facades, ground, roads, trees
 from caiman.terrain import seat
 from caiman.world import World
 
@@ -55,8 +55,10 @@ def build(i: int, j: int):
         roads.streets(mb, c.street_tris, c.street_edges, terrain, c.street_marks)
         if c.struct_tris is not None:
             roads.structures(mb, c.struct_tris, c.struct_paint)
-    for ring, style_id, plan in boxes(c, roads_around(city(), i, j)):
-        if not buildings.box(mb, ring, style_id, base=seat(ring, terrain), plan=plan):
+    near = roads_around(city(), i, j)
+    for ring, style_id, plan in boxes(c, near):
+        portals = facades.portal_walls(ring, near) if plan.portal else None
+        if not buildings.box(mb, ring, style_id, base=seat(ring, terrain), plan=plan, portals=portals):
             SKIPPED_ROOFS += 1
     trees.trees(mb, c.trees, terrain.height(c.trees[:, 0], c.trees[:, 1]))
     if not (len(c.buildings) or len(c.fillers) or len(c.trees)):  # land OSM says nothing about

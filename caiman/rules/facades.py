@@ -42,8 +42,14 @@ TYPES = {
     "warehouse": Type((1, 1), (6.0, 9.0), (6.0, 9.0), (5.0, 6.0), 0.6,
                       ("#a8a9a3", "#b8b19c", "#9fa6a8", "#c2bba6"), (0.75, 0.9)),
 }
+SHADER_TYPE = {name: k + 1 for k, name in enumerate(TYPES)}  # the facade pattern's type ids in manifoldx
 ROOF = (0.55, 0.54, 0.52)  # flat roofs: grey waterproofing, worn with the walls
 TALL = {"church": 1.5, "school": 1.25, "hospital": 1.25, "public": 1.3}  # ground floors of these, taller
+PORTAL_MUNIS = ("La Habana Vieja", "Centro Habana", "Cerro", "Diez de Octubre")  # where the Calzadas run
+PORTAL_ROAD = 8.0  # the narrowest road, in metres, a portal faces: secondary and up
+PORTAL_GAP = 7.0  # metres at most between a wall and the road's edge
+PORTAL_DEPTH = 3.5  # how far the ground floor stands back behind the columns
+COLUMN = 0.55  # a column's side
 
 
 @dataclass(frozen=True)
@@ -56,6 +62,7 @@ class Plan:
     parapet: float
     color: tuple[float, float, float]
     roof_color: tuple[float, float, float]
+    portal: bool = False  # its walls along a main road stand on columns
 
     @property
     def roof(self) -> float:
@@ -120,8 +127,34 @@ def plan(osm_id: int, attrs=None, muni: str | None = None, area: float = 100.0) 
     if attrs is not None and int(attrs[USES]) & 1:  # historic: kept up a little better
         color = np.minimum(color / wear * min(1.0, wear + 0.1), 1.0)
     roof = np.array(ROOF) * (0.85 + 0.15 * wear)
+    portal = name in ("eclectic", "colonial") and muni in PORTAL_MUNIS and storeys >= 2
     return Plan(name, storeys, float(ground), float(floor), float(rng.uniform(*t.bay)), t.parapet,
-                tuple(float(c) for c in color), tuple(float(c) for c in roof))
+                tuple(float(c) for c in color), tuple(float(c) for c in roof), portal)
+
+
+def portal_walls(ring: np.ndarray, roads: np.ndarray) -> np.ndarray:
+    """Which edges of a counter-clockwise or clockwise ring face a main road closely and run along it: one
+    bool per edge (edge k joins corner k to k + 1). roads are (ax, az, bx, bz, width) rows."""
+    ring = np.asarray(ring, float)
+    main = roads[roads[:, 4] >= PORTAL_ROAD] if len(roads) else roads
+    out = np.zeros(len(ring), bool)
+    if not len(main):
+        return out
+    a, b = main[:, 0:2].astype(float), main[:, 2:4].astype(float)
+    ab = b - a
+    ab_len = np.maximum(np.hypot(ab[:, 0], ab[:, 1]), 1e-9)
+    for k in range(len(ring)):
+        p0, p1 = ring[k], ring[(k + 1) % len(ring)]
+        d = p1 - p0
+        length = float(np.hypot(*d))
+        if length < 6.0:
+            continue
+        mid = (p0 + p1) / 2
+        t = np.clip(np.einsum("ij,ij->i", mid - a, ab) / ab_len**2, 0, 1)
+        gap = np.hypot(*(a + ab * t[:, None] - mid).T) - main[:, 4] / 2
+        along = np.abs(ab @ d) / (ab_len * length)
+        out[k] = bool(np.any((gap < PORTAL_GAP) & (along > 0.94)))
+    return out
 
 
 def municipio(attrs, names) -> str | None:

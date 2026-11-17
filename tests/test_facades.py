@@ -31,3 +31,30 @@ def test_a_plan_is_seeded_and_within_its_type():
         assert t.storeys[0] <= p.storeys <= t.storeys[1] and t.floor[0] <= p.floor <= t.floor[1]
         assert p.height == p.roof + t.parapet and all(0 <= c <= 1 for c in p.color)
     assert len({plan(k, attrs(), "Cerro").color for k in range(50)}) > 3
+
+
+def test_portals_face_main_roads_only():
+    from caiman.rules.facades import portal_walls
+
+    ring = np.array([[0, 0], [20, 0], [20, 12], [0, 12]], float)  # its first edge runs along z = 0
+    main = np.array([[-50, -9, 70, -9, 10.0]])  # a 10 m road whose edge is 4 m from the wall
+    lane = np.array([[-50, -9, 70, -9, 6.0]])
+    across = np.array([[10, -60, 10, -8, 10.0]])
+    assert list(portal_walls(ring, main)) == [True, False, False, False]
+    assert not portal_walls(ring, lane).any() and not portal_walls(ring, across).any()
+
+
+def test_a_portal_stands_on_columns():
+    from caiman.mesh import MeshBuilder
+    from caiman.rules import buildings
+
+    ring = np.array([[0, 0], [20, 0], [20, 12], [0, 12]], float)
+    p = plan(3, attrs(levels=3), "Centro Habana")
+    assert p.portal
+    plain, portal = MeshBuilder(), MeshBuilder()
+    buildings.box(plain, ring, 3, plan=p)
+    buildings.box(portal, ring, 3, plan=p, portals=[True, False, False, False])
+    a, b = plain.to_meshdata(0, 0), portal.to_meshdata(0, 0)
+    assert len(b.positions) > len(a.positions) + 40  # columns and a ceiling
+    low = b.positions[b.positions[:, 1] < p.ground - 0.01]
+    assert low[:, 2].min() >= 0.0 and (np.abs(low[:, 2] - 3.5) < 1e-3).any()  # the shop fronts stand back

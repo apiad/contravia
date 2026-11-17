@@ -12,11 +12,13 @@ class MeshBuilder:
     """Accumulates positions, normals, colours and triangles in world metres."""
 
     def __init__(self):
-        self._pos, self._nrm, self._col, self._idx = [], [], [], []
+        self._pos, self._nrm, self._col, self._idx, self._fac = [], [], [], [], []
         self._count = 0
+        self._faced = False
 
-    def add(self, positions, normals, color, indices) -> None:
-        """Add vertices with one colour, or one per vertex, and triangles indexing them from 0.
+    def add(self, positions, normals, color, indices, facade=None) -> None:
+        """Add vertices with one colour, or one per vertex, and triangles indexing them from 0. facade is
+        one (bays along, floors up, building type, seed) per vertex for walls the shader draws windows on.
 
         Each triangle is turned, if needed, so its winding faces the way its vertices' normals point, which
         lets the rules list corners in any order.
@@ -32,6 +34,8 @@ class MeshBuilder:
         self._nrm.append(n)
         self._col.append(np.broadcast_to(np.asarray(color, np.float32), (len(p), 3)).copy())
         self._idx.append(t + self._count)
+        self._fac.append(np.zeros((len(p), 4), np.float32) if facade is None else np.asarray(facade, np.float32))
+        self._faced = self._faced or facade is not None
         self._count += len(p)
 
     def to_meshdata(self, origin_x: float, origin_z: float) -> MeshData:
@@ -41,7 +45,8 @@ class MeshBuilder:
             return MeshData(z3, z3, z3, np.zeros(0, np.uint32))
         pos = np.vstack(self._pos) - (origin_x, 0.0, origin_z)
         return MeshData(pos.astype(np.float32), np.vstack(self._nrm).astype(np.float32),
-                        np.vstack(self._col).astype(np.float32), np.vstack(self._idx).astype(np.uint32).ravel())
+                        np.vstack(self._col).astype(np.float32), np.vstack(self._idx).astype(np.uint32).ravel(),
+                        facade=np.vstack(self._fac) if self._faced else None)
 
 
 def signed_area(ring: np.ndarray) -> float:
