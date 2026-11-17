@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from havana.graph import CLASSES, Graph
-from havana.prepare import build_city, read_osm
+from caiman.graph import CLASSES, Graph
+from caiman.prepare import build_city, read_osm
 
 FIX = "tests/fixtures/traffic.osm"
 
@@ -91,7 +91,7 @@ def test_edges_near(g):
 
 
 def test_old_data_has_an_empty_graph(city):
-    from havana.citydata import CityData
+    from caiman.citydata import CityData
 
     old = CityData({k: v for k, v in city.a.items() if not k.startswith("g_")})
     assert len(old.graph) == 0

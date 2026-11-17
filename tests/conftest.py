@@ -2,8 +2,8 @@ import os
 
 import pytest
 
-from havana.citydata import CityData
-from havana.prepare import build_city, read_osm
+from caiman.citydata import CityData
+from caiman.prepare import build_city, read_osm
 
 
 @pytest.fixture(scope="session")

@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from havana.geo import to_latlon, to_local
+from caiman.geo import to_latlon, to_local
 
 # (lat, lon) -> (x, z) metres, from pyproj 3 once:
 # +proj=lcc +lat_1=20.5 +lat_2=22.5 +lat_0=23.13528 +lon_0=-82.35972 +ellps=WGS84, z = -northing.

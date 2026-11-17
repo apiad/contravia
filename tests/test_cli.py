@@ -3,7 +3,7 @@ import sys
 
 
 def test_help_lists_the_three_commands():
-    out = subprocess.run([sys.executable, "-m", "havana.cli", "--help"],
+    out = subprocess.run([sys.executable, "-m", "caiman.cli", "--help"],
                          capture_output=True, text=True, check=True).stdout
     for cmd in ("prepare", "play", "bench"):
         assert cmd in out
@@ -13,7 +13,7 @@ def test_flowmap_draws_busy_streets_brighter(city_npz, tmp_path):
     import numpy as np
     from PIL import Image
 
-    from havana.flowmap import main as flowmap
+    from caiman.flowmap import main as flowmap
 
     out = tmp_path / "flow.png"
     totals = flowmap(str(city_npz), str(out), "Tue 08:00", size=400)
@@ -24,9 +24,9 @@ def test_flowmap_draws_busy_streets_brighter(city_npz, tmp_path):
 
 
 def test_play_and_flowmap_take_a_time(monkeypatch):
-    from havana import cli
+    from caiman import cli
 
     seen = {}
-    monkeypatch.setattr("havana.flowmap.main", lambda *a, **k: seen.update(a=a, k=k))
+    monkeypatch.setattr("caiman.flowmap.main", lambda *a, **k: seen.update(a=a, k=k))
     cli.main(["flowmap", "x.png", "--time", "Sun 08:00", "--box", "0,0,10,10"])
     assert seen["a"][2] == "Sun 08:00" and seen["k"]["box"] == (0.0, 0.0, 10.0, 10.0)

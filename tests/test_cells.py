@@ -1,5 +1,5 @@
-from havana import cells
-from havana.citydata import CityData
+from caiman import cells
+from caiman.citydata import CityData
 
 
 def test_every_fixture_cell_builds(city_npz):

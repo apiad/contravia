@@ -3,6 +3,55 @@ revision = 3
 requires-python = ">=3.14"
 
 [[package]]
+name = "caiman"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "manifold-gfx", extra = ["desktop"] },
+    { name = "numpy" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "imagecodecs" },
+    { name = "osmium" },
+    { name = "pillow" },
+    { name = "pytest" },
+    { name = "ruff" },
+    { name = "shapely" },
+    { name = "tifffile" },
+]
+prepare = [
+    { name = "imagecodecs" },
+    { name = "osmium" },
+    { name = "shapely" },
+    { name = "tifffile" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "manifold-gfx", extras = ["desktop"], git = "https://github.com/gia-uh/manifoldx?branch=main" },
+    { name = "numpy" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "imagecodecs" },
+    { name = "osmium" },
+    { name = "pillow" },
+    { name = "pytest" },
+    { name = "ruff" },
+    { name = "shapely" },
+    { name = "tifffile" },
+]
+prepare = [
+    { name = "imagecodecs" },
+    { name = "osmium" },
+    { name = "shapely" },
+    { name = "tifffile" },
+]
+
+[[package]]
 name = "certifi"
 version = "2026.10.23"
 source = { registry = "https://pypi.org/simple" }
@@ -188,55 +237,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/be/b2/feb54341a0ad2c3a57ba462bcdef5543569a7d2a1b8751a9c46050c0e255/glfw-2.11.0-py2.py3-none-win32.whl", hash = "sha256:9aac61d97f71088b16322a4a75cdf72ac44ea3f1c4e7e326e5dd7c427e020903", size = 557704, upload-time = "2026-10-16T08:46:32.228Z" },
     { url = "https://files.pythonhosted.org/packages/78/d6/b0d9d83177397c018efa3579c54990f8d9b3af17fdcf97b0e549609a0571/glfw-2.11.0-py2.py3-none-win_amd64.whl", hash = "sha256:bd39c1adb57b7273813e33b9768bed88d1ea656abfc914b4a6424ec0c5d62674", size = 564482, upload-time = "2026-10-16T08:46:34.015Z" },
     { url = "https://files.pythonhosted.org/packages/03/29/5c890d0da8258c64ec7a2fb76eb4c9aebe89a38abf1aecd8683b0b4c40e6/glfw-2.11.0-py3-none-win_arm64.whl", hash = "sha256:b986dfb457d27852593686fd934c8808986ae2e4cae44ec1e8e89b1e46fc36ee", size = 174351, upload-time = "2026-10-16T08:46:35.244Z" },
-]
-
-[[package]]
-name = "havana-driver"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "manifold-gfx", extra = ["desktop"] },
-    { name = "numpy" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "imagecodecs" },
-    { name = "osmium" },
-    { name = "pillow" },
-    { name = "pytest" },
-    { name = "ruff" },
-    { name = "shapely" },
-    { name = "tifffile" },
-]
-prepare = [
-    { name = "imagecodecs" },
-    { name = "osmium" },
-    { name = "shapely" },
-    { name = "tifffile" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "manifold-gfx", extras = ["desktop"], git = "https://github.com/gia-uh/manifoldx?branch=main" },
-    { name = "numpy" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "imagecodecs" },
-    { name = "osmium" },
-    { name = "pillow" },
-    { name = "pytest" },
-    { name = "ruff" },
-    { name = "shapely" },
-    { name = "tifffile" },
-]
-prepare = [
-    { name = "imagecodecs" },
-    { name = "osmium" },
-    { name = "shapely" },
-    { name = "tifffile" },
 ]
 
 [[package]]

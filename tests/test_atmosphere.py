@@ -5,10 +5,10 @@ from datetime import datetime
 import numpy as np
 import pytest
 
-from havana import sky
-from havana.atmosphere import clear_sky_factor, light_basis, look, snap_target
-from havana.sky import Body
-from havana.weather import Now, SkyConfig
+from caiman import sky
+from caiman.atmosphere import clear_sky_factor, light_basis, look, snap_target
+from caiman.sky import Body
+from caiman.weather import Now, SkyConfig
 
 CLEAR, STORM = Now("clear", 0.05, 0.0, 0.0), Now("storm", 1.0, 1.0, 1.0)
 NO_MOON = Body(-30.0, 0.0, 0.0, 0.0, lit=0.0)

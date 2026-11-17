@@ -1,6 +1,6 @@
 import numpy as np
 
-from havana.citydata import CityData
+from caiman.citydata import CityData
 
 
 def sample():

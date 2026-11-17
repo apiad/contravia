@@ -2,10 +2,10 @@
 
 import numpy as np
 
-from havana.citydata import Cell
-from havana.geo import CELL
-from havana.rules import buildings
-from havana.summary import pool, summarize, summary_mesh
+from caiman.citydata import Cell
+from caiman.geo import CELL
+from caiman.rules import buildings
+from caiman.summary import pool, summarize, summary_mesh
 
 
 def _cells(L, origin, seed=1):
@@ -52,7 +52,7 @@ def test_mesh_budget_and_roads_by_level():
 
 
 def test_style_matches_box():
-    from havana.mesh import MeshBuilder
+    from caiman.mesh import MeshBuilder
 
     mb = MeshBuilder()
     ring = np.array([(0, 0), (10, 0), (10, 10), (0, 10)], float)

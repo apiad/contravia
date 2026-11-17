@@ -1,6 +1,6 @@
 import numpy as np
 
-from havana.walls import Walls
+from caiman.walls import Walls
 
 
 def test_respawn_and_teleport_land_on_roads(city):

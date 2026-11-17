@@ -1,10 +1,10 @@
-"""havana tiles on the mini fixture: the same cells as build_city, and the same files twice."""
+"""caiman tiles on the mini fixture: the same cells as build_city, and the same files twice."""
 
 import numpy as np
 
-from havana.prepare import build_city, read_osm
-from havana.tiles import Tiles
-from havana.tiles_prepare import main
+from caiman.prepare import build_city, read_osm
+from caiman.tiles import Tiles
+from caiman.tiles_prepare import main
 
 
 def test_tiles_match_build_city_and_repeat(tmp_path):

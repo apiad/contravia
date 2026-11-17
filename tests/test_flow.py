@@ -4,9 +4,9 @@ from datetime import datetime, timedelta
 import numpy as np
 import pytest
 
-from havana.flow import Flow
-from havana.prepare import build_city, read_osm
-from havana.rules.traffic import TrafficConfig, moving
+from caiman.flow import Flow
+from caiman.prepare import build_city, read_osm
+from caiman.rules.traffic import TrafficConfig, moving
 
 TUE_8 = datetime(2026, 11, 17, 8, 30)
 
@@ -105,7 +105,7 @@ def test_view_is_a_copy_with_speeds(graph):
 
 @pytest.mark.slow
 def test_one_step_on_a_city_sized_graph_is_fast():
-    from havana.graph import Graph
+    from caiman.graph import Graph
 
     rng = np.random.default_rng(0)
     E, T = 80_000, 320_000

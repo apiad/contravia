@@ -1,5 +1,5 @@
 {
-  "note": "The island's scenes, run after the Havana route when havana bench gets --tiles. Points are (lat, lon).",
+  "note": "The island's scenes, run after the Havana route when caiman bench gets --tiles. Points are (lat, lon).",
   "santiago": {"name": "teleport to Parque Céspedes, Santiago", "at": [20.0213, -75.8294], "still_seconds": 10},
   "hill": {"name": "120 m above the Castillo del Príncipe, looking east", "at": [23.1330, -82.3895], "up": 120,
            "seconds": 10},
