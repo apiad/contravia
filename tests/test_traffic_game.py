@@ -23,7 +23,7 @@ def frames(engine, n):
 def test_cars_appear_and_settings_change_live(engine, city):
     from caiman.game import Game
 
-    game = Game(engine, city, clock=Clock(at=TUE_8))
+    game = Game(engine, city, clock=Clock(at=TUE_8), with_traffic=True)
     frames(engine, 40)
     st = engine.state.traffic
     assert st["error"] is None and st["cars"] > 0
@@ -37,7 +37,7 @@ def test_cars_appear_and_settings_change_live(engine, city):
 def test_bad_settings_are_refused_with_a_reason(engine, city):
     from caiman.game import Game
 
-    game = Game(engine, city, clock=Clock(at=TUE_8))
+    game = Game(engine, city, clock=Clock(at=TUE_8), with_traffic=True)
     old = game.traffic_config
     game.configure_traffic({"populaton": 5})
     assert "populaton" in engine.state.traffic["error"]
@@ -49,6 +49,14 @@ def test_data_without_a_graph_plays_without_traffic(engine, city):
     from caiman.game import Game
 
     old = CityData({k: v for k, v in city.a.items() if not k.startswith("g_")})
-    Game(engine, old, clock=Clock(at=TUE_8))
+    Game(engine, old, clock=Clock(at=TUE_8), with_traffic=True)
     frames(engine, 5)
     assert "road graph" in engine.state.traffic["error"]
+
+
+def test_traffic_is_off_unless_asked(engine, city):
+    from caiman.game import Game
+
+    game = Game(engine, city, clock=Clock(at=TUE_8))
+    frames(engine, 5)
+    assert game.layer is None and engine.state.traffic == {"error": None, "on": False}

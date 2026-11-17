@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import time
 
 from PIL import Image
 
@@ -40,8 +41,11 @@ def test_teleport_far_keeps_precision_and_sea_reports(city, city_npz, island_dir
         engine = mx.Engine("far", width=64, height=48)
         game = Game(engine, World(city, Tiles(island_dir)))
         game.teleport(900_300.0, 0.0)
-        for _ in range(5):
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < 60:  # the builders are other processes: wait for the first node
             engine.render_frame(supersample=1)
+            if any(h is not None for h in game.streamer._drawn.values()):
+                break
         assert abs(game.car.x - 900_000.0) < 100
         ox, oz = engine.origin
         assert np.hypot(game.car.x - ox, game.car.z - oz) < 2000

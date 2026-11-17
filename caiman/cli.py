@@ -31,7 +31,8 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--at", type=_xz, default=(0.0, 0.0), help="start point as X,Z in local metres")
     p.add_argument("--shot", help="render offscreen, save this PNG and exit")
     p.add_argument("--frames", type=int, default=120, help="frames to run before --shot is saved")
-    p.add_argument("--traffic", help="JSON file of traffic settings to change (see caiman/rules/traffic.py)")
+    p.add_argument("--traffic", help="JSON file of traffic settings to change (see caiman/rules/traffic.py); turns traffic on")
+    p.add_argument("--with-traffic", action="store_true", help="turn the traffic on; it is off by default")
     p.add_argument("--time", help='start the clock at "17:30", "Sun 08:00" or "2026-09-12 17:30" (10:00 by default); "now" is the machine\'s clock')
     p.add_argument("--sky", help="JSON file of sky settings to change (see caiman/weather.py, SkyConfig)")
     p.add_argument("--warp", type=float, default=1.0, help="run the clock this many times faster; for tests")
@@ -95,7 +96,8 @@ def main(argv: list[str] | None = None) -> None:
         from caiman.game import main as play
 
         play(args.data, at=args.at, shot=args.shot, frames=args.frames, traffic=args.traffic, when=args.time,
-             warp=args.warp, sky=args.sky, tiles=args.tiles, pipelined=args.pipeline)
+             warp=args.warp, sky=args.sky, tiles=args.tiles, pipelined=args.pipeline,
+             with_traffic=args.with_traffic)
     elif args.command == "dev":
         from manifoldx.cli import main as manifoldx
 

@@ -176,7 +176,7 @@ def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: st
         os.environ["HAVANA_TILES"] = os.path.abspath(tiles)
     city = World.load(data, tiles)
     engine = mx.Engine("caiman-bench", width=size[0], height=size[1])
-    game = Game(engine, city, clock=Clock(at=parse_at(when)))
+    game = Game(engine, city, clock=Clock(at=parse_at(when)), with_traffic=True)
     game.atmosphere.prepare(wait=True)
     frame_ms, waits, wait_start = [], [], None
     traffic_ms, cars, sky_ms = [], [], []

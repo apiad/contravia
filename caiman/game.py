@@ -46,7 +46,7 @@ class Game:
     """One drive: the engine, the streamed city, the car and the camera."""
 
     def __init__(self, engine, city: World, at: tuple[float, float] = (0.0, 0.0), traffic=None, clock=None,
-                 sky=None):
+                 sky=None, with_traffic: bool = False):
         from manifoldx.modeling.assets.car import CarParams, build_car, spawn_car
         from manifoldx.streaming import QuadStreamer
 
@@ -103,7 +103,7 @@ class Game:
         self.hud = Hud(engine)
         self.camera_override = None  # bench.py sets a function () -> (eye, target) in world metres
 
-        self._start_traffic(traffic)
+        self._start_traffic(traffic, with_traffic)
         self.sky_ms, self._sky_state_at = 0.0, 0.0
         # The frame's last four systems, in the order they run: the drive is a barrier, and the three after
         # it are consecutive parallel systems, so one group runs the streamer, the traffic and the sky at
@@ -121,8 +121,8 @@ class Game:
         engine.on("weather")(self.force_weather)
         engine.on("shutdown")(self._shutdown)
 
-    def _start_traffic(self, config) -> None:
-        """The flow layer over the whole graph, warmed up to now, and the cars around the player."""
+    def _start_traffic(self, config, on: bool) -> None:
+        """The flow layer over the whole graph, warmed up to now, and the cars around the player; off unless asked."""
         from caiman.clock import FlowRunner
         from caiman.flow import Flow
         from caiman.rules.traffic import TrafficConfig
@@ -131,7 +131,9 @@ class Game:
 
         self.traffic_config = config or TrafficConfig()
         self.layer, self._state_at, self.traffic_ms = None, 0.0, 0.0
-        self.engine.state.traffic = {"error": None}
+        self.engine.state.traffic = {"error": None, "on": on}
+        if not on:
+            return
         graph = self.city.graph
         if not len(graph):
             self.engine.state.traffic = {"error": "no road graph in the data file: run caiman prepare again"}
@@ -476,10 +478,10 @@ class Game:
 
 def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, size=(1280, 720),
          traffic: str | None = None, when: str | None = None, warp: float = 1.0, sky: str | None = None,
-         tiles: str | None = None, pipelined: bool = True) -> None:
+         tiles: str | None = None, pipelined: bool = True, with_traffic: bool = False) -> None:
     """Open a window and drive, or with `shot`, render offscreen until the city is drawn and save a PNG.
 
-    traffic: a JSON file of demand settings. when ("Sun 08:00", "17:30") pins the clock, 10:00 today by default,
+    with_traffic turns the traffic on, as a traffic file does: traffic: a JSON file of demand settings. when ("Sun 08:00", "17:30") pins the clock, 10:00 today by default,
     and "now" runs it on the machine's clock; warp speeds it up, for tests and the dev channel. pipelined runs the systems of the next
     frame while the window draws this one; --no-pipeline is the serial path, for comparing the two.
     """
@@ -495,7 +497,7 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     engine = mx.Engine("caiman", width=size[0], height=size[1], pipelined=pipelined)
     clock = Clock(warp=warp) if when == "now" else Clock(at=parse_at(when or "10:00"), warp=warp)
     game = Game(engine, World.load(data, tiles), at=at, traffic=load_config(traffic) if traffic else None,
-                clock=clock, sky=load_sky_config(sky) if sky else None)
+                clock=clock, sky=load_sky_config(sky) if sky else None, with_traffic=with_traffic or bool(traffic))
     if not shot:
         engine.run()
         return
