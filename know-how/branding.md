@@ -27,6 +27,17 @@ The fonts are Noto Sans (SIL Open Font License), so they ship with the repo. The
 (`.cv-logo`, `.cv-sign`, `.cv-word`, `.cv-tag` in `brand.css`), never a generated image: an image model draws
 letters badly, and the CSS logo scales with `--cv-size`.
 
+## The 3D look
+
+The game is stylized low-poly, colourful and warm, never photorealistic and never a caricature of decay:
+
+- Shapes are low-poly with flat-shaded facets and normal proportions (vehicles, landmarks, people).
+- Colour comes from vertex colours and procedural textures in the shader, as the city has today; no painted
+  texture atlases. The palette is the brand's tropical one: coral, mustard, turquoise, mint, cream.
+- Light is intense: a strong warm sun, crisp shadows tinted violet, a deep blue sky, and a lot of bloom.
+- Reference sheets for manifoldx assets are drawn in this style ("A diorama", chosen 2026-11-17): flat-shaded
+  facets, solid colours, on white with no shadow.
+
 ## Assets the game uses
 
 `assets/` holds what the game draws, all as plain SVG that manifoldx's GUI draws with thorvg at any size
