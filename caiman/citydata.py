@@ -25,6 +25,8 @@ class Cell:
     fillers: list = field(default_factory=list)  # block rings that get filler boxes
     filler_seeds: np.ndarray = field(default_factory=lambda: np.zeros(0, np.int64))
     trees: np.ndarray = field(default_factory=lambda: np.zeros((0, 2), np.float32))
+    street_tris: np.ndarray | None = None  # (T, 3, 3) x, y, z of the street surface; None: draw the roads instead
+    street_edges: np.ndarray | None = None  # (E, 2, 3) street edges standing clear of the ground, road on the left
 
 
 def _rings_to_arrays(rings):
@@ -87,6 +89,25 @@ class CityData:
         out["heights_step"] = np.array(terrain.step)
         return cls(out)
 
+    def add_kind(self, name: str, rows: np.ndarray, keys: np.ndarray) -> None:
+        """Add a kind of feature: rows with the (N, 2) cell of each. Cells only this kind holds join the list,
+        and every other kind's offsets move to the longer list."""
+        rows, keys = np.asarray(rows), np.asarray(keys).reshape(-1, 2)
+        old = np.asarray(self.a["cells"]).reshape(-1, 2)
+        cells = np.unique(np.concatenate([old, keys]), axis=0).astype(np.int32)
+        index = {tuple(c): n for n, c in enumerate(cells.tolist())}
+        where = np.array([index[tuple(c)] for c in old.tolist()], np.int64)
+        for k in [k for k in self.a if k.endswith("_offsets")]:
+            counts = np.zeros(len(cells), np.int64)
+            counts[where] = np.diff(self.a[k])
+            self.a[k] = np.concatenate([[0], np.cumsum(counts)])
+        ids = np.array([index[tuple(c)] for c in keys.tolist()], np.int64)
+        order = np.argsort(ids, kind="stable")
+        self.a[name] = rows[order]
+        self.a[f"{name}_offsets"] = np.searchsorted(ids[order], np.arange(len(cells) + 1)).astype(np.int64)
+        self.a["cells"] = cells
+        self._index = {tuple(c): k for k, c in enumerate(cells.tolist())}
+
     def save(self, path) -> None:
         """Write the arrays to an uncompressed .npz, so loading can map them from disk."""
         Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -137,6 +158,11 @@ class CityData:
         b0, b1 = self._span("building", k)
         f0, f1 = self._span("filler", k)
         t0, t1 = self._span("tree", k)
+        streets = {}
+        if "street_tris" in self.a:
+            s0, s1 = self._span("street_tris", k)
+            e0, e1 = self._span("street_edges", k)
+            streets = {"street_tris": self.a["street_tris"][s0:s1], "street_edges": self.a["street_edges"][e0:e1]}
         return Cell(
             roads=self.a["roads"][r0:r1],
             buildings=self._rings("building", b0, b1),
@@ -144,6 +170,7 @@ class CityData:
             fillers=self._rings("filler", f0, f1),
             filler_seeds=self.a["filler_seeds"][f0:f1],
             trees=self.a["trees"][t0:t1],
+            **streets,
         )
 
     def building(self, osm_id: int) -> np.ndarray | None:

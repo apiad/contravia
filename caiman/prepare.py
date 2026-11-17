@@ -236,12 +236,12 @@ def build_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict
                                   trees, terrain)
     graph = build_graph(raw.ways, raw.controls, raw.restrictions, raw.municipios, rings,
                         lambda lat, lon: to_local(lat, lon), WIDTHS, inside)
-    if graph:  # the road's height at every graph point, so traffic need not ask the surface each frame
-        from caiman.surface import Surface
-
-        poly = graph["g_poly"].astype(float)
-        graph["g_poly_y"] = Surface(city, city.terrain).height(poly[:, 0], poly[:, 1]).astype(np.float32)
     city.a.update(graph)
+    street_report = {}
+    if graph:  # the street surface, and the road's height at every graph point, so traffic need not ask each frame
+        from caiman.streets import add_to
+
+        street_report = add_to(city, WIDTHS)
     road_cells = {tuple(c) for c in cell_of((roads[:, 0:2] + roads[:, 2:4]) / 2).tolist()}
     built_cells = {tuple(c) for c in cell_of(cents).tolist()}
     sizes = {tuple(c): 0 for c in city.cells().tolist()}
@@ -264,6 +264,7 @@ def build_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict
         "junctions": len(graph.get("g_junction", ())),
         "turns": len(graph.get("g_turn_in", ())),
         "heights_m": [round(float(city.terrain.heights.min()), 1), round(float(city.terrain.heights.max()), 1)],
+        **street_report,
     }
     return city, report
 

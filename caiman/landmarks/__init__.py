@@ -35,6 +35,7 @@ class Landmarks:
             self.clear += [np.asarray(r, float) for r in piece.clear]
             rings += piece.walls
         self.mesh = mb.to_meshdata(0.0, 0.0) if self.names else None
+        self.wall_rings = rings  # caiman.streets leaves out the service roads they cross
         self.blocked = self._block_service_roads(city, rings)
         self._blocked_rows = {tuple(r) for r in np.asarray(city.a["roads"], np.float32).reshape(-1, 5)[self.blocked].tolist()}
         self._boxes = [(r.min(axis=0), r.max(axis=0)) for r in self.clear]
@@ -85,7 +86,8 @@ class Landmarks:
                     building_ids=cell.building_ids[b_keep],
                     fillers=[r for r, k in zip(cell.fillers, f_keep, strict=True) if k],
                     filler_seeds=cell.filler_seeds[f_keep],
-                    trees=cell.trees[t_keep])
+                    trees=cell.trees[t_keep],
+                    street_tris=cell.street_tris, street_edges=cell.street_edges)
 
     def walls(self, i: int, j: int) -> np.ndarray:
         """The (W, 2, 2) landmark wall segments whose midpoint lies in cell (i, j)."""

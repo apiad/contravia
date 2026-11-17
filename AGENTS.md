@@ -19,6 +19,11 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   `caiman bench --tiles data/cuba` adds the scenes of `bench/cuba.json` after the Havana route: a teleport to
   Santiago, a hill view over Havana and a 300 m flight toward Santa Clara, each with frame times, nodes and triangles.
 - `caiman prepare` also builds the road graph traffic drives on (g_* arrays); data from before layer 2 plays with no traffic.
+- `caiman prepare` then builds the street surface from that graph (`caiman/streets.py`): avenues' two carriageways
+  joined, junctions merged and rounded, one flat height per junction, cut per cell and triangulated. The cells draw
+  it and the wheels stand on the same triangles (`caiman/surface.py`). `caiman streets` rebuilds it in an existing
+  data file in about 3 minutes, without reading OSM again. Data without it, and the island's tiles, draw the old
+  per-segment ribbons.
 - `caiman play` starts at the Capitolio at 10:00 today; `--time "Sun 08:00"` or `"17:30"` starts the clock elsewhere,
   `--time now` runs it on the machine's clock, `--warp 60` speeds it up for tests. The keys ramp the wheel and the
   pedals (`caiman/input.py`). `caiman play --traffic my.json` changes demand settings

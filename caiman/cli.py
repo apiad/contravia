@@ -17,6 +17,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--out", default="data/havana.npz")
     p.add_argument("--dem", help="folder with the Copernicus GLO-30 tiles; without it the city is flat")
 
+    p = sub.add_parser("streets", help="rebuild the street surface of a prepared data file in place")
+    p.add_argument("--data", default="data/havana.npz")
+
     p = sub.add_parser("tiles", help="turn a Cuba OSM extract into the island's quadtree tiles")
     p.add_argument("pbf")
     p.add_argument("--out", default="data/cuba")
@@ -80,6 +83,10 @@ def main(argv: list[str] | None = None) -> None:
         from caiman.prepare import main as prepare
 
         prepare(args.pbf, args.out, dem=args.dem)
+    elif args.command == "streets":
+        from caiman.streets import main as streets
+
+        streets(args.data)
     elif args.command == "tiles":
         from caiman.tiles_prepare import main as tiles
 

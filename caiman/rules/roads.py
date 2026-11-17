@@ -87,3 +87,20 @@ def ribbon(mb, roads: np.ndarray, terrain) -> None:
     tops = np.concatenate([np.stack([yp, yq], axis=1)] * 2 + [np.repeat(ye, 4)[:, None].repeat(2, axis=1)])
     centres = np.concatenate([(p + q) / 2, (p + q) / 2, np.repeat(ends, 4, axis=0)])
     _skirts(mb, edges, tops, centres, terrain)
+
+
+def streets(mb, tris: np.ndarray, edges: np.ndarray, terrain) -> None:
+    """Add the street surface built by caiman.streets: its (T, 3, 3) triangles, and a skirt under each
+    (E, 2, 3) edge, which has the road on its left in (x, z)."""
+    t = np.asarray(tris, float).reshape(-1, 3, 3)
+    if len(t):
+        n = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+        n *= np.sign(n[:, 1:2] + 1e-12)  # facing up
+        n /= np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-9)
+        mb.add(t.reshape(-1, 3), np.repeat(n, 3, axis=0), ROAD, np.arange(3 * len(t)).reshape(-1, 3))
+    e = np.asarray(edges, float).reshape(-1, 2, 3)
+    if len(e):
+        a, b = e[:, 0, [0, 2]], e[:, 1, [0, 2]]
+        d = b - a
+        out = np.stack([d[:, 1], -d[:, 0]], axis=1)  # to the right: away from the road
+        _skirts(mb, np.stack([a, b], axis=1), e[:, :, 1], (a + b) / 2 - out, terrain)
