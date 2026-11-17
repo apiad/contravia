@@ -8,6 +8,27 @@ def _xz(text: str) -> tuple[float, float]:
     return float(x), float(z)
 
 
+def _city() -> str:
+    """The city to play: a checkout's data/havana.npz, else the first run's, built now in its window if missing."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    from contravia.firstrun import built
+    from contravia.ui import ROOT
+
+    if Path("data/havana.npz").exists():
+        return "data/havana.npz"
+    if city := built():
+        return str(city)
+    # its own process: the build window's engine is done with before the game's opens
+    code = subprocess.call([sys.executable, "-m", "contravia.cli", "build", "--window",
+                            "--source", str(ROOT / "data" / "havana.src")])
+    if code or not (city := built()):
+        raise SystemExit(code or 1)
+    return str(city)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="contravia", description="Drive a procedural, real-size Havana.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -25,6 +46,8 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("build", help="build the city from the compact source into the player's home, as the first run does")
     p.add_argument("--source", default="data/havana.src")
     p.add_argument("--home", help="where to build; the per-user data folder by default")
+    p.add_argument("--window", action="store_true", help="show the build screen instead of printing the progress")
+    p.add_argument("--shot", help="with --window: render offscreen and save SHOT-<step>.png as the build goes")
 
     p = sub.add_parser("streets", help="rebuild the street surface of a prepared data file in place")
     p.add_argument("--data", default="data/havana.npz")
@@ -38,7 +61,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--split", type=float, default=2000.0, help="a tile splits while it weighs more than this")
 
     p = sub.add_parser("play", help="drive the city")
-    p.add_argument("--data", default="data/havana.npz")
+    p.add_argument("--data", help="the built city; data/havana.npz in a checkout, else the one the first run builds")
     p.add_argument("--tiles", help="folder of the island's tiles (contravia tiles); without it, Havana alone")
     p.add_argument("--at", type=_xz, default=(0.0, 0.0), help="start point as X,Z in local metres")
     p.add_argument("--shot", help="render offscreen, save this PNG and exit")
@@ -108,6 +131,17 @@ def main(argv: list[str] | None = None) -> None:
 
         source(args.pbf, args.dem, args.out)
     elif args.command == "build":
+        if args.window or args.shot:
+            from contravia.buildscreen import main as window
+
+            code = window(args.source, args.home, shot=args.shot)
+            if code:  # stopped mid-step: the pool's threads would hold the exit until their step ends
+                import os
+                import sys
+
+                sys.stdout.flush()
+                os._exit(code)
+            raise SystemExit(0)
         from contravia.firstrun import main as build
 
         build(args.source, args.home)
@@ -126,7 +160,7 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "play":
         from contravia.game import main as play
 
-        play(args.data, at=args.at, shot=args.shot, frames=args.frames, traffic=args.traffic, when=args.time,
+        play(args.data or _city(), at=args.at, shot=args.shot, frames=args.frames, traffic=args.traffic, when=args.time,
              warp=args.warp, sky=args.sky, tiles=args.tiles, pipelined=args.pipeline,
              with_traffic=args.with_traffic, screen=args.screen)
     elif args.command == "dev":

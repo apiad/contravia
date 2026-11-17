@@ -85,12 +85,15 @@ class Build:
         return sum(f.stat().st_size for f in self.where.rglob("*") if f.is_file()) / 1e6
 
     # work
-    def run(self) -> None:
+    def run(self, raises: bool = True) -> None:
+        """Build; on a failure keep it in error (the screen shows it) and raise it unless raises is False.
+        The checkpoints stay for the next try."""
         try:
             self._run()
-        except Exception as e:  # the screen shows it; the checkpoints stay for the next try
+        except Exception as e:
             self.error = f"{type(e).__name__}: {e}"
-            raise
+            if raises:
+                raise
 
     def _begin(self, k: int) -> None:
         self.step, self._start = k, time.perf_counter()
