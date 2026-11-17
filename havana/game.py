@@ -5,7 +5,9 @@ single cells near it and coarse summaries out to the 15 km far plane; each frame
 against the walls near it, and the camera follows. The engine's origin moves to the camera whenever the camera
 is over 2 km from it, so the whole island draws as precisely as the Capitolio. Systems that write positions
 straight into the engine (the night sky, the traffic cars, the rain, the shadows, the camera) are handed
-positions relative to that origin. Traffic runs in two layers: the flow layer counts vehicles on every street
+positions relative to that origin. The frame's last four systems run in one order: the drive moves the car and
+the camera alone, then the streamer, the traffic and the sky run together as one group of parallel systems.
+Traffic runs in two layers: the flow layer counts vehicles on every street
 in a thread, on the machine's clock, and the car layer drives the cars within 400 m. engine.state shows what
 an agent needs to check the game without a person at the keyboard; the "teleport" event moves the car (x, z or
 lat, lon), "traffic_config" changes the demand settings and "close" closes a street.
@@ -13,6 +15,7 @@ lat, lon), "traffic_config" changes the demand settings and "close" closes a str
 
 import math
 import os
+import threading
 import time
 
 import numpy as np
@@ -87,7 +90,15 @@ class Game:
 
         self._start_traffic(traffic)
         self.sky_ms, self._sky_state_at = 0.0, 0.0
-        engine.system(self._frame)
+        # The frame's last four systems, in the order they run: the drive is a barrier, and the three after
+        # it are consecutive parallel systems, so one group runs the streamer, the traffic and the sky at
+        # the same time. Only engine.state is written by more than one of them; that write takes a lock.
+        self._state_lock = threading.Lock()
+        self._before = None  # the car as it was at the start of the drive, which the traffic system reads
+        engine.system(self.drive)
+        engine.system(self.stream, parallel=True)
+        engine.system(self.traffic, parallel=True)
+        engine.system(self.sky, parallel=True)
         engine.on("teleport")(self._teleport_event)
         engine.on("traffic_config")(self.configure_traffic)
         engine.on("close")(self.close_street)
@@ -128,12 +139,12 @@ class Game:
         try:
             cfg = self.traffic_config.updated(**{k: value(v) for k, v in (changes or {}).items()})
         except (ValueError, TypeError) as e:
-            self.engine.state.traffic = {**self.engine.state.traffic, "error": str(e)}
+            self._publish("traffic", {**self.engine.state.traffic, "error": str(e)})
             return
         self.traffic_config = cfg
         if self.layer:
             self.runner.submit(lambda flow: flow.configure(cfg))
-        self.engine.state.traffic = {**self.engine.state.traffic, "error": None}
+        self._publish("traffic", {**self.engine.state.traffic, "error": None})
         self._state_at = 0.0  # report the new numbers on the next frame
 
     def configure_sky(self, changes: dict) -> None:
@@ -227,7 +238,17 @@ class Game:
         drawn = self.streamer.drawn()
         return sum(1 for n in near if self.city.exists(*n) and n not in drawn)
 
-    def _frame(self, query, dt):
+    def _publish(self, key: str, value) -> None:
+        """Write one engine.state key: the parallel systems share that dict, so they take turns."""
+        with self._state_lock:
+            setattr(self.engine.state, key, value)
+
+    def drive(self, query, dt: float) -> None:
+        """Read the keys, move the car against the walls and the cars near it, then place it and the camera.
+
+        This is the frame's serial half: it runs before the streamer, the traffic and the sky, and it
+        leaves the car's state at the start of the step on self._before for the traffic system.
+        """
         from manifoldx.modeling.assets.car import place_car
 
         now = time.perf_counter()
@@ -243,12 +264,8 @@ class Game:
         walls = self.walls.near(self.car.x, self.car.z)
         if self.layer:
             walls = np.concatenate([walls.reshape(-1, 2, 2), self.layer.boxes_near(self.car.x, self.car.z)])
-        before = self.car
-        self.car = step(self.car, c, min(dt, 0.05), walls, self.surface)
-        if self.layer:
-            t_traffic = time.perf_counter()
-            self._traffic(before, min(dt, 0.05))
-            self.traffic_ms = (time.perf_counter() - t_traffic) * 1000
+        self._before = self.car
+        self.car = step(self.car, c, self._dt, walls, self.surface)
         # manifoldx turns +x toward -z for a positive yaw; the game turns it toward +z.
         place_car(self.handles, self.model, at=(self.car.x, self.car.y, self.car.z), yaw=-self.car.yaw,
                   pitch=self.car.pitch, roll=self.car.roll)
@@ -256,14 +273,10 @@ class Game:
             eye, target = self.camera_override()
             self.eye, target = np.asarray(eye, float), np.asarray(target, float)
         else:
-            self.eye, target = chase(self.eye, self.car, min(dt, 0.05), self.terrain)
+            self.eye, target = chase(self.eye, self.car, self._dt, self.terrain)
         self.o = self._recentre()
         self.base.transform.pos = (float(self.eye[0]), BASE_Y, float(self.eye[2]))
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
-        self.streamer.focus(self.eye[0], self.eye[2], height=max(float(self.eye[1]), 1.0))
-        t_sky = time.perf_counter()
-        self._sky()
-        self.sky_ms = (time.perf_counter() - t_sky) * 1000
         st = self.engine.state
         st.pos = [round(self.car.x, 1), round(self.car.z, 1)]
         st.cell = [math.floor(self.car.x / CELL), math.floor(self.car.z / CELL)]
@@ -271,9 +284,30 @@ class Game:
         st.y = round(self.car.y, 1)
         st.grade = round(math.tan(self.car.pitch) * 100, 1)  # percent, positive uphill
         st.frame_ms = round(self.frame_ms, 2)
-        st.tiles = self.streamer.stats()
-        st.cells_built = st.tiles["built"]
-        st.cells_waiting = self.waiting()
+
+    def stream(self, query, dt: float) -> None:
+        """Point the city's streamer at the camera and publish the cells it holds."""
+        self.streamer.focus(self.eye[0], self.eye[2], height=max(float(self.eye[1]), 1.0))
+        tiles = self.streamer.stats()
+        with self._state_lock:
+            st = self.engine.state
+            st.tiles = tiles
+            st.cells_built = tiles["built"]
+            st.cells_waiting = self.waiting()
+
+    def traffic(self, query, dt: float) -> None:
+        """Drive the cars around the player, draw them and publish their numbers, timed for the bench."""
+        if not self.layer:
+            return
+        started = time.perf_counter()
+        self._traffic(self._before, self._dt)
+        self.traffic_ms = (time.perf_counter() - started) * 1000
+
+    def sky(self, query, dt: float) -> None:
+        """Sun, moon, stars, weather and rain for this frame, timed for the bench."""
+        started = time.perf_counter()
+        self._sky()
+        self.sky_ms = (time.perf_counter() - started) * 1000
 
     def _sky(self) -> None:
         """Sun, moon and weather at the clock's time, handed to the engine."""
@@ -290,14 +324,14 @@ class Game:
         t = time.perf_counter()
         if t - self._sky_state_at > 0.5:
             self._sky_state_at = t
-            self.engine.state.sky = {
+            self._publish("sky", {
                 "time": when.strftime("%Y-%m-%d %H:%M"), **sun_and_moon_text(sun, moon), "weather": now.state,
                 "cloud": round(now.cloud, 2), "rain": round(now.rain, 2), "wet": round(now.wet, 2),
                 "environment": self.atmosphere.env_key, "shadows": self.look.shadows,
                 "star_limit": round(self.look.star_limit, 1), "stars_shown": self.stars_shown,
                 "sky_ms": round(self.sky_ms, 2),
                 "error": getattr(self, "sky_error", None),
-            }
+            })
 
     def _traffic(self, before, dt: float) -> None:
         """Drive the cars around the player, draw them, and turn a hard hit into an accident."""
@@ -322,7 +356,7 @@ class Game:
             self._state_at = now
             when = self.clock.now()
             cfg = self.traffic_config
-            self.engine.state.traffic = {
+            self._publish("traffic", {
                 "time": when.strftime("%a %H:%M:%S"),
                 "settings": as_dict(cfg),
                 "trips_per_day": round(sum(vehicle_trips(cfg, day_type(when)).values())),
@@ -333,7 +367,7 @@ class Game:
                 "accidents": len(self.layer.closed_until),
                 "fleet_overflow": self.fleet.overflow,
                 "error": self.engine.state.traffic.get("error"),
-            }
+            })
 
 
 def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, size=(1280, 720),
