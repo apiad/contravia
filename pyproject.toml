@@ -2,8 +2,13 @@
 name = "havana-driver"
 version = "0.1.0"
 description = "An open-world driving game in a procedural, real-size Havana, built on manifoldx."
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = ["numpy", "manifold-gfx"]
+
+classifiers = [
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Free Threading",
+]
 
 [project.scripts]
 havana = "havana.cli:main"
@@ -24,6 +29,7 @@ packages = ["havana"]
 
 [tool.ruff]
 line-length = 110
+target-version = "py314"
 
 [tool.pytest.ini_options]
 markers = ["slow: timing tests on city-sized inputs"]
