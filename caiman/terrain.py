@@ -47,8 +47,9 @@ class Terrain:
         nw, se = to_local(np.array([north, south]), np.array([west, east]))
         return cls(np.zeros((2, 2), np.float32), nw, se - nw)
 
-    def height(self, x, z) -> np.ndarray:
-        """The height at (x, z), interpolated between the four nearest samples; edge heights outside."""
+    def height(self, x, z, near=None) -> np.ndarray:
+        """The height at (x, z), interpolated between the four nearest samples; edge heights outside. near is
+        ignored: the ground has one height per point (see caiman.surface)."""
         h = self.heights
         rows, cols = h.shape
         fx = np.clip((np.asarray(x, float) - self.origin[0]) / self.step[0], 0, cols - 1)

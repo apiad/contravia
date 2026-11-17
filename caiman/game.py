@@ -322,7 +322,7 @@ class Game:
             x, z, _ = self.walls.random_road(self._rng)
             self.teleport(x, z)
         c = self.autopilot(self.car) if self.autopilot else self.controls(self._dt)
-        walls = self.walls.near(self.car.x, self.car.z)
+        walls = self.walls.near(self.car.x, self.car.z, self.car.y)
         if self.layer:
             walls = np.concatenate([walls.reshape(-1, 2, 2), self.layer.boxes_near(self.car.x, self.car.z)])
         self._before = self.car
@@ -331,14 +331,14 @@ class Game:
         place_car(self.handles, self.model, at=(self.car.x, self.car.y, self.car.z), yaw=-self.car.yaw,
                   pitch=self.car.pitch, roll=self.car.roll)
         half = -self.car.yaw / 2  # the same turn as the car's, about the vertical
-        ground = float(self.terrain.height(np.array([self.car.x]), np.array([self.car.z]))[0])
+        ground = float(self.surface.height(np.array([self.car.x]), np.array([self.car.z]), near=self.car.y)[0])
         self.shadow.transform.pos = (self.car.x, ground + SHADOW_LIFT, self.car.z)
         self.shadow.transform.rot = (0.0, float(np.sin(half)), 0.0, float(np.cos(half)))
         if self.camera_override:
             eye, target = self.camera_override()
             self.eye, target = np.asarray(eye, float), np.asarray(target, float)
         else:
-            self.eye, target = chase(self.eye, self.car, self._dt, self.terrain)
+            self.eye, target = chase(self.eye, self.car, self._dt, self.surface)
         self.o = self._recentre()
         self.base.transform.pos = (float(self.eye[0]), BASE_Y if self._sea else FLAT_BASE_Y, float(self.eye[2]))
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))

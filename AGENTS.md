@@ -24,6 +24,11 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   it and the wheels stand on the same triangles (`caiman/surface.py`). `caiman streets` rebuilds it in an existing
   data file in about 3 minutes, without reading OSM again. Data without it, and the island's tiles, draw the old
   per-segment ribbons.
+- Bridges and tunnels come from OSM's bridge, tunnel and layer tags (`g_layer`): each level of streets is built
+  apart, a bridge stands 6 m over what it crosses, a tunnel runs 8 m under the ground or 14 m under the sea, and the
+  streets they leave from ramp to them at 8 %. `caiman/structures.py` dresses them (decks, parapets, piers, tunnel
+  walls, roofs and lamps, open cuts with the ground left out over them); a wheel stands on the surface level with
+  it (`Surface.height(..., near=)`) and a wall stops the car only at its own heights.
 - `caiman play` starts at the Capitolio at 10:00 today; `--time "Sun 08:00"` or `"17:30"` starts the clock elsewhere,
   `--time now` runs it on the machine's clock, `--warp 60` speeds it up for tests. The keys ramp the wheel and the
   pedals (`caiman/input.py`). `caiman play --traffic my.json` changes demand settings

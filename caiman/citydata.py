@@ -28,6 +28,11 @@ class Cell:
     street_tris: np.ndarray | None = None  # (T, 3, 3) x, y, z of the street surface; None: draw the roads instead
     street_edges: np.ndarray | None = None  # (E, 2, 3) street edges standing clear of the ground, road on the left
     street_marks: np.ndarray | None = None  # (M, 3, 3) triangles of the lines painted on the streets
+    struct_tris: np.ndarray | None = None  # (T, 3, 3) bridges' decks, parapets and piers, tunnels' walls and roofs
+    struct_paint: np.ndarray | None = None  # (T,) the caiman.structures paint of each
+    struct_walls: np.ndarray | None = None  # (W, 6) ax, az, bx, bz and the heights a car hits the wall between
+    street_cuts: np.ndarray | None = None  # (C, 3, 2) where the ground is left out over a street below it
+    street_roofs: np.ndarray | None = None  # (R, 3, 3) tunnel roofs, from below
 
 
 def _rings_to_arrays(rings):
@@ -164,9 +169,10 @@ class CityData:
             s0, s1 = self._span("street_tris", k)
             e0, e1 = self._span("street_edges", k)
             streets = {"street_tris": self.a["street_tris"][s0:s1], "street_edges": self.a["street_edges"][e0:e1]}
-            if "street_marks" in self.a:
-                m0, m1 = self._span("street_marks", k)
-                streets["street_marks"] = self.a["street_marks"][m0:m1]
+            for name in ("street_marks", "struct_tris", "struct_paint", "struct_walls", "street_cuts", "street_roofs"):
+                if name in self.a:
+                    m0, m1 = self._span(name, k)
+                    streets[name] = self.a[name][m0:m1]
         return Cell(
             roads=self.a["roads"][r0:r1],
             buildings=self._rings("building", b0, b1),

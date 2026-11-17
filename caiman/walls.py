@@ -45,11 +45,18 @@ class Walls:
             self._cache[(i, j)] = pending.result() if pending else self._build(i, j)
         return self._cache[(i, j)]
 
-    def near(self, x: float, z: float) -> np.ndarray:
+    def near(self, x: float, z: float, y: float | None = None) -> np.ndarray:
         """The (W, 2, 2) wall segments of the 3x3 cells around (x, z). The ring of cells past them is built
-        meanwhile on a thread, so a car crossing into the next cell finds its walls ready."""
+        meanwhile on a thread, so a car crossing into the next cell finds its walls ready. Given the car's
+        height y, the walls of bridges and tunnels it is level with join them: a bridge's parapet does not stop
+        a car on the street under it."""
         i, j = int(np.floor(x / CELL)), int(np.floor(z / CELL))
         walls = np.concatenate([self._cell(i + di, j + dj) for di in (-1, 0, 1) for dj in (-1, 0, 1)])
+        if y is not None:
+            s = [self.city.cell(i + di, j + dj).struct_walls for di in (-1, 0, 1) for dj in (-1, 0, 1)]
+            s = np.concatenate([w for w in s if w is not None] or [np.zeros((0, 6), np.float32)])
+            s = s[(s[:, 4] - 0.5 <= y) & (y <= s[:, 5])]
+            walls = np.concatenate([walls.reshape(-1, 2, 2), s[:, :4].reshape(-1, 2, 2)])
         for di in range(-2, 3):
             for dj in range(-2, 3):
                 key = (i + di, j + dj)

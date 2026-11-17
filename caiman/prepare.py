@@ -24,7 +24,7 @@ WIDTHS = {
 for _k in ("motorway", "trunk", "primary", "secondary", "tertiary"):
     WIDTHS[f"{_k}_link"] = WIDTHS[_k]
 
-ROAD_TAGS = ("oneway", "lanes", "maxspeed", "junction")  # what the traffic graph reads from a road
+ROAD_TAGS = ("oneway", "lanes", "maxspeed", "junction", "bridge", "tunnel", "layer")  # what the graph reads from a road
 CONTROLS = {"traffic_signals": "signal", "stop": "stop", "give_way": "give_way"}
 
 MAX_SEGMENT = 50.0  # metres; longer segments are split so each piece lands in the cell it crosses

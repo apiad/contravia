@@ -48,11 +48,13 @@ def build(i: int, j: int):
     x0, z0 = i * CELL, j * CELL
     mb = MeshBuilder()
     terrain = city().terrain
-    ground.ground(mb, i, j, terrain)
+    ground.ground(mb, i, j, terrain, c.street_cuts)
     if c.street_tris is None:
         roads.ribbon(mb, c.roads, terrain)
     else:
         roads.streets(mb, c.street_tris, c.street_edges, terrain, c.street_marks)
+        if c.struct_tris is not None:
+            roads.structures(mb, c.struct_tris, c.struct_paint)
     for ring, style_id in boxes(c, roads_around(city(), i, j)):
         if not buildings.box(mb, ring, style_id, base=seat(ring, terrain)):
             SKIPPED_ROOFS += 1

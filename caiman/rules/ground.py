@@ -35,8 +35,8 @@ def grass(x, z, slope) -> np.ndarray:
     return green * (1 - dry) + np.multiply(DRY, dry)
 
 
-def ground(mb, i: int, j: int, terrain) -> None:
-    """Add the ground grid of cell (i, j)."""
+def ground(mb, i: int, j: int, terrain, cuts=None) -> None:
+    """Add the ground grid of cell (i, j), without the squares over the (C, 3, 2) cuts of streets below it."""
     t = np.linspace(0.0, CELL, N)
     x, z = np.meshgrid(i * CELL + t, j * CELL + t)  # x along columns, z along rows
     x, z = x.ravel(), z.ravel()
@@ -49,4 +49,11 @@ def ground(mb, i: int, j: int, terrain) -> None:
     tris = np.concatenate([np.stack([a, a + N, a + 1], 1), np.stack([a + 1, a + N, a + N + 1], 1)])
     if relief(terrain):  # a square wholly under SEA is sea: the water shows there
         tris = tris[(y[tris] >= SEA).any(axis=1)]
+    if cuts is not None and len(cuts):
+        import shapely
+
+        hole = shapely.union_all(shapely.polygons(np.asarray(cuts, float)))
+        shapely.prepare(hole)
+        tri = shapely.polygons(np.stack([x[tris], z[tris]], axis=-1))
+        tris = tris[~shapely.intersects(tri, hole)]
     mb.add(np.stack([x, y, z], axis=1), n, grass(x, z, np.hypot(dx, dz)), tris)

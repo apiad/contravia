@@ -117,3 +117,31 @@ def streets(mb, tris: np.ndarray, edges: np.ndarray, terrain, marks=None) -> Non
         d = b - a
         out = np.stack([d[:, 1], -d[:, 0]], axis=1)  # to the right: away from the road
         _skirts(mb, np.stack([a, b], axis=1), e[:, :, 1], (a + b) / 2 - out, terrain)
+
+
+def structures(mb, tris: np.ndarray, paint: np.ndarray) -> None:
+    """Add the (T, 3, 3) triangles of caiman.structures, each in its paint: concrete with a little grain,
+    the shade under decks and roofs, the tunnel's lamps, and grass where it covers the edge of a cut."""
+    from caiman.rules.ground import grass
+    from caiman.structures import GRASS, PAINTS
+
+    t = np.asarray(tris, float).reshape(-1, 3, 3)
+    if not len(t):
+        return
+    p = t.reshape(-1, 3)
+    which = np.repeat(np.asarray(paint), 3)
+    col = np.zeros((len(p), 3))
+    for k, rgb in PAINTS.items():
+        if rgb is not None:
+            col[which == k] = rgb
+    g = which == GRASS
+    if g.any():
+        col[g] = grass(p[g, 0], p[g, 2], np.zeros(int(g.sum())))
+    col *= (0.92 + 0.16 * fbm(p[:, 0], p[:, 2] + p[:, 1], 6.0, seed=11))[:, None]
+    mb.add(p, np.repeat(_normal(t), 3, axis=0), col, np.arange(len(p)).reshape(-1, 3))
+
+
+def _normal(t: np.ndarray) -> np.ndarray:
+    """The unit normal of each triangle (T, 3, 3) from its winding."""
+    n = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+    return n / np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-9)

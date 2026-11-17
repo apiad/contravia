@@ -104,7 +104,7 @@ def settle(s: CarState, terrain) -> CarState:
     p = np.array([s.x, s.z])
     wheels = np.array([p + h * WHEELBASE / 2 + r * sign * TRACK / 2 for sign in (-1, 1)]
                       + [p - h * WHEELBASE / 2 + r * sign * TRACK / 2 for sign in (-1, 1)])  # fl, fr, rl, rr
-    fl, fr, rl, rr = terrain.height(wheels[:, 0], wheels[:, 1])
+    fl, fr, rl, rr = terrain.height(wheels[:, 0], wheels[:, 1], near=s.y)  # under a bridge, stay under it
     return replace(s, y=float((fl + fr + rl + rr) / 4),
                    pitch=math.atan2((fl + fr) / 2 - (rl + rr) / 2, WHEELBASE),
                    roll=math.atan2((fl + rl) / 2 - (fr + rr) / 2, TRACK))

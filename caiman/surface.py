@@ -7,12 +7,21 @@ street. Roads are looked up in the 3x3 cells around each point, cached per cell.
 
 Where the data holds the street surface of caiman.streets, a wheel stands on the very triangles the cell
 draws: the height of the triangle under it, found in its own cell (the surface is cut per cell).
+
+Where a bridge passes over a street, or a street over a tunnel, a point has more than one triangle under it.
+Given `near`, the height a wheel was at, it stands on the highest surface no more than STEP above that, so
+a car under a bridge stays under it and a car on it stays on it; with no surface low enough, on the lowest.
+Without `near` it takes the highest. Off the streets, a wheel far below the ground (in a tunnel, at its walls)
+keeps its own height instead of jumping up to the ground.
 """
 
 import numpy as np
 
 from caiman.geo import CELL
 from caiman.rules.roads import level
+
+
+STEP = 1.5  # metres a wheel can climb from one frame to the next onto a surface above it
 
 
 class Surface:
@@ -22,15 +31,19 @@ class Surface:
         self.city, self.terrain = city, terrain
         self._cache: dict[tuple[int, int], np.ndarray] = {}
         self._tris: dict[tuple[int, int], tuple | None] = {}
+        self._roofs: dict[tuple[int, int], tuple | None] = {}
 
     def _streets(self, i: int, j: int):
         """Cell (i, j)'s street triangles as (corner a, inverse of the 2x2 edge matrix, heights), or None
         when the data has no street surface there."""
+        return self._prepared(self._tris, i, j, "street_tris")
+
+    def _prepared(self, cache, i, j, kind):
         key = (i, j)
-        if key not in self._tris:
-            t = self.city.cell(i, j).street_tris
+        if key not in cache:
+            t = getattr(self.city.cell(i, j), kind)
             if t is None:
-                self._tris[key] = None
+                cache[key] = None
             else:
                 t = np.asarray(t, float).reshape(-1, 3, 3)
                 a = t[:, 0, [0, 2]]
@@ -40,8 +53,26 @@ class Surface:
                 # The inverse of the 2x2 matrix with columns u, v, written out: numpy.linalg calls OpenBLAS, which
                 # can deadlock when the game's other threads call it at the same time.
                 inv = np.stack([np.stack([v[:, 1], -v[:, 0]], axis=1), np.stack([-u[:, 1], u[:, 0]], axis=1)], axis=1)
-                self._tris[key] = (a[ok], inv[ok] / det[ok, None, None], t[ok][:, :, 1])
-        return self._tris[key]
+                cache[key] = (a[ok], inv[ok] / det[ok, None, None], t[ok][:, :, 1])
+        return cache[key]
+
+    @staticmethod
+    def _hits(st, x, z) -> np.ndarray:
+        """The heights of the triangles st that (x, z) falls in."""
+        a, inv, y = st
+        uv = np.einsum("tij,tj->ti", inv, np.array([x, z]) - a)
+        w = np.c_[1 - uv.sum(axis=1), uv]
+        on = np.flatnonzero((w > -1e-6).all(axis=1))
+        return np.einsum("tk,tk->t", w[on], y[on])
+
+    def roof(self, x: float, z: float, near: float) -> float | None:
+        """The height of the tunnel roof over (x, z) above the height near, or None in the open."""
+        st = self._prepared(self._roofs, int(np.floor(x / CELL)), int(np.floor(z / CELL)), "street_roofs")
+        if st is None or not len(st[0]):
+            return None
+        h = self._hits(st, x, z)
+        h = h[h > near]
+        return float(h.min()) if len(h) else None
 
     def _roads(self, i: int, j: int) -> np.ndarray:
         key = (i, j)
@@ -50,20 +81,25 @@ class Surface:
                 [self.city.cell(i + a, j + b).roads for a in (-1, 0, 1) for b in (-1, 0, 1)]).reshape(-1, 5)
         return self._cache[key]
 
-    def height(self, x, z) -> np.ndarray:
-        """The height under each point: the road's level height on a road, the ground elsewhere."""
+    def height(self, x, z, near=None) -> np.ndarray:
+        """The height under each point: the road's level height on a road, the ground elsewhere. near is the
+        height (a number or one per point) each point stood at a moment ago, as the module says."""
         x, z = np.atleast_1d(np.asarray(x, float)), np.atleast_1d(np.asarray(z, float))
         out = self.terrain.height(x, z).astype(float)
+        nears = None if near is None else np.broadcast_to(np.asarray(near, float), x.shape)
         for k in range(len(x)):
             i, j = int(np.floor(x[k] / CELL)), int(np.floor(z[k] / CELL))
             st = self._streets(i, j)
             if st is not None:
-                a, inv, y = st
-                uv = np.einsum("tij,tj->ti", inv, np.array([x[k], z[k]]) - a)
-                w = np.c_[1 - uv.sum(axis=1), uv]
-                on = np.flatnonzero((w > -1e-6).all(axis=1))
-                if len(on):
-                    out[k] = float(w[on[0]] @ y[on[0]])
+                h = self._hits(st, x[k], z[k])
+                if len(h):
+                    if nears is None:
+                        out[k] = float(h.max())
+                    else:
+                        low = h[h <= nears[k] + STEP]
+                        out[k] = float(low.max()) if len(low) else float(h.min())
+                elif nears is not None and out[k] > nears[k] + 2 * STEP:
+                    out[k] = nears[k]  # off the asphalt in a tunnel or a cut: not up through the ground
                 continue
             r = self._roads(int(np.floor(x[k] / CELL)), int(np.floor(z[k] / CELL)))
             if not len(r):

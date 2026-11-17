@@ -55,6 +55,21 @@ def _directions(highway: str, tags: dict) -> tuple[bool, bool]:
     return True, True
 
 
+def layer(tags: dict) -> int:
+    """The level a road runs on: above 0 on a bridge, below 0 in a tunnel, 0 on the ground. OSM's layer tag
+    orders stacked bridges or tunnels; a tunnel under a building (building_passage) or a culvert under the road
+    is not a tunnel the road goes down into."""
+    try:
+        n = int(float(tags.get("layer", "0")))
+    except ValueError:
+        n = 0
+    if tags.get("bridge", "no") not in ("no", "abandoned"):
+        return max(n, 1)
+    if tags.get("tunnel", "no") not in ("no", "building_passage", "culvert", "avalanche_protector"):
+        return min(n, -1)
+    return 0
+
+
 def _lanes(highway: str, tags: dict, width: float, both: bool) -> int:
     """Lanes in one direction: the lanes tag split over the directions, else from the drawn width."""
     total = _number(tags.get("lanes"))
@@ -178,6 +193,7 @@ def build_graph(ways, controls, restrictions, municipios, rings, to_local, width
         "g_lanes": np.array([_lanes(r[3], r[4], r[5], r[6]) for r in rows], np.int8),
         "g_vfree": np.array([_vfree(r[3], r[4]) for r in rows], np.float32),
         "g_class": np.array([CLASSES.index(_base_class(r[3])) for r in rows], np.int8),
+        "g_layer": np.array([layer(r[4]) for r in rows], np.int8),
         "g_control": np.array([CONTROL_CODE.get(controls.get(r[9]), 0) for r in rows], np.int8),
         "g_way": np.array([r[7] for r in rows], np.int64),
         "g_junction": jxz[used_j].astype(np.float32),
