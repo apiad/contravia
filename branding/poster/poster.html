@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Contravía: póster</title>
+<link rel="stylesheet" href="../brand.css">
+<style>
+  html, body { margin: 0; background: var(--cv-ink); }
+  .poster { width: 1500px; height: 2100px; background: var(--cv-ink); padding: 14px; box-sizing: border-box;
+            display: flex; flex-direction: column; gap: 14px; }
+  .grid { flex: 1; display: grid; gap: 14px; min-height: 0;
+          grid-template-columns: repeat(6, minmax(0, 1fr)); grid-template-rows: repeat(10, minmax(0, 1fr));
+          grid-template-areas:
+            "cap cap cap cap cho cho"
+            "cap cap cap cap cho cho"
+            "tri tri mal mal mal mal"
+            "tri tri mal mal mal mal"
+            "tri tri tcl tcl mot mot"
+            "san san tcl tcl mot mot"
+            "san san par par par par"
+            "san san par par par par"
+            "met met met noc noc noc"
+            "met met met noc noc noc"; }
+  .p { min-height: 0; outline: 6px solid var(--cv-paper); outline-offset: -6px; overflow: hidden; }
+  .p img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cv-logo { height: 300px; }
+</style>
+</head>
+<body>
+<div class="poster">
+  <div class="grid">
+    <div class="p" style="grid-area:cap"><img src="panels/capitolio.jpg"></div>
+    <div class="p" style="grid-area:cho"><img src="panels/chofer.jpg"></div>
+    <div class="p" style="grid-area:tri"><img src="panels/trinidad.jpg"></div>
+    <div class="p" style="grid-area:mal"><img src="panels/malecon.jpg"></div>
+    <div class="p" style="grid-area:tcl"><img src="panels/triciclo.jpg"></div>
+    <div class="p" style="grid-area:par"><img src="panels/parada.jpg"></div>
+    <div class="p" style="grid-area:met"><img src="panels/metroguagua.jpg"></div>
+    <div class="p" style="grid-area:mot"><img src="panels/motorista.jpg" style="object-position: 50% 30%"></div>
+    <div class="p" style="grid-area:san"><img src="panels/santiago.jpg"></div>
+    <div class="p" style="grid-area:noc"><img src="panels/noche.jpg"></div>
+  </div>
+  <div class="cv-logo">
+    <div class="cv-sign"></div>
+    <div class="cv-word">CONTRAVÍA</div>
+    <div class="cv-tag">DE PINAR DEL RÍO A BARACOA</div>
+  </div>
+</div>
+</body>
+</html>

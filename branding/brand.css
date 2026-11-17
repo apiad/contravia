@@ -1,0 +1,28 @@
+/* Contravía brand: colours, fonts and the logo lockup. Every branding page links this file. */
+
+@font-face { font-family: "Contravia Logo"; src: url("fonts/NotoSans-CondensedBlackItalic.ttf"); }
+@font-face { font-family: "Contravia Tag"; src: url("fonts/NotoSans-CondensedBlack.ttf"); }
+@font-face { font-family: "Contravia Text"; src: url("fonts/NotoSans-CondensedBold.ttf"); }
+
+:root {
+  --cv-yellow: #ffd400;  /* the word CONTRAVÍA */
+  --cv-red: #d62828;     /* the no-entry sign and the word's drop shadow */
+  --cv-ink: #0b0b0b;     /* background, outlines, gutters */
+  --cv-paper: #f4efe4;   /* panel frames, the sign's bar, the tagline */
+}
+
+/* The logo: a no-entry sign, then the word, then a tagline under it. Sizes scale with --cv-size. */
+.cv-logo { --cv-size: 250px; position: relative; display: flex; align-items: center; justify-content: center;
+           gap: calc(var(--cv-size) * 0.14); }
+.cv-sign { width: calc(var(--cv-size) * 0.68); height: calc(var(--cv-size) * 0.68); border-radius: 50%;
+           background: var(--cv-red); flex: none; position: relative;
+           box-shadow: 0 0 0 calc(var(--cv-size) * 0.04) var(--cv-paper), 0 0 0 calc(var(--cv-size) * 0.072) var(--cv-ink); }
+.cv-sign::after { content: ""; position: absolute; left: 22%; right: 22%; top: 41%; bottom: 41%;
+                  background: var(--cv-paper); }
+.cv-word { font-family: "Contravia Logo"; font-size: var(--cv-size); line-height: 1; color: var(--cv-yellow);
+           letter-spacing: 2px; -webkit-text-stroke: calc(var(--cv-size) * 0.04) var(--cv-ink); paint-order: stroke fill;
+           text-shadow: calc(var(--cv-size) * 0.04) calc(var(--cv-size) * 0.04) 0 var(--cv-red);
+           transform: skewX(-6deg); margin-top: calc(var(--cv-size) * -0.12); }
+.cv-tag { position: absolute; bottom: calc(var(--cv-size) * 0.056); left: 0; right: 0; text-align: center;
+          font-family: "Contravia Tag"; font-size: calc(var(--cv-size) * 0.136);
+          letter-spacing: calc(var(--cv-size) * 0.048); color: var(--cv-paper); }

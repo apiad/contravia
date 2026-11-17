@@ -4,6 +4,7 @@ An open-world driving game in a real-size Havana, generated while you drive from
 rules per zone, on manifoldx, for the desktop. It is a technical demo for students and a stress test for manifoldx.
 
 - The design is `docs/superpowers/specs/2026-11-13-havana-driver-design.html`; plans are in `docs/superpowers/plans/`.
+- The commercial name is Contravía; its brand (colours, fonts, logo, poster, how to make panels with klein) is in `branding/` and `know-how/branding.md`.
 - `caiman prepare <cuba-latest.osm.pbf>` writes `data/havana.npz`; `caiman play` drives; `caiman bench` drives a
   fixed route and appends its numbers to `bench/history.jsonl`.
 - `caiman prepare ... --dem DIR` adds the ground's heights from the Copernicus GLO-30 tiles
