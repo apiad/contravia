@@ -30,6 +30,10 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   streets they leave from ramp to them at 8 %. `contravia/structures.py` dresses them (decks, parapets, piers, tunnel
   walls, roofs and lamps, open cuts with the ground left out over them); a wheel stands on the surface level with
   it (`Surface.height(..., near=)`) and a wall stops the car only at its own heights.
+- `contravia prepare` then lays the pavements (`contravia/walks.py`): a road-network face built over more than 30 %
+  (12 % in the old centre) rises 15 cm kerb to kerb; elsewhere each building gets a 1.5 m platform and a path to
+  its street. The cells draw them with manifoldx's pavement patterns and the wheels stand on them. `contravia walks`
+  rebuilds them in an existing data file in about 4 minutes.
 - `contravia play` starts at the Capitolio at 10:00 today; `--time "Sun 08:00"` or `"17:30"` starts the clock elsewhere,
   `--time now` runs it on the machine's clock, `--warp 60` speeds it up for tests. The keys ramp the wheel and the
   pedals (`contravia/input.py`). `contravia play --traffic my.json` changes demand settings
