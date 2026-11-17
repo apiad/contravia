@@ -38,6 +38,8 @@ def test_pool_equals_summarize():
     pooled = pool(kids, L, 0, 0, origin)
     assert np.allclose(pooled["built"], whole["built"]) and np.array_equal(pooled["green"], whole["green"])
     assert np.allclose(pooled["height"], whole["height"], atol=1e-4)
+    for key in ("color", "storeys", "types"):
+        assert np.allclose(pooled[key], whole[key], atol=1e-4), key
     assert len(pooled["roads"]) == len(whole["roads"])
 
 
@@ -59,3 +61,18 @@ def test_style_matches_box():
     buildings.box(mb, ring, 12345)
     top = mb.to_meshdata(0, 0).positions[:, 1].max()
     assert abs(top - facades.plan(12345, area=100.0).height) < 1e-4
+
+
+def test_summary_box_has_the_buildings_colour_and_facade():
+    """A square holding one building draws its box in that building's colour, with its type's facade."""
+    origin = (0, 0)
+    ring = np.array([(40, 40), (52, 40), (52, 52), (40, 52)], np.float32)
+    cell = Cell(roads=np.zeros((0, 5), np.float32), buildings=[ring], building_ids=np.array([777]),
+                trees=np.zeros((0, 2), np.float32))
+    s = summarize([(0, 0, cell)], 1, 0, 0, origin)
+    p = facades.plan(777, area=144.0)
+    m = summary_mesh(s, 1, 0, 0, origin)
+    walls = np.abs(m.normals[:, 1]) < 0.5
+    assert np.allclose(m.colors[walls], p.color, atol=1e-5)
+    assert m.facade is not None and set(m.facade[walls, 2]) == {facades.SHADER_TYPE[p.type]}
+    assert m.facade[walls, 1].max() == p.storeys
