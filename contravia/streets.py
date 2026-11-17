@@ -459,20 +459,25 @@ def pmap(fn, items, chunk=32):
 def end_widths(chains, ends):
     """The width each end eases into at its junction: the mean of its own and that of the street it continues
     straight into, if any."""
-    dirs = {}
-    for es in ends.values():
-        for c, which in es:
-            q = chains[c].p if which == 0 else chains[c].p[::-1]
-            s = arclen(q)
-            k = min(int(np.searchsorted(s, 10.0)), len(q) - 1)
-            dirs[(c, which)] = unit(q[k] - q[0])
-    ew = {}
-    for es in ends.values():
+    def heading(x):
+        c, which = x
+        q = chains[c].p if which == 0 else chains[c].p[::-1]
+        s = arclen(q)
+        k = min(int(np.searchsorted(s, 10.0)), len(q) - 1)
+        return unit(q[k] - q[0])
+
+    keys = [x for es in ends.values() for x in es]
+    dirs = dict(zip(keys, pmap(heading, keys, chunk=512)))
+
+    def widths(es):
+        out = []
         for x in es:
             w = chains[x[0]].w
             cos, y = min(((float(dirs[x] @ dirs[y]), y) for y in es if y != x), default=(1.0, None))
-            ew[x] = (w + chains[y[0]].w) / 2 if cos < -0.8 else w
-    return ew
+            out.append((x, (w + chains[y[0]].w) / 2 if cos < -0.8 else w))
+        return out
+
+    return dict(x for r in pmap(widths, list(ends.values()), chunk=256) for x in r)
 
 
 def trims(chains, cache):
