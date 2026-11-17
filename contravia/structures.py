@@ -79,18 +79,20 @@ def build(ribbons, owner, axes, chains, prof, terrain, lower_tree=None, rings=()
     (W, 6) as ax, az, bx, bz, lowest, highest, their cells, cuts (C, 3, 2), their cells, roofs (R, 3, 3), their
     cells, sea holes (H, 3, 2)). lower_tree is an STRtree of the ground pieces, where no pier may stand; rings,
     rnode and hj are the junction pieces, their names (a tuple on a bridge or in a tunnel) and their heights."""
-    from contravia.streets import densify, offset
+    from contravia.streets import built_tree, densify, offset, pmap
 
-    out = _Out()
     sea = relief(terrain)
     tubes = [k for k in range(len(axes)) if chains[owner[k]].layer < 0]
     lines = {k: shapely.LineString(axes[k]) for k in tubes}
-    for k, q0 in enumerate(axes):
+
+    def ribbon(k):
+        out = _Out()
+        q0 = axes[k]
         e = chains[owner[k]]
         s0, h0 = prof[k]
         q = densify(q0, STEP)
         if len(q) < 2:
-            continue
+            return out
         sq = np.concatenate([[0], np.cumsum(np.hypot(*np.diff(q, axis=0).T))])
         y = np.interp(sq, s0, h0)
         half = np.full(len(q), e.w / 2 + WALL_PAD)
@@ -108,14 +110,27 @@ def build(ribbons, owner, axes, chains, prof, terrain, lower_tree=None, rings=()
         if e.layer <= 0 and (y < ground - BELOW).any():
             covered = (e.layer < 0) & ((np.minimum(gl, gr) - y >= ROOF + COVER) | (ground < SEA))
             _below(out, q, y, left, right, gl, gr, covered, sea, twin, offset(q, e.w / 2))
+        return out
+
+    outs = pmap(ribbon, range(len(axes)), chunk=64)
     levels = {}  # layer -> (its ribbons, an STRtree of them)
     for k in range(len(axes)):
         levels.setdefault(chains[owner[k]].layer, []).append(ribbons[k])
-    levels = {L: (rs, shapely.STRtree(rs)) for L, rs in levels.items()}
-    for poly, node in zip(rings, rnode):
+    levels = {L: (rs, built_tree(rs)) for L, rs in levels.items()}
+
+    def junction(item):
+        poly, node = item
+        out = _Out()
         layer = node[0] if isinstance(node, tuple) else 0
         if hj is not None and node in hj:
             _ring(out, poly, float(hj[node]), layer, levels.get(layer), terrain, sea)
+        return out
+
+    outs += pmap(junction, list(zip(rings, rnode)), chunk=64)
+    out = _Out()
+    for o in outs:
+        for f in ("tris", "paint", "walls", "cuts", "roofs", "holes"):
+            getattr(out, f).extend(getattr(o, f))
     return _pack(out)
 
 
