@@ -3,7 +3,7 @@ name = "contravia"
 version = "0.1.0"
 description = "An open-world driving game in a procedural, real-size Havana, built on manifoldx."
 requires-python = ">=3.14"
-dependencies = ["numpy", "manifold-gfx[desktop]"]
+dependencies = ["numpy", "manifold-gfx[desktop,svg]"]
 
 classifiers = [
     "Programming Language :: Python :: 3.14",

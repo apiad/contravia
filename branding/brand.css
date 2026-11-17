@@ -1,8 +1,8 @@
 /* Contravía brand: colours, fonts and the logo lockup. Every branding page links this file. */
 
-@font-face { font-family: "Contravia Logo"; src: url("fonts/NotoSans-CondensedBlackItalic.ttf"); }
-@font-face { font-family: "Contravia Tag"; src: url("fonts/NotoSans-CondensedBlack.ttf"); }
-@font-face { font-family: "Contravia Text"; src: url("fonts/NotoSans-CondensedBold.ttf"); }
+@font-face { font-family: "Contravia Logo"; src: url("../assets/fonts/NotoSans-CondensedBlackItalic.ttf"); }
+@font-face { font-family: "Contravia Tag"; src: url("../assets/fonts/NotoSans-CondensedBlack.ttf"); }
+@font-face { font-family: "Contravia Text"; src: url("../assets/fonts/NotoSans-CondensedBold.ttf"); }
 
 :root {
   --cv-yellow: #ffd400;  /* the word CONTRAVÍA */
