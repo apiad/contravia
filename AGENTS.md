@@ -15,9 +15,10 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   `caiman bench --tiles data/cuba` adds the scenes of `bench/cuba.json` after the Havana route: a teleport to
   Santiago, a hill view over Havana and a 300 m flight toward Santa Clara, each with frame times, nodes and triangles.
 - `caiman prepare` also builds the road graph traffic drives on (g_* arrays); data from before layer 2 plays with no traffic.
-- Traffic runs on the machine's local clock. `caiman play --traffic my.json` changes demand settings
-  (`caiman/rules/traffic.py`, only the keys the file names); `--time "Sun 08:00"` and `--warp 60` pin and speed up
-  the clock for tests only. While playing, `manifoldx emit traffic_config population=3000000` changes settings and
+- `caiman play` starts at the Capitolio at 10:00 today; `--time "Sun 08:00"` or `"17:30"` starts the clock elsewhere,
+  `--time now` runs it on the machine's clock, `--warp 60` speeds it up for tests. The keys ramp the wheel and the
+  pedals (`caiman/input.py`). `caiman play --traffic my.json` changes demand settings
+  (`caiman/rules/traffic.py`, only the keys the file names). While playing, `manifoldx emit traffic_config population=3000000` changes settings and
   `manifoldx emit close x=... z=... minutes=40` closes a street; `engine.state.traffic` reports the numbers.
 - `caiman flowmap out.png --time "Tue 08:00" [--traffic my.json]` draws the flow layer over the province without a
   window; `caiman bench --time ...` adds traffic numbers to the run.
