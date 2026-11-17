@@ -144,10 +144,10 @@ def structures(mb, tris: np.ndarray, paint: np.ndarray) -> None:
 WALK_TONES = (  # the pavement's tone by zone: the old centre's worn cement, Vedado's light cement, the rest
     (0.46, 0.44, 0.40), (0.54, 0.53, 0.50), (0.43, 0.42, 0.39))
 KERB_SHADE = (0.82, 1.0, 0.9, 0.75)  # each part of contravia.walks (top, kerb, platform, platform edge) against its tone
-# The manifoldx surface pattern of each zone's pavement top and of a platform: square slabs for now, until
-# manifoldx has a worn pavement for the old centre and the outskirts; kerbs stay plain.
-WALK_PATTERN = (5, 5, 5)
-PLATFORM_PATTERN = 5
+# The manifoldx surface pattern of each zone's pavement top and of a platform: worn slabs (9) in the old centre and
+# the outskirts, clean slabs (8) in Vedado and Playa; kerbs stay plain.
+WALK_PATTERN = (9, 8, 9)
+PLATFORM_PATTERN = 9
 
 
 def walks(mb, tris: np.ndarray, paint: np.ndarray) -> None:
