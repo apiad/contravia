@@ -115,7 +115,7 @@ def test_a_skirt_drops_to_the_ground_on_the_low_side_only():
 
 
 def test_neighbouring_cells_share_their_ground_edge():
-    from caiman.rules.ground import ground
+    from caiman.rules.ground import N, ground
 
     t = tilted()
     a, b = MeshBuilder(), MeshBuilder()
@@ -124,7 +124,7 @@ def test_neighbouring_cells_share_their_ground_edge():
     pa, pb = a.to_meshdata(0, 0).positions, b.to_meshdata(0, 0).positions
     ea, eb = pa[np.isclose(pa[:, 0], 200)], pb[np.isclose(pb[:, 0], 200)]
     ea, eb = ea[np.argsort(ea[:, 2])], eb[np.argsort(eb[:, 2])]
-    assert len(ea) == 21 and np.array_equal(ea, eb)
+    assert len(ea) == N and np.array_equal(ea, eb)
     assert np.allclose(pa[:, 1], 0.1 * pa[:, 0] + 0.05 * pa[:, 2], atol=1e-3)
 
 
@@ -142,3 +142,18 @@ def test_trees_stand_on_the_ground():
     trees.trees(mb, np.array([[10.0, 0.0], [50.0, 20.0]]), np.array([1.0, 6.0]))
     p = mb.to_meshdata(0, 0).positions
     assert np.isclose(p[np.isclose(p[:, 0], 50.2, atol=0.01), 1].min(), 6.0)          # a trunk corner of tree 2
+
+
+def test_wild_trees_grow_the_same_in_clumps_off_the_roads_and_out_of_the_sea():
+    from caiman.rules.trees import WILD_CLEAR, wild
+    from caiman.terrain import Terrain
+
+    r, c = np.mgrid[0:300, 0:300]
+    land = Terrain(np.where(c < 150, 5.0, 0.0), (-1500, -1500), (10, 10))   # land west of x = 0, sea east
+    road = np.array([[-200.0, 100.0, 0.0, 100.0, 8.0]])
+    spots = [wild(i, 0, land, road) for i in (-1, 0)]
+    again = wild(-1, 0, land, road)
+    assert np.array_equal(spots[0][0], again[0])                        # same cell, same trees
+    assert len(spots[0][0]) > 20 and len(spots[1][0]) == 0              # on land, none in the sea
+    d = np.abs(spots[0][0][:, 1] - 100.0)
+    assert (d > 4.0 + WILD_CLEAR - 1e-6).all()                          # clear of the road

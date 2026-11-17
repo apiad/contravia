@@ -9,8 +9,11 @@ a skirt drops from its edge to the ground, like an embankment wall.
 
 import numpy as np
 
+from caiman.rules.noise import fbm
+
 ROAD = (0.08, 0.08, 0.09)
 SKIRT = (0.42, 0.40, 0.37)
+PAINT = (0.85, 0.84, 0.78)
 LIFT = 0.15  # metres above the ground, so the ribbon never fights with it
 PIECE = 10.0  # metres: the longest piece a segment is cut into
 
@@ -89,15 +92,25 @@ def ribbon(mb, roads: np.ndarray, terrain) -> None:
     _skirts(mb, edges, tops, centres, terrain)
 
 
-def streets(mb, tris: np.ndarray, edges: np.ndarray, terrain) -> None:
-    """Add the street surface built by caiman.streets: its (T, 3, 3) triangles, and a skirt under each
-    (E, 2, 3) edge, which has the road on its left in (x, z)."""
+def _up(t):
+    """The unit normal of each (T, 3, 3) triangle, facing up."""
+    n = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+    n *= np.sign(n[:, 1:2] + 1e-12)
+    return n / np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-9)
+
+
+def streets(mb, tris: np.ndarray, edges: np.ndarray, terrain, marks=None) -> None:
+    """Add the street surface built by caiman.streets: its (T, 3, 3) triangles, a little lighter or darker
+    from place to place like patched asphalt, a skirt under each (E, 2, 3) edge, which has the road on its
+    left in (x, z), and the (M, 3, 3) triangles of the painted lines."""
     t = np.asarray(tris, float).reshape(-1, 3, 3)
     if len(t):
-        n = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
-        n *= np.sign(n[:, 1:2] + 1e-12)  # facing up
-        n /= np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-9)
-        mb.add(t.reshape(-1, 3), np.repeat(n, 3, axis=0), ROAD, np.arange(3 * len(t)).reshape(-1, 3))
+        p = t.reshape(-1, 3)
+        tone = 0.85 + 0.3 * fbm(p[:, 0], p[:, 2], 30.0, seed=7)
+        mb.add(p, np.repeat(_up(t), 3, axis=0), np.multiply(ROAD, tone[:, None]), np.arange(len(p)).reshape(-1, 3))
+    m = np.zeros((0, 3, 3)) if marks is None else np.asarray(marks, float).reshape(-1, 3, 3)
+    if len(m):
+        mb.add(m.reshape(-1, 3), np.repeat(_up(m), 3, axis=0), PAINT, np.arange(3 * len(m)).reshape(-1, 3))
     e = np.asarray(edges, float).reshape(-1, 2, 3)
     if len(e):
         a, b = e[:, 0, [0, 2]], e[:, 1, [0, 2]]

@@ -1,5 +1,6 @@
 from caiman import cells
 from caiman.citydata import CityData
+from caiman.rules.ground import N
 
 
 def test_every_fixture_cell_builds(city_npz):
@@ -12,7 +13,7 @@ def test_every_fixture_cell_builds(city_npz):
 
 def test_empty_cell_is_ground_only(city_npz):
     md = cells.build(500, 500)
-    assert len(md.positions) == 21 * 21 and len(md.indices) == 3 * 2 * 20 * 20   # the ground grid alone
+    assert len(md.positions) == N * N and len(md.indices) == 3 * 2 * (N - 1) ** 2   # the ground grid alone
 
 
 def test_positions_are_relative_to_the_cell_corner(city_npz):

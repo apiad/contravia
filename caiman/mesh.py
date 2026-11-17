@@ -16,7 +16,7 @@ class MeshBuilder:
         self._count = 0
 
     def add(self, positions, normals, color, indices) -> None:
-        """Add vertices with one colour and triangles indexing them from 0.
+        """Add vertices with one colour, or one per vertex, and triangles indexing them from 0.
 
         Each triangle is turned, if needed, so its winding faces the way its vertices' normals point, which
         lets the rules list corners in any order.
@@ -30,7 +30,7 @@ class MeshBuilder:
         t[flip] = t[flip][:, [0, 2, 1]]
         self._pos.append(p)
         self._nrm.append(n)
-        self._col.append(np.tile(np.asarray(color, np.float32), (len(p), 1)))
+        self._col.append(np.broadcast_to(np.asarray(color, np.float32), (len(p), 3)).copy())
         self._idx.append(t + self._count)
         self._count += len(p)
 

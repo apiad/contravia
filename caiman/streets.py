@@ -53,6 +53,10 @@ LIFT = 0.15  # metres above the ground, as caiman.rules.roads
 EASE = 20.0  # metres over which a ribbon's height eases into its junction's
 SAMPLE = 8.0  # metres between the boundary points a ribbon is triangulated on; a junction is flat
 CLEAR = 0.2  # metres: an edge of the road this far above the ground gets a skirt
+MARK = 0.15  # metres: half the width of a painted line
+MARK_LIFT = 0.02  # metres above the asphalt
+DASH, DASH_GAP = 3.0, 6.0  # metres of paint and of gap along a dashed centre line, and of each painted piece
+PAINTED = {c for k in ("motorway", "trunk", "primary", "secondary", "tertiary") for c in (k, f"{k}_link")}
 
 _POOL: ThreadPoolExecutor | None = None
 
@@ -760,9 +764,72 @@ def heights(ribbons, owner, axes, rings, rnode, chains, terrain):
     return hj, out
 
 
+def _on(tris, xz, fallback):
+    """The height at points xz (N, 2) of the triangles (T, 3, 3) they fall in; `fallback` where none."""
+    if not len(tris):
+        return np.array(fallback, float)
+    a = tris[:, 0, [0, 2]]
+    u, v = tris[:, 1, [0, 2]] - a, tris[:, 2, [0, 2]] - a
+    det = u[:, 0] * v[:, 1] - v[:, 0] * u[:, 1]
+    ok = np.abs(det) > 1e-9
+    a, u, v, det, y = a[ok], u[ok], v[ok], det[ok], tris[ok][:, :, 1]
+    d = xz[:, None, :] - a[None]
+    b1 = (d[..., 0] * v[:, 1] - d[..., 1] * v[:, 0]) / det
+    b2 = (u[:, 0] * d[..., 1] - u[:, 1] * d[..., 0]) / det
+    inside = (b1 > -1e-4) & (b2 > -1e-4) & (b1 + b2 < 1 + 1e-4)
+    out = np.array(fallback, float)
+    hit = inside.any(axis=1)
+    t = inside.argmax(axis=1)[hit]
+    w1, w2 = b1[hit, t], b2[hit, t]
+    out[hit] = (1 - w1 - w2) * y[t, 0] + w1 * y[t, 1] + w2 * y[t, 2]
+    return out
+
+
+def _strip(q, s, h, off, keep, tris):
+    """Triangles (K, 3, 3) of a painted line MARK each side of offset `off` from centreline q, over the
+    stretches of q where keep(arclength) is True, on the ribbon's triangles `tris` (its profile, arclengths
+    s and heights h, where a point falls outside them)."""
+    q = densify(q, DASH)
+    sq = arclen(q)
+    a, b = offset(q, off + MARK)[0], offset(q, off - MARK)[0]
+    mid = (sq[1:] + sq[:-1]) / 2
+    k = np.flatnonzero(keep(mid))
+    if not len(k):
+        return np.zeros((0, 3, 3))
+    ya = _on(tris, a, np.interp(sq, s, h)) + MARK_LIFT
+    yb = _on(tris, b, np.interp(sq, s, h)) + MARK_LIFT
+    pa, pb = np.c_[a[:, 0], ya, a[:, 1]], np.c_[b[:, 0], yb, b[:, 1]]
+    quads = [pa[k], pa[k + 1], pb[k + 1], pb[k]]
+    return np.concatenate([np.stack(quads[:3], axis=1), np.stack([quads[0], quads[2], quads[3]], axis=1)])
+
+
+def marks(axes, owner, chains, prof, tris):
+    """The painted lines of every ribbon as (K, 3, 3) triangles: a dashed centre line on a two-way street, a
+    solid one on a divided avenue or a wide two-way street, and a solid line along each edge of a street
+    10 m wide or more. Only the classes in PAINTED are painted: Havana's side streets mostly are not. tris[k] are ribbon k's
+    triangles, which the paint lies on."""
+    def one(k):
+        e, q = chains[owner[k]], axes[k]
+        if e.cls not in PAINTED or len(q) < 2:
+            return np.zeros((0, 3, 3))
+        s, h = prof[k]
+        out = []
+        if not e.oneway or e.paired:
+            solid = e.paired or e.w >= 10
+            out.append(_strip(q, s, h, 0.0, (lambda m: np.ones(len(m), bool)) if solid else (lambda m: m % (DASH + DASH_GAP) < DASH),
+                              tris[k]))
+        if e.w >= 10:
+            for side in (1, -1):
+                out.append(_strip(q, s, h, side * (e.w / 2 - 0.6), lambda m: np.ones(len(m), bool), tris[k]))
+        return np.concatenate(out) if out else np.zeros((0, 3, 3))
+
+    return np.concatenate(pmap(one, range(len(axes)), chunk=128)).reshape(-1, 3, 3)
+
+
 def mesh(ribbons, owner, axes, rings, rnode, chains, terrain):
     """The street surface cut per cell: (triangles (T, 3, 3) as x, y, z, the cell of each (T, 2), skirt edges
-    (E, 2, 3) with the road on their left in (x, z), the cell of each (E, 2)).
+    (E, 2, 3) with the road on their left in (x, z), the cell of each (E, 2), the painted lines' triangles
+    (M, 3, 3) and the cell of each (M, 2)).
 
     Each piece is cut by the cells it crosses and each part triangulated on its boundary points, spaced at most
     SAMPLE metres apart along a ribbon. A point of a junction takes its height; a point of a ribbon takes the height of its
@@ -817,11 +884,13 @@ def mesh(ribbons, owner, axes, rings, rnode, chains, terrain):
         return np.stack([np.c_[a[:, 0], ya, a[:, 1]], np.c_[b[:, 0], yb, b[:, 1]]], axis=1)
 
     edges = pmap(skirt, range(len(pieces_)), chunk=64)
+    lines = marks(axes, owner, chains, prof, [cut[k][0] for k in range(nr)]).astype(np.float32)
+    mkeys = np.floor(lines[:, :, [0, 2]].mean(axis=1) / CELL).astype(np.int64)
     tris = np.concatenate([c[0] for c in cut]).astype(np.float32)
     tkeys = np.concatenate([c[1] for c in cut]).astype(np.int64)
     edges = np.concatenate(edges).reshape(-1, 2, 3).astype(np.float32)
     ekeys = np.floor(edges[:, :, [0, 2]].mean(axis=1) / CELL).astype(np.int64)
-    return tris, tkeys, edges, ekeys
+    return tris, tkeys, edges, ekeys, lines, mkeys
 
 
 def add_to(city, widths) -> dict:
@@ -830,16 +899,18 @@ def add_to(city, widths) -> dict:
     from caiman.landmarks import Landmarks
     from caiman.surface import Surface
 
-    for k in ("street_tris", "street_edges", "street_tris_offsets", "street_edges_offsets"):
+    for k in ("street_tris", "street_edges", "street_marks"):
         city.a.pop(k, None)
+        city.a.pop(f"{k}_offsets", None)
     ribbons, owner, axes, rings, rnode, chains = build(city.a, widths, Landmarks(city).wall_rings)
-    tris, tkeys, edges, ekeys = mesh(ribbons, owner, axes, rings, rnode, chains, city.terrain)
+    tris, tkeys, edges, ekeys, lines, mkeys = mesh(ribbons, owner, axes, rings, rnode, chains, city.terrain)
     city.add_kind("street_tris", tris, tkeys)
     city.add_kind("street_edges", edges, ekeys)
+    city.add_kind("street_marks", lines, mkeys)
     poly = city.a["g_poly"].astype(float)
     city.a["g_poly_y"] = Surface(city, city.terrain).height(poly[:, 0], poly[:, 1]).astype(np.float32)
     return {"streets": len(chains), "junction_pieces": len(rings), "street_triangles": len(tris),
-            "street_skirt_edges": len(edges)}
+            "street_skirt_edges": len(edges), "street_mark_triangles": len(lines)}
 
 
 def main(path) -> dict:

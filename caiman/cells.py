@@ -52,11 +52,14 @@ def build(i: int, j: int):
     if c.street_tris is None:
         roads.ribbon(mb, c.roads, terrain)
     else:
-        roads.streets(mb, c.street_tris, c.street_edges, terrain)
+        roads.streets(mb, c.street_tris, c.street_edges, terrain, c.street_marks)
     for ring, style_id in boxes(c, roads_around(city(), i, j)):
         if not buildings.box(mb, ring, style_id, base=seat(ring, terrain)):
             SKIPPED_ROOFS += 1
     trees.trees(mb, c.trees, terrain.height(c.trees[:, 0], c.trees[:, 1]))
+    if not (len(c.buildings) or len(c.fillers) or len(c.trees)):  # land OSM says nothing about
+        spots, size, tone = trees.wild(i, j, terrain, roads_around(city(), i, j))
+        trees.trees(mb, spots, terrain.height(spots[:, 0], spots[:, 1]), size, tone)
     return mb.to_meshdata(x0, z0)
 
 

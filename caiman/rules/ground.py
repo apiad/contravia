@@ -1,15 +1,29 @@
-"""The ground of a cell: a 21 x 21 grid of vertices 10 m apart, each at the terrain's height.
+"""The ground of a cell: a 21 x 21 grid of vertices 10 m apart, each at the terrain's height, coloured as grass.
 
 Neighbouring cells ask the terrain for the same points along their shared edge, so they meet without seams.
-Normals come from the slope, measured a metre either side of each vertex.
+Normals come from the slope, measured a metre either side of each vertex. Each vertex's green comes from
+noise over its world position: broad patches of lush and dark grass, with dry patches inside them, and drier
+grass where the ground is steep. The same point always gets the same colour, so cells agree along edges.
 """
 
 import numpy as np
 
 from caiman.geo import CELL
+from caiman.rules.noise import fbm
 
-GROUND = (0.32, 0.36, 0.30)
+LUSH = (0.30, 0.44, 0.20)
+DARK = (0.20, 0.33, 0.15)
+DRY = (0.50, 0.47, 0.30)
+GROUND = (0.32, 0.40, 0.22)  # their usual mix: the far summaries' ground
 N = 21  # vertices per side: 10 m apart on a 200 m cell
+
+
+def grass(x, z, slope) -> np.ndarray:
+    """The (V, 3) grass colour at points (x, z) with ground slopes `slope` (rise over run)."""
+    dark = fbm(x, z, 90.0, seed=1)[:, None]
+    dry = np.clip((fbm(x, z, 40.0, seed=2) - 0.55) * 4 + np.asarray(slope) * 2.5, 0, 1)[:, None]
+    green = np.add(np.multiply(LUSH, 1 - dark), np.multiply(DARK, dark))
+    return green * (1 - dry) + np.multiply(DRY, dry)
 
 
 def ground(mb, i: int, j: int, terrain) -> None:
@@ -24,4 +38,4 @@ def ground(mb, i: int, j: int, terrain) -> None:
     n /= np.linalg.norm(n, axis=1, keepdims=True)
     a = (np.arange(N - 1)[:, None] * N + np.arange(N - 1)[None, :]).ravel()  # top-left of every square
     tris = np.concatenate([np.stack([a, a + N, a + 1], 1), np.stack([a + 1, a + N, a + N + 1], 1)])
-    mb.add(np.stack([x, y, z], axis=1), n, GROUND, tris)
+    mb.add(np.stack([x, y, z], axis=1), n, grass(x, z, np.hypot(dx, dz)), tris)

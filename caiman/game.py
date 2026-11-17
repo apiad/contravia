@@ -308,6 +308,8 @@ class Game:
         inp = self.engine.input
         if inp.just_pressed("r"):
             self.teleport(self.car.x, self.car.z)
+        if inp.just_pressed("F1"):
+            self.hud.toggle_stats()
         if inp.just_pressed("t"):
             x, z, _ = self.walls.random_road(self._rng)
             self.teleport(x, z)
@@ -333,6 +335,7 @@ class Game:
         self.base.transform.pos = (float(self.eye[0]), BASE_Y, float(self.eye[2]))
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
         self.hud.update(self.car, self.o)
+        self.hud.show_stats(self._stats_lines())
         st = self.engine.state
         st.car = {"pose": [self.car.x, self.car.z, self.car.yaw, self.car.speed], "eye": self.eye.tolist()}
         st.pos = [round(self.car.x, 1), round(self.car.z, 1)]
@@ -352,6 +355,28 @@ class Game:
             st.cells_built = tiles["built"]
             st.cells_waiting = self.waiting()
             st.car_node = self._car_node()
+
+    def _stats_lines(self) -> list[str]:
+        """The F1 panel's lines, from this frame's time and what the systems last published."""
+        self._frame_times = getattr(self, "_frame_times", [])[-119:] + [self.frame_ms]
+        f = np.array(self._frame_times)
+        st = self.engine.state
+        tiles = getattr(st, "tiles", None) or {}
+        levels = tiles.get("by_level", {})
+        traffic = getattr(st, "traffic", None) or {}
+        own = next((n for n in (getattr(st, "car_node", None) or []) if n["drawn"]), None)
+        i, j = math.floor(self.car.x / CELL), math.floor(self.car.z / CELL)
+        return [
+            f"fps {1000 / max(f.mean(), 1e-3):5.1f}   frame {f.mean():5.1f} ms   worst {f.max():6.1f} ms",
+            "drawn  " + "  ".join(f"L{L}:{levels[L]}" for L in sorted(levels, key=int)),
+            f"nodes  {sum(levels.values())}   held {tiles.get('held', 0)}   waiting {getattr(st, 'cells_waiting', 0)}",
+            f"built {tiles.get('built', 0)}  uploaded {tiles.get('uploaded', 0)}  dropped {tiles.get('dropped', 0)}",
+            f"longest gap {tiles.get('max_frame_ms', 0.0):.0f} ms",
+            f"cars {traffic.get('cars', 0)}   flow step {traffic.get('flow_step_ms', 0)} ms",
+            f"pos {self.car.x:.0f}, {self.car.z:.0f}   cell {i}, {j}   y {self.car.y:.1f} m",
+            f"own cell drawn at L{own['node'][0]}" if own else "own cell: nothing drawn",
+            f"speed {self.car.speed * 3.6:.0f} km/h",
+        ]
 
     def _car_node(self) -> list:
         """Where the streamer stands on the car's cell and each node above it: selected, building, built, on the

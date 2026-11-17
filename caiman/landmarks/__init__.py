@@ -87,7 +87,8 @@ class Landmarks:
                     fillers=[r for r, k in zip(cell.fillers, f_keep, strict=True) if k],
                     filler_seeds=cell.filler_seeds[f_keep],
                     trees=cell.trees[t_keep],
-                    street_tris=cell.street_tris, street_edges=cell.street_edges)
+                    street_tris=cell.street_tris, street_edges=cell.street_edges,
+                    street_marks=cell.street_marks)
 
     def walls(self, i: int, j: int) -> np.ndarray:
         """The (W, 2, 2) landmark wall segments whose midpoint lies in cell (i, j)."""
