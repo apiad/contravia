@@ -261,7 +261,7 @@ pre{background:var(--raised);border:1px solid var(--rule);border-radius:6px;padd
 <div class="chrome">
   <span>caimán</span>
   <span class="tab">spec · buildings</span>
-  <span class="st"><span class="pill acc">draft, for review</span><span class="pill">2026-11-17</span></span>
+  <span class="st"><span class="pill acc">approved · steps 1–2 in progress</span><span class="pill">2026-11-17</span></span>
 </div>
 <div class="wrap">
 <nav class="toc" id="toc">
@@ -307,6 +307,9 @@ pre{background:var(--raised);border:1px solid var(--rule);border-radius:6px;padd
 <tr><td>engine change</td><td>manifoldx gets a facade pattern and a per-vertex facade attribute (four floats)</td><td class="why">The existing patterns are world-space and cannot know where a wall starts or which floor a pixel is on.</td><td><span class="tag">agent</span></td></tr>
 <tr><td>detail ring</td><td>LOD0 is a second streamer: a 3 × 3 ring of 200 m cells around the car, drawn over the massing</td><td class="why">The quadtree builds a level-0 cell once for every distance up to about 2 km; grammar geometry in every one would multiply the vertices by ten.</td><td><span class="tag">agent</span></td></tr>
 <tr><td>data</td><td><code>caiman prepare</code> keeps the building tags and each building's municipio</td><td class="why">Today it keeps only the OSM id and the outer ring.</td><td><span class="tag">agent</span></td></tr>
+<tr><td>art direction</td><td>Worn walls: stains, faded colour, peeled plaster</td><td class="why">Closer to how Havana looks than clean pastel.</td><td><span class="tag m">maintainer</span></td></tr>
+<tr><td>detail vs frame time</td><td>The streamer's screen-error threshold (tau) follows the frame time: over 20 ms it rises, well under it falls back, between 12 and 48 px</td><td class="why">The level-0 radius shrinks only when the machine needs it, so the detail ring has room on slow machines and full detail stays on fast ones.</td><td><span class="tag m">maintainer</span></td></tr>
+<tr><td>portals</td><td>Only where they are historical: the old Calzadas and main streets of Centro Habana, Cerro and Habana Vieja; tuned later</td><td class="why">A portal where Havana has none reads wrong at once.</td><td><span class="tag m">maintainer</span></td></tr>
 </table>
 
 <h2 id="lods"><span class="n">03</span>Four levels of detail</h2>
@@ -405,12 +408,7 @@ Roof      → flat with parapet | pitched (suburban, 30 %) ; tanks and stair hut
 
 <h2 id="nongoals"><span class="n">10</span>Non-goals and open questions</h2>
 <p>Not in this spec: building interiors, lit windows at night, hand-modelled landmarks (they stay as they are), pitched roofs beyond the suburban type, and photo textures on walls.</p>
-<p>Open questions for review:</p>
-<ul>
-<li>Art direction: worn and stained plaster close to how Havana looks, or clean pastel walls?</li>
-<li>Should the level-0 radius shrink (a higher screen-error threshold) to free frame time for the detail ring? Today about 390 level-0 cells are drawn around the car.</li>
-<li>Portals: only on primary and secondary roads in Centro Habana and Cerro, or on every main street front in the old city?</li>
-</ul>
+<p>The three questions of the first draft are settled in the decisions table: worn walls, a tau that follows the frame time, and portals only where they are historical. Which streets count as historical portal streets is the open one; it starts from the Calzadas and is tuned by driving them.</p>
 </main>
 </div>
 <script>
