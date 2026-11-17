@@ -338,11 +338,12 @@ class Game:
 
 def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, size=(1280, 720),
          traffic: str | None = None, when: str | None = None, warp: float = 1.0, sky: str | None = None,
-         tiles: str | None = None) -> None:
+         tiles: str | None = None, pipelined: bool = True) -> None:
     """Open a window and drive, or with `shot`, render offscreen until the city is drawn and save a PNG.
 
     traffic: a JSON file of demand settings. when ("Sun 08:00") and warp pin and speed up the clock, for tests
-    and the dev channel; play without them runs on the machine's clock.
+    and the dev channel; play without them runs on the machine's clock. pipelined runs the systems of the next
+    frame while the window draws this one; --no-pipeline is the serial path, for comparing the two.
     """
     import manifoldx as mx
 
@@ -353,7 +354,7 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     os.environ["HAVANA_DATA"] = os.path.abspath(data)
     if tiles:
         os.environ["HAVANA_TILES"] = os.path.abspath(tiles)
-    engine = mx.Engine("havana-driver", width=size[0], height=size[1])
+    engine = mx.Engine("havana-driver", width=size[0], height=size[1], pipelined=pipelined)
     clock = Clock(at=parse_at(when), warp=warp) if when or warp != 1.0 else Clock()
     game = Game(engine, World.load(data, tiles), at=at, traffic=load_config(traffic) if traffic else None,
                 clock=clock, sky=load_sky_config(sky) if sky else None)
