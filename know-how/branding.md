@@ -9,7 +9,7 @@ way up a one-way street: a traffic offence that names an attitude toward the car
 driving gameplay and any city. The game covers all of Cuba from the start, so no piece names one city
 in the logo; a city or a route goes in the tagline (today "DE PINAR DEL RÍO A BARACOA").
 
-The brand is for private showings for now. Everything lives in `branding/`.
+The brand is for private showings for now. What the game draws lives in `assets/`; posters and their panels in `branding/`.
 
 ## What the brand is made of
 
@@ -19,13 +19,29 @@ The brand is for private showings for now. Everything lives in `branding/`.
 | Red (sign, drop shadow) | `--cv-red` | `#d62828` |
 | Ink (background, outlines, gutters) | `--cv-ink` | `#0b0b0b` |
 | Paper (frames, sign bar, tagline) | `--cv-paper` | `#f4efe4` |
-| Logo font | `branding/fonts/NotoSans-CondensedBlackItalic.ttf` | the word, skewed 6° more, yellow, ink stroke, red shadow |
-| Tagline font | `branding/fonts/NotoSans-CondensedBlack.ttf` | uppercase, wide letter spacing |
-| Text font | `branding/fonts/NotoSans-CondensedBold.ttf` | captions and balloons |
+| Logo font | `assets/fonts/NotoSans-CondensedBlackItalic.ttf` | the word, skewed 6° more, yellow, ink stroke, red shadow |
+| Tagline font | `assets/fonts/NotoSans-CondensedBlack.ttf` | uppercase, wide letter spacing |
+| Text font | `assets/fonts/NotoSans-CondensedBold.ttf` | captions and balloons |
 
 The fonts are Noto Sans (SIL Open Font License), so they ship with the repo. The logo is HTML and CSS
 (`.cv-logo`, `.cv-sign`, `.cv-word`, `.cv-tag` in `brand.css`), never a generated image: an image model draws
 letters badly, and the CSS logo scales with `--cv-size`.
+
+## Assets the game uses
+
+`assets/` holds what the game draws, all as plain SVG that manifoldx's GUI draws with thorvg at any size
+(`Image(svg="assets/icons/sol.svg")`; the game depends on `manifold-gfx[desktop,svg]` for it):
+
+- `assets/icons/<name>.svg`: 28 icons on a 24x24 grid, ink stroke of 2, yellow fill for what you can use and
+  paper for what is neutral, red only for alarm.
+- `assets/icons/badge/<name>.svg`: the same icons in a paper disc with an ink ring, for the minimap.
+- `assets/logo/sign.svg`, `assets/logo/word.svg`, `assets/logo/contravia.svg`: the no-entry sign, the word with
+  its outline and red shadow (letters as paths, no font needed), and both side by side.
+- `assets/palette.json`: the five colours. `assets/fonts/`: the three brand fonts, for manifoldx's `Text`.
+
+`assets/build.py` writes all of them: an icon is a few shapes in its `ICONS` table, with INK, PAPER, RED and
+YELLOW for the palette. Change it there and run `uv run --with fonttools python assets/build.py`; never edit a
+generated SVG. `tests/test_assets.py` draws every SVG through the same rasterizer and fails on an empty one.
 
 ## The look
 
