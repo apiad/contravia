@@ -36,7 +36,7 @@ RECENTRE = 2000.0  # metres from the engine's origin before it moves to the came
 BASE = 40_000.0  # side of the plain ground under everything, so empty cells show ground, not sky
 BASE_Y = -1.0  # below every streamed ground, which always wins over it
 SHADOW = (5.0, 2.3)  # metres: the dark ellipse under the car, along and across it
-SHADOW_LIFT = 0.04  # metres above what the wheels stand on, so it shows over the road
+SHADOW_LIFT = 0.05  # metres above the bare ground, so it shows over the ground drawn there
 
 
 class Game:
@@ -218,8 +218,9 @@ class Game:
                                  Transform(pos=(0.0, BASE_Y, 0.0)))
 
     def _spawn_shadow(self):
-        """A dark ellipse under the car, at the height its wheels stand on: where the drawn ground lies lower,
-        it floats with the car, so a road the data has but the screen does not show yet can be seen."""
+        """A dark ellipse straight under the car on the bare ground, not on the road: where the road stands
+        above the ground it hides under the road, and where the screen shows the ground under a car that
+        stands on a road, the gap between them shows."""
         from manifoldx.components import Material, Mesh, Transform
         from manifoldx.resources import StandardMaterial
 
@@ -320,7 +321,8 @@ class Game:
         place_car(self.handles, self.model, at=(self.car.x, self.car.y, self.car.z), yaw=-self.car.yaw,
                   pitch=self.car.pitch, roll=self.car.roll)
         half = -self.car.yaw / 2  # the same turn as the car's, about the vertical
-        self.shadow.transform.pos = (self.car.x, self.car.y + SHADOW_LIFT, self.car.z)
+        ground = float(self.terrain.height(np.array([self.car.x]), np.array([self.car.z]))[0])
+        self.shadow.transform.pos = (self.car.x, ground + SHADOW_LIFT, self.car.z)
         self.shadow.transform.rot = (0.0, float(np.sin(half)), 0.0, float(np.cos(half)))
         if self.camera_override:
             eye, target = self.camera_override()
