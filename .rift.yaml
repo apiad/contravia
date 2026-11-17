@@ -1,7 +1,7 @@
 rules:
-  - name: "every havana subcommand is documented in AGENTS.md"
+  - name: "every caiman subcommand is documented in AGENTS.md"
     extract:
-      file: "havana/cli.py"
+      file: "caiman/cli.py"
       regex: 'add_parser\("(\w+)"'
     require:
       in: "AGENTS.md"
@@ -10,6 +10,6 @@ rules:
     severity: warning
     extract:
       file: "AGENTS.md"
-      regex: '`((?:docs|havana|bench)/[\w./-]+\.\w+)`'
+      regex: '`((?:docs|caiman|bench)/[\w./-]+\.\w+)`'
     require:
       exists: true

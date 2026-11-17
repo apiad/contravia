@@ -3,9 +3,9 @@
 import numpy as np
 import pytest
 
-from havana.quadtree import Tree
-from havana.tiles import Tiles, write_tiles
-from havana.world import World
+from caiman.quadtree import Tree
+from caiman.tiles import Tiles, write_tiles
+from caiman.world import World
 
 FAR_EAST = 900_000.0  # a road this far east of the Capitolio, in the tiles only
 

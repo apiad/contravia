@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from havana.graph import CLASSES, Graph
+from caiman.graph import CLASSES, Graph
 
 
 def make_graph(junctions, edges, cls="residential", control=None, lanes=1, kmh=40.0, uturns=False) -> Graph:

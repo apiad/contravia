@@ -1,8 +1,8 @@
 import numpy as np
 
-from havana.mesh import MeshBuilder
-from havana.rules import buildings, roads, trees
-from havana.terrain import Terrain
+from caiman.mesh import MeshBuilder
+from caiman.rules import buildings, roads, trees
+from caiman.terrain import Terrain
 
 L = np.array([[0, 0], [20, 0], [20, 10], [10, 10], [10, 20], [0, 20]], float)
 
@@ -115,7 +115,7 @@ def test_a_skirt_drops_to_the_ground_on_the_low_side_only():
 
 
 def test_neighbouring_cells_share_their_ground_edge():
-    from havana.rules.ground import ground
+    from caiman.rules.ground import ground
 
     t = tilted()
     a, b = MeshBuilder(), MeshBuilder()
@@ -129,7 +129,7 @@ def test_neighbouring_cells_share_their_ground_edge():
 
 
 def test_a_box_on_a_slope_stands_on_its_lowest_corner():
-    from havana.terrain import seat
+    from caiman.terrain import seat
 
     t, ring = tilted(), np.array([(0, 0), (30, 0), (30, 20), (0, 20)], float)
     mb = MeshBuilder()

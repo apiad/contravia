@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pytest
 
-from havana import sky
+from caiman import sky
 
 
 def _crossings(day: datetime, body=sky.sun, horizon=-0.833):

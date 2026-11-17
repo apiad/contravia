@@ -1,11 +1,11 @@
-"""havana climate's readers and the weather table, on small made-up inputs."""
+"""caiman climate's readers and the weather table, on small made-up inputs."""
 
 import struct
 
 import numpy as np
 import pytest
 
-from havana.climate import build_table, read_bsc5, sample_milky_way
+from caiman.climate import build_table, read_bsc5, sample_milky_way
 
 
 def _bsc5(records):

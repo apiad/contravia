@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from havana.mesh import MeshBuilder, triangulate
+from caiman.mesh import MeshBuilder, triangulate
 
 L = np.array([[0, 0], [20, 0], [20, 10], [10, 10], [10, 20], [0, 20]], float)
 

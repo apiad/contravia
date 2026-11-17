@@ -3,9 +3,9 @@ import time
 import numpy as np
 import pytest
 
-from havana.rules.traffic import KINDS
-from havana.traffic import LENGTH
-from havana.vehicles import PARKED, merged, slot_transforms, slots
+from caiman.rules.traffic import KINDS
+from caiman.traffic import LENGTH
+from caiman.vehicles import PARKED, merged, slot_transforms, slots
 
 
 def test_one_mesh_per_kind_of_the_right_length():

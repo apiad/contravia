@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 import numpy as np
 import pytest
 
-from havana.weather import STATES, SkyConfig, Weather, load_table
+from caiman.weather import STATES, SkyConfig, Weather, load_table
 
 TABLE = load_table()
 

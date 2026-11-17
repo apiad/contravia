@@ -1,9 +1,9 @@
 import numpy as np
 
-from havana.citydata import CityData
-from havana.geo import cell_of
-from havana.landmarks import MODULES, Landmarks, capitolio, inside, plaza
-from havana.walls import Walls
+from caiman.citydata import CityData
+from caiman.geo import cell_of
+from caiman.landmarks import MODULES, Landmarks, capitolio, inside, plaza
+from caiman.walls import Walls
 
 
 def square(c, r):
@@ -67,7 +67,7 @@ def test_every_landmark_builds_when_its_footprints_are_there():
 
 
 def test_landmarks_stand_on_the_terrain():
-    from havana.terrain import Terrain, seat
+    from caiman.terrain import Terrain, seat
 
     _, c = np.mgrid[0:400, 0:600]
     t = Terrain(0.02 * (-3000 + 10.0 * c) + 60, (-3000, -1000), (10, 10))      # rises 2 m per 100 m eastward

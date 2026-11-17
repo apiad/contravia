@@ -2,7 +2,7 @@ import math
 
 import numpy as np
 
-from havana.car import CarState, Controls, step
+from caiman.car import CarState, Controls, step
 
 NONE = np.zeros((0, 2, 2), np.float32)
 GO = Controls(throttle=1, brake=0, steer=0, handbrake=False)
@@ -45,14 +45,14 @@ def test_braking_from_rest_reverses_slowly():
 
 def _ramp(grade=0.1):
     """Ground rising grade metres per metre eastward (+x), over a large area."""
-    from havana.terrain import Terrain
+    from caiman.terrain import Terrain
 
     _, c = np.mgrid[0:300, 0:300]
     return Terrain(grade * (-1500 + 10.0 * c), (-1500, -1500), (10, 10))
 
 
 def test_on_a_ramp_the_car_pitches_and_does_not_roll():
-    from havana.car import settle
+    from caiman.car import settle
 
     s = settle(CarState(0.0, 0.0, 0.0, 0.0), _ramp())
     assert abs(s.pitch - np.arctan(0.1)) < 1e-3 and abs(s.roll) < 1e-3 and abs(s.y) < 1e-3
@@ -61,7 +61,7 @@ def test_on_a_ramp_the_car_pitches_and_does_not_roll():
 
 
 def test_coasting_uphill_stops_sooner_than_on_the_flat():
-    from havana.car import settle
+    from caiman.car import settle
 
     none = Controls(0.0, 0.0, 0.0, False)
     walls = np.zeros((0, 2, 2), np.float32)
@@ -76,8 +76,8 @@ def test_coasting_uphill_stops_sooner_than_on_the_flat():
 
 
 def test_the_camera_stays_above_the_ground_on_a_downhill():
-    from havana.camera import FLOOR, chase
-    from havana.car import settle
+    from caiman.camera import FLOOR, chase
+    from caiman.car import settle
 
     t = _ramp(0.3)
     car = settle(CarState(0.0, 0.0, np.pi, 0.0), t)                  # facing west, downhill; behind is uphill
@@ -90,9 +90,9 @@ def test_the_camera_stays_above_the_ground_on_a_downhill():
 def test_teleport_puts_the_car_on_the_ground(city):
     from types import SimpleNamespace
 
-    from havana.game import Game
-    from havana.surface import Surface
-    from havana.walls import Walls
+    from caiman.game import Game
+    from caiman.surface import Surface
+    from caiman.walls import Walls
 
     g = Game.__new__(Game)
     g.engine = SimpleNamespace(state=SimpleNamespace(), origin=(0.0, 0.0), set_origin=lambda x, z: None)
@@ -103,10 +103,10 @@ def test_teleport_puts_the_car_on_the_ground(city):
 
 
 def test_on_a_hillside_road_the_car_pitches_with_it_and_does_not_roll():
-    from havana.car import settle
-    from havana.citydata import CityData
-    from havana.surface import Surface
-    from havana.terrain import Terrain
+    from caiman.car import settle
+    from caiman.citydata import CityData
+    from caiman.surface import Surface
+    from caiman.terrain import Terrain
 
     _, c = np.mgrid[0:300, 0:300]
     r, _ = np.mgrid[0:300, 0:300]

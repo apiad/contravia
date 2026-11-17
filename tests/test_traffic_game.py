@@ -2,8 +2,8 @@ from datetime import datetime
 
 import pytest
 
-from havana.citydata import CityData
-from havana.clock import Clock
+from caiman.citydata import CityData
+from caiman.clock import Clock
 
 TUE_8 = datetime(2026, 11, 17, 8, 30)
 
@@ -21,7 +21,7 @@ def frames(engine, n):
 
 
 def test_cars_appear_and_settings_change_live(engine, city):
-    from havana.game import Game
+    from caiman.game import Game
 
     game = Game(engine, city, clock=Clock(at=TUE_8))
     frames(engine, 40)
@@ -35,7 +35,7 @@ def test_cars_appear_and_settings_change_live(engine, city):
 
 
 def test_bad_settings_are_refused_with_a_reason(engine, city):
-    from havana.game import Game
+    from caiman.game import Game
 
     game = Game(engine, city, clock=Clock(at=TUE_8))
     old = game.traffic_config
@@ -46,7 +46,7 @@ def test_bad_settings_are_refused_with_a_reason(engine, city):
 
 
 def test_data_without_a_graph_plays_without_traffic(engine, city):
-    from havana.game import Game
+    from caiman.game import Game
 
     old = CityData({k: v for k, v in city.a.items() if not k.startswith("g_")})
     Game(engine, old, clock=Clock(at=TUE_8))

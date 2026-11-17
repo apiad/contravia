@@ -2,10 +2,10 @@
 
 import numpy as np
 
-from havana.citydata import CityData
-from havana.geo import CELL
-from havana.quadtree import Tree
-from havana.tiles import Tiles, write_tiles
+from caiman.citydata import CityData
+from caiman.geo import CELL
+from caiman.quadtree import Tree
+from caiman.tiles import Tiles, write_tiles
 
 
 def _square(cx, cz, r=5.0):
@@ -23,8 +23,8 @@ def _features():
 
 
 def _write(tmp_path, roads, rings, ids, trees, split=150.0):
-    from havana.citydata import _centroids
-    from havana.geo import cell_of
+    from caiman.citydata import _centroids
+    from caiman.geo import cell_of
 
     weights = {}
     for c in map(tuple, cell_of(_centroids(rings)).tolist()):

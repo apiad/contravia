@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from havana.bench import autopilot, road_path, summary
-from havana.car import CarState, step
+from caiman.bench import autopilot, road_path, summary
+from caiman.car import CarState, step
 
 
 def test_autopilot_follows_a_square():
@@ -35,8 +35,8 @@ def test_road_path_refuses_stops_with_no_road_between(city):
 def test_scene_file_and_flight_path():
     import json
 
-    from havana.bench import SCENES, flight_path
-    from havana.geo import to_local
+    from caiman.bench import SCENES, flight_path
+    from caiman.geo import to_local
 
     scenes = json.loads(SCENES.read_text())
     assert {"santiago", "hill", "flight"} <= set(scenes)
@@ -60,12 +60,12 @@ def test_pipelined_table_puts_both_runs_under_each_time():
 
 
 def test_play_takes_pipelining_off(monkeypatch):
-    import havana.cli
-    import havana.game
+    import caiman.cli
+    import caiman.game
 
     seen = {}
-    monkeypatch.setattr(havana.game, "main", lambda *a, **k: seen.update(k))
-    havana.cli.main(["play"])
+    monkeypatch.setattr(caiman.game, "main", lambda *a, **k: seen.update(k))
+    caiman.cli.main(["play"])
     assert seen["pipelined"] is True
-    havana.cli.main(["play", "--no-pipeline"])
+    caiman.cli.main(["play", "--no-pipeline"])
     assert seen["pipelined"] is False

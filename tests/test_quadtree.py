@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from havana.quadtree import Tree
+from caiman.quadtree import Tree
 
 
 def _random_weights(seed=0, n=2000):

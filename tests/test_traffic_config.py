@@ -2,7 +2,7 @@ from datetime import datetime
 
 import pytest
 
-from havana.rules.traffic import TrafficConfig, day_type, hour_share, moving, vehicle_trips
+from caiman.rules.traffic import TrafficConfig, day_type, hour_share, moving, vehicle_trips
 
 TUE_8 = datetime(2026, 11, 17, 8, 30)
 

@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from graphs import four_way, straight
 
-from havana.traffic import S0, Cars
+from caiman.traffic import S0, Cars
 
 KIND = 0  # car, 4.5 m
 

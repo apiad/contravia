@@ -3,11 +3,11 @@ from datetime import datetime, timedelta
 import numpy as np
 import pytest
 
-from havana.clock import FlowRunner
-from havana.flow import Flow
-from havana.prepare import build_city, read_osm
-from havana.rules.traffic import TrafficConfig
-from havana.traffic import TrafficLayer
+from caiman.clock import FlowRunner
+from caiman.flow import Flow
+from caiman.prepare import build_city, read_osm
+from caiman.rules.traffic import TrafficConfig
+from caiman.traffic import TrafficLayer
 
 TUE_8 = datetime(2026, 11, 17, 8, 30)
 
