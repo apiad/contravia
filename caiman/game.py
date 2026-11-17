@@ -32,6 +32,9 @@ from caiman.surface import Surface
 from caiman.walls import Walls
 from caiman.world import World
 
+TAU = (12.0, 48.0)  # the streamer's screen error in pixels: the finest it may draw and the coarsest
+TARGET_MS = 20.0  # the frame time the streamer's detail is tuned for, 50 fps
+TUNE_EVERY = 60  # frames between two tunings, over whose median frame time
 FAR = 15000.0  # the camera's far plane: past the clear-weather fog's end
 RECENTRE = 2000.0  # metres from the engine's origin before it moves to the camera
 BASE = 40_000.0  # side of the plain ground under everything, so empty cells show ground, not sky
@@ -73,7 +76,7 @@ class Game:
         self.stars_shown = 0
         engine.camera.far = FAR
         self.streamer = QuadStreamer(engine, CELL, city.tree.origin, LEVELS, city.exists, build_node,
-                                     error=lambda L: CELL * 2**L / 16, workers="process", tau=12.0,
+                                     error=lambda L: CELL * 2**L / 16, workers="process", tau=TAU[0],
                                      builders=max(1, min(3, (os.cpu_count() or 2) - 1)))
         engine.state.teleport = {"to": None, "error": None}
         if self.walls.landmarks.mesh is not None:  # drawn once, not streamed: they are few and seen from afar
@@ -99,6 +102,7 @@ class Game:
         self._last = time.perf_counter()
         self._rng = np.random.default_rng()
         self.autopilot = None  # bench.py sets a function (car) -> Controls
+        self.tune = True  # tau follows the frame time; the bench and offline shots keep it fixed
         self.driver = Driver()
         self.hud = Hud(engine)
         self.camera_override = None  # bench.py sets a function () -> (eye, target) in world metres
@@ -353,8 +357,26 @@ class Game:
         st.grade = round(math.tan(self.car.pitch) * 100, 1)  # percent, positive uphill
         st.frame_ms = round(self.frame_ms, 2)
 
+    def _tune(self) -> None:
+        """Every TUNE_EVERY frames, trade the streamer's detail for frame time: a median frame over TARGET_MS
+        raises tau (fewer, coarser nodes), one well under it lowers tau back, within TAU."""
+        if not self.tune:
+            return
+        self._tune_ms = getattr(self, "_tune_ms", [])
+        self._tune_ms.append(self.frame_ms)
+        if len(self._tune_ms) < TUNE_EVERY:
+            return
+        ms, self._tune_ms = float(np.median(self._tune_ms)), []
+        tau = self.streamer.tau
+        if ms > TARGET_MS * 1.1:
+            tau *= 1.2
+        elif ms < TARGET_MS * 0.75:
+            tau /= 1.1
+        self.streamer.tau = min(max(tau, TAU[0]), TAU[1])
+
     def stream(self, query, dt: float) -> None:
         """Point the city's streamer at the camera and publish the cells it holds."""
+        self._tune()
         self.streamer.focus(self.eye[0], self.eye[2], height=max(float(self.eye[1]), 1.0))
         tiles = self.streamer.stats()
         with self._state_lock:
@@ -377,7 +399,7 @@ class Game:
         return [
             f"fps {1000 / max(f.mean(), 1e-3):5.1f}   frame {f.mean():5.1f} ms   worst {f.max():6.1f} ms",
             "drawn  " + "  ".join(f"L{L}:{levels[L]}" for L in sorted(levels, key=int)),
-            f"nodes  {sum(levels.values())}   held {tiles.get('held', 0)}   waiting {getattr(st, 'cells_waiting', 0)}",
+            f"nodes  {sum(levels.values())}   tau {self.streamer.tau:.1f}   held {tiles.get('held', 0)}   waiting {getattr(st, 'cells_waiting', 0)}",
             f"built {tiles.get('built', 0)}  uploaded {tiles.get('uploaded', 0)}  dropped {tiles.get('dropped', 0)}",
             f"longest gap {tiles.get('max_frame_ms', 0.0):.0f} ms",
             f"cars {traffic.get('cars', 0)}   flow step {traffic.get('flow_step_ms', 0)} ms",
@@ -503,6 +525,7 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
         return
     from PIL import Image
 
+    game.tune = False
     game.atmosphere.prepare(wait=True)  # an offline shot waits for the ambient light instead of drawing without it
     t0, n = time.monotonic(), 0
     while n < frames or (game.waiting() and time.monotonic() - t0 < 300):

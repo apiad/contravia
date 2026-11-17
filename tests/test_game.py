@@ -90,3 +90,23 @@ def test_a_reload_drives_on_from_the_same_place_and_stops_the_old_game(city):
         assert abs(game2.car.x) > 50  # not back at the start
     finally:
         game2._shutdown()
+
+
+def test_slow_frames_raise_tau_and_fast_ones_lower_it(city):
+    import manifoldx as mx
+
+    from caiman import game as g
+    from caiman.world import World
+
+    engine = mx.Engine("tune", width=64, height=48)
+    game = g.Game(engine, World(city))
+    for ms, check in ((40.0, lambda t: t > g.TAU[0]), (5.0, lambda t: t == g.TAU[0])):
+        for _ in range(g.TUNE_EVERY * 20):
+            game.frame_ms = ms
+            game._tune()
+        assert check(game.streamer.tau)
+    for _ in range(g.TUNE_EVERY * 40):
+        game.frame_ms = 100.0
+        game._tune()
+    assert game.streamer.tau == g.TAU[1]
+    game.streamer.close()
