@@ -1,0 +1,101 @@
+[
+ {
+  "panel": "capitolio",
+  "w": 1344,
+  "h": 768,
+  "seed": 1,
+  "steps": 4,
+  "refs": [],
+  "prompt": "Wide view of the Capitolio in Havana, a huge white neoclassical dome, a turquoise and cream 1950s American sedan with chrome bumpers and no badges speeding past in the foreground with motion blur, palm trees, hot midday sun. Bold hand-painted video game cover illustration, thick black ink outlines, cel shading, saturated colours, dramatic angle, cinematic light, no text, no letters, no signs with words, no logos"
+ },
+ {
+  "panel": "malecon",
+  "w": 1344,
+  "h": 768,
+  "seed": 1,
+  "steps": 4,
+  "refs": [],
+  "prompt": "Havana's Malecón seawall at sunset, a huge wave crashing over the wall and spraying the road, a turquoise and cream 1950s American sedan with chrome bumpers and no badges racing through the spray, worn pastel buildings along the coast road. Bold hand-painted video game cover illustration, thick black ink outlines, cel shading, saturated colours, dramatic angle, cinematic light, no text, no letters, no signs with words, no logos"
+ },
+ {
+  "panel": "trinidad",
+  "w": 768,
+  "h": 1152,
+  "seed": 1,
+  "steps": 4,
+  "refs": [],
+  "prompt": "Steep cobblestone street in colonial Trinidad, Cuba, bright yellow and blue one-storey houses with wooden window grilles, a yellow bell tower at the top, an old boxy red Soviet sedan bouncing over the stones, a horse cart. Bold hand-painted video game cover illustration, thick black ink outlines, cel shading, saturated colours, dramatic angle, cinematic light, no text, no letters, no signs with words, no logos"
+ },
+ {
+  "panel": "santiago",
+  "w": 768,
+  "h": 1152,
+  "seed": 1,
+  "steps": 4,
+  "refs": [],
+  "prompt": "Steep street in Santiago de Cuba with stairs and hills, the bay and green mountains behind, a motorcycle with a sidecar climbing the hill, late afternoon, warm haze. Bold hand-painted video game cover illustration, thick black ink outlines, cel shading, saturated colours, dramatic angle, cinematic light, no text, no letters, no signs with words, no logos"
+ },
+ {
+  "panel": "chofer",
+  "w": 1024,
+  "h": 1024,
+  "seed": 1,
+  "steps": 4,
+  "refs": [],
+  "prompt": "Portrait of a tough Cuban taxi driver, about fifty, grey moustache, aviator sunglasses, white guayabera, one arm on the door of his turquoise 1950s car, confident smirk, tropical background. Bold hand-painted video game cover illustration, thick black ink outlines, cel shading, saturated colours, dramatic angle, cinematic light, no text, no letters, no signs with words, no logos"
+ },
+ {
+  "panel": "motorista",
+  "w": 768,
+  "h": 1152,
+  "seed": 1,
+  "steps": 4,
+  "refs": [],
+  "prompt": "A young Cuban woman in sunglasses and a denim jacket riding a small electric scooter fast through a colourful Havana street, hair in the wind, low angle. Bold hand-painted video game cover illustration, thick black ink outlines, cel shading, saturated colours, dramatic angle, cinematic light, no text, no letters, no signs with words, no logos"
+ },
+ {
+  "panel": "noche",
+  "w": 1344,
+  "h": 768,
+  "seed": 2,
+  "steps": 4,
+  "refs": [],
+  "prompt": "Night race through Old Havana, two classic American cars side by side with glowing headlights on wet streets, colonial arcades, warm street lamps, purple night sky. Bold hand-painted video game cover illustration, thick black ink outlines, cel shading, saturated colours, dramatic angle, cinematic light, no text, no letters, no signs with words, no logos"
+ },
+ {
+  "panel": "triciclo",
+  "w": 1024,
+  "h": 1024,
+  "seed": 1,
+  "steps": 4,
+  "refs": [
+   "https://oncubanews.com/wp-content/uploads/2020/03/cooperativa-triciclos-eléctricos.jpg",
+   "https://oncubanews.com/wp-content/uploads/2024/10/triciclos-electricos.jpg"
+  ],
+  "prompt": "The yellow electric passenger tricycle from the reference photos, with its roof and open sides, packed with six passengers, speeding along a sunny Havana avenue past a crowd waving at it, low angle. Bold hand-painted video game cover illustration, thick black ink outlines, cel shading, saturated colours, dramatic angle, cinematic light, no text, no letters, no numbers, no logos"
+ },
+ {
+  "panel": "metroguagua",
+  "w": 1344,
+  "h": 768,
+  "seed": 1,
+  "steps": 4,
+  "refs": [
+   "https://commons.wikimedia.org/wiki/File:Havana_MetroBus_Route_P-5.jpg",
+   "https://commons.wikimedia.org/wiki/File:La_Habana_(33200534714).jpg"
+  ],
+  "prompt": "The long articulated city bus from the reference photos, white with a green and blue stripe, packed with passengers and people hanging at the open doors, rolling past worn eclectic Havana buildings, low angle. Bold hand-painted video game cover illustration, thick black ink outlines, cel shading, saturated colours, dramatic angle, cinematic light, no text, no letters, no numbers, no logos"
+ },
+ {
+  "panel": "parada",
+  "w": 1344,
+  "h": 640,
+  "seed": 2,
+  "steps": 4,
+  "refs": [
+   "https://commons.wikimedia.org/wiki/File:Memorial_Jose_Marti.jpg",
+   "https://oncubanews.com/wp-content/uploads/2024/10/triciclos-electricos.jpg"
+  ],
+  "prompt": "A crowded bus stop in Havana, dozens of people waiting in the heat with bags and umbrellas, everyone leaning out to see if the bus is coming, the tall grey star-shaped José Martí Memorial tower and white statue of the reference rising behind them in the Plaza de la Revolución, palm trees, blue sky. Bold hand-painted video game cover illustration, thick black ink outlines, cel shading, saturated colours, dramatic angle, cinematic light, no text, no letters, no numbers, no logos"
+ }
+]
