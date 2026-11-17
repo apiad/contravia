@@ -8,7 +8,7 @@ from caiman.car import CarState, settle
 from caiman.citydata import CityData
 from caiman.prepare import WIDTHS
 from caiman.streets import BRIDGE_CLEAR, GRADE, build, mesh
-from caiman.structures import ROOF
+from caiman.structures import DRY, ROOF
 from caiman.structures import build as dress
 from caiman.surface import Surface
 from caiman.terrain import Terrain
@@ -28,20 +28,22 @@ def _arrays():
     return a
 
 
-def _city(t):
-    pieces = build(_arrays(), WIDTHS)
+def _city(t, arrays=None):
+    pieces = build(arrays or _arrays(), WIDTHS)
     keep = {}
     tris, tkeys, edges, ekeys, _, _ = mesh(*pieces, t, keep)
     city = CityData.from_features(np.zeros((0, 5)), [], np.zeros(0), [], np.zeros(0), np.zeros((0, 2)), t)
     city.add_kind("street_tris", tris, tkeys)
     city.add_kind("street_edges", edges, ekeys)
     ribbons, owner, axes, rings, rnode, chains = pieces
-    st, paint, skeys, walls, wkeys, cuts, ckeys, roofs, rkeys = dress(ribbons, owner, axes, chains, keep["prof"], t)
+    st, paint, skeys, walls, wkeys, cuts, ckeys, roofs, rkeys, holes = dress(
+        ribbons, owner, axes, chains, keep["prof"], t, None, rings, rnode, keep["hj"])
     city.add_kind("struct_tris", st, skeys)
     city.add_kind("struct_paint", paint, skeys)
     city.add_kind("struct_walls", walls, wkeys)
     city.add_kind("street_cuts", cuts, ckeys)
     city.add_kind("street_roofs", roofs, rkeys)
+    city.a["sea_holes"] = holes
     return city, pieces, (st, walls, cuts, roofs)
 
 
@@ -102,3 +104,73 @@ def test_in_a_tunnel_the_camera_stays_under_the_roof_and_the_walls_hold_the_car(
 
     assert here(inside) >= 2                           # the tunnel's walls hold a car in it
     assert here(outside) == 0                          # and do not stop one on the ground over it
+
+
+class _Chain:
+    def __init__(self, layer, w=7.6):
+        self.layer, self.w = layer, w
+
+
+def _inside(tris, x, z):
+    import shapely
+
+    return bool(shapely.contains_xy(shapely.union_all(shapely.polygons(np.asarray(tris, float)[..., [0, 2]]
+                                                                       if tris.shape[-1] == 3 else tris)), x, z))
+
+
+def test_two_tunnels_side_by_side_are_one_box_with_no_wall_between_them():
+    t = Terrain.flat()
+    axes = [np.array([[-200.0, 600.0], [200.0, 600.0]]), np.array([[200.0, 608.0], [-200.0, 608.0]])]
+    prof = [(np.array([0.0, 400.0]), np.array([-10.0, -10.0]))] * 2
+    out = dress([None, None], [0, 1], axes, [_Chain(-1), _Chain(-3)], prof, t)
+    walls, roofs = out[3], out[7]
+    mid = (walls[:, 1] + walls[:, 3]) / 2
+    assert ((mid > 595) & (mid < 597)).any() and ((mid > 611) & (mid < 613)).any()  # the outer walls stand
+    assert not ((mid > 597) & (mid < 611)).any()                     # and none between the two carriageways
+    assert _inside(roofs, 0.0, 604.0)                                # the roof runs over the middle
+
+
+def test_a_junction_in_a_tunnel_has_walls_and_a_roof():
+    import shapely
+
+    t = Terrain.flat()
+    ring = shapely.box(-5.0, 595.0, 5.0, 605.0)
+    west, east = shapely.box(-100.0, 596.0, -5.0, 604.0), shapely.box(5.0, 596.0, 100.0, 604.0)
+    out = dress([west, east], [0, 0], [np.array([[-100.0, 600.0], [-5.0, 600.0]]),
+                                         np.array([[5.0, 600.0], [100.0, 600.0]])],
+                [_Chain(-1, 8.0)], [(np.array([0.0, 95.0]), np.array([-10.0, -10.0]))] * 2, t, None,
+                [ring], [(-1, 7)], {(-1, 7): -10.0})
+    walls, roofs = out[3], out[7]
+    mx, mz = (walls[:, 0] + walls[:, 2]) / 2, (walls[:, 1] + walls[:, 3]) / 2
+    at = np.abs(mx) < 4
+    assert (at & (mz < 595)).any() and (at & (mz > 605)).any()       # walls along its free sides
+    assert _inside(roofs, 0.0, 600.0)                                # and a roof over it
+
+
+def test_a_cut_lower_than_the_sea_leaves_a_hole_in_it_and_is_not_covered_for_it():
+    t = Terrain(np.full((201, 201), 0.5, np.float32), (-1000.0, -1000.0), (10.0, 10.0), fade=0.0)
+    city, _, (_, _, cuts, _) = _city(t)
+    holes = city.a["sea_holes"]
+    s = Surface(city, t)
+    x = np.arange(-180.0, -102.0, 2.0)                               # the approach down to the tunnel's mouth
+    y = s.height(x, np.full_like(x, 600.0))
+    open_low = [xx for xx, yy in zip(x, y) if yy < DRY - 0.2 and s.roof(xx, 600.0, yy) is None]
+    assert open_low                                                  # an open cut runs under the water's height
+    assert all(_inside(holes, xx, 600.0) for xx in open_low)         # and the sea has a hole over it
+    assert (np.abs(holes.mean(axis=1)[:, 1] - 600) < 12).all()       # the holes are over the tunnel's street only
+
+
+def test_a_ramp_out_of_a_tunnel_goes_on_through_a_junction_without_a_step():
+    j = [(-300, 600), (-100, 600), (100, 600), (140, 600), (400, 600), (140, 800)]
+    pairs = [(0, 1), (1, 2), (2, 3), (3, 4), (3, 5)]
+    edges = [e for f, tt in pairs for e in ((f, tt), (tt, f))]
+    a = dict(make_graph(j, edges).a)
+    a["g_layer"] = np.array([-1 if {f, tt} == {1, 2} else 0 for f, tt in edges], np.int8)
+    t = Terrain.flat()
+    city, _, _ = _city(t, a)
+    s = Surface(city, t)
+    x = np.arange(100.0, 400.0, 2.0)
+    y = s.height(x, np.full_like(x, 600.0))
+    assert y[0] < -3.0                                               # it leaves the tunnel deep
+    assert (np.abs(np.diff(y)) / 2.0 <= GRADE + 0.03).all()           # and climbs no steeper than the grade
+    assert y[-1] > -0.5                                              # back on the ground further on

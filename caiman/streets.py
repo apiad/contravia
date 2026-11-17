@@ -57,6 +57,8 @@ CLEAR = 0.2  # metres: an edge of the road this far above the ground gets a skir
 MARK = 0.15  # metres: half the width of a painted line
 MARK_LIFT = 0.02  # metres above the asphalt
 GRADE = 0.08  # the steepest a ramp onto a bridge or down into a tunnel climbs, 8 %
+CARRY = 0.3  # metres: a ramp still this far from a street's own height at its far end goes on through the junction
+ACROSS = 0.7  # the least cosine between a street and the one a ramp goes straight on to through a junction
 BRIDGE_CLEAR = 6.0  # metres from a street up to the bridge crossing it: 5 m of headroom and the deck
 BRIDGE_STEP = 2.0  # metres between the samples of a bridge's profile, so no street under it is missed
 TUNNEL_DEPTH = 8.0  # metres of a tunnel under the ground: its headroom, roof and cover
@@ -843,7 +845,7 @@ def heights(ribbons, owner, axes, rings, rnode, chains, terrain):
     ground = [k for k in range(len(axes)) if not layer[k]]
     gring = [i for i, n in enumerate(rnode) if not isinstance(n, tuple)]
     near = _Ends(ground, axes, [chains[owner[k]].w for k in ground], [rings[i] for i in gring],
-                 [rnode[i] for i in gring])
+                 [rnode[i] for i in gring], [(chains[owner[k]].f, chains[owner[k]].t) for k in ground])
     for L in sorted({x for x in layer if x}, key=lambda x: (abs(x), x)):
         # what this level passes over or under: the ground and the levels nearer to it, already final
         below = [k for k in range(len(axes)) if (layer[k] < L if L > 0 else layer[k] > L) and layer[k] * L >= 0]
@@ -911,7 +913,7 @@ def structure_profile(axis, width, layer, terrain, y_lower):
 class _Ends:
     """The ground streets' ends and junctions, found by point: where bridges and tunnels leave the ground."""
 
-    def __init__(self, ground, axes, widths, rings, nodes):
+    def __init__(self, ground, axes, widths, rings, nodes, ends):
         self.k = ground
         self.axes = [axes[k] for k in ground]
         self.reach = np.maximum(np.asarray(widths, float), 4.0)
@@ -919,6 +921,13 @@ class _Ends:
         self.ends = built_tree(shapely.points(pts)) if len(pts) else None
         self.rings, self.nodes = rings, nodes
         self.rtree = built_tree(rings) if rings else None
+        self.node_of = {}  # (ribbon, its start) -> the junction there
+        self.meeting = {}  # junction -> [(ribbon, whether its start is there)]
+        for k, (f, t) in zip(ground, ends):
+            for node, at_start in ((f, True), (t, False)):
+                self.node_of[k, at_start] = node
+                self.meeting.setdefault(node, []).append((k, at_start))
+        self.axis = dict(zip(ground, self.axes))
 
     def at(self, point):
         """The ground junctions at point, and (ribbon, whether its start is the end there) for every ground
@@ -937,20 +946,61 @@ class _Ends:
                 out.append((self.k[n], at_start))
         return [self.nodes[i] for i in rings], out
 
+    def straight_on(self, k, into_end, node):
+        """The street that goes on most straight from ribbon k through the junction node at k's end into_end
+        (its start when True), with whether its start is there; None when none turns less than ACROSS."""
+        q = self.axis[k]
+        u = unit(q[0] - q[1] if into_end else q[-1] - q[-2])
+        best, out = ACROSS, None
+        for k2, at_start in self.meeting.get(node, ()):
+            if k2 == k:
+                continue
+            q2 = self.axis[k2]
+            c = float(np.dot(u, unit(q2[1] - q2[0] if at_start else q2[-2] - q2[-1])))
+            if c > best:
+                best, out = c, (k2, at_start)
+        return out
+
 
 def _ramp_to(point, y, up, near, hj, out):
     """The ground streets that end at a bridge's or tunnel's end `point` climb (up) or go down to its height y
-    at GRADE, easing back to their own profile before their far end; a ground junction there takes y."""
+    at GRADE, easing back to their own profile before their far end; a ground junction there takes y.
+
+    A street too short to get back to its own height carries the ramp through the junction at its far end:
+    that junction takes the height the ramp reaches there, the street going most straight on from it carries
+    the ramp on in turn, and the other streets meeting it ease to its new height."""
     nodes, streets = near.at(point)
     for node in nodes:
         hj[node] = y
-    for k, at_start in streets:
+    todo, seen = [(k, at_start, y) for k, at_start in streets], set()
+    while todo:
+        k, at_start, y0 = todo.pop()
+        if k in seen:
+            continue
+        seen.add(k)
         s, h = out[k]
         dist = s if at_start else s[-1] - s
-        fade = np.clip((s[-1] - dist) / min(EASE, s[-1] / 2 or 1.0), 0, 1)
-        want = y - GRADE * dist if up else y + GRADE * dist
+        want = y0 - GRADE * dist if up else y0 + GRADE * dist
         gap = np.maximum(want - h, 0) if up else np.minimum(want - h, 0)
-        out[k] = (s, h + gap * fade)
+        far = near.node_of.get((k, not at_start))
+        left = float(gap[-1] if at_start else gap[0])
+        if abs(left) < CARRY or far not in hj:
+            fade = np.clip((s[-1] - dist) / min(EASE, s[-1] / 2 or 1.0), 0, 1)
+            out[k] = (s, h + gap * fade)
+            continue
+        out[k] = (s, h + gap)
+        y1 = float(want[-1] if at_start else want[0])
+        hj[far] = y1
+        on = near.straight_on(k, not at_start, far)
+        for k2, start2 in near.meeting.get(far, ()):
+            if k2 == k or k2 in seen:
+                continue
+            if on is not None and k2 == on[0]:
+                todo.append((k2, start2, y1))
+                continue
+            s2, h2 = out[k2]
+            d2 = s2 if start2 else s2[-1] - s2
+            out[k2] = (s2, h2 + (y1 - float(h2[0] if start2 else h2[-1])) * _ease(d2 / (min(EASE, s2[-1] / 2) or 1.0)))
 
 
 def _on(tris, xz, fallback):
@@ -1109,17 +1159,20 @@ def add_to(city, widths) -> dict:
     city.add_kind("street_marks", lines, mkeys)
     ground = [r for k, r in enumerate(ribbons) if not chains[owner[k]].layer]
     ground += [r for r, n in zip(rings, rnode) if not isinstance(n, tuple)]
-    st, paint, skeys, walls, wkeys, cuts, ckeys, roofs, rkeys = structures.build(
-        ribbons, owner, axes, chains, keep["prof"], city.terrain, built_tree(ground) if ground else None)
+    st, paint, skeys, walls, wkeys, cuts, ckeys, roofs, rkeys, holes = structures.build(
+        ribbons, owner, axes, chains, keep["prof"], city.terrain, built_tree(ground) if ground else None,
+        rings, rnode, keep["hj"])
     city.add_kind("struct_tris", st, skeys)
     city.add_kind("struct_paint", paint, skeys)
     city.add_kind("struct_walls", walls, wkeys)
     city.add_kind("street_cuts", cuts, ckeys)
     city.add_kind("street_roofs", roofs, rkeys)
+    city.a["sea_holes"] = holes
     poly = city.a["g_poly"].astype(float)
     city.a["g_poly_y"] = Surface(city, city.terrain).height(poly[:, 0], poly[:, 1]).astype(np.float32)
     return {"streets": len(chains), "bridges_and_tunnels": sum(1 for c in chains if c.layer),
             "structure_triangles": len(st), "structure_walls": len(walls), "cut_triangles": len(cuts),
+            "sea_hole_triangles": len(holes),
             "junction_pieces": len(rings), "street_triangles": len(tris),
             "street_skirt_edges": len(edges), "street_mark_triangles": len(lines)}
 
