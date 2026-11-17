@@ -1,6 +1,6 @@
 import numpy as np
 
-from caiman.walls import Walls
+from contravia.walls import Walls
 
 
 def test_respawn_and_teleport_land_on_roads(city):
@@ -17,8 +17,8 @@ def test_walls_near_include_filler_footprints(city):
 
 
 def test_a_building_across_a_road_is_neither_hit_nor_counted():
-    from caiman.citydata import CityData
-    from caiman.walls_check import count
+    from contravia.citydata import CityData
+    from contravia.walls_check import count
 
     road = [[0.0, 50.0, 150.0, 50.0, 6.0]]
     across = np.array([[60.0, 40.0], [80.0, 40.0], [80.0, 60.0], [60.0, 60.0]])   # straddles the road
@@ -32,6 +32,6 @@ def test_a_building_across_a_road_is_neither_hit_nor_counted():
 
 
 def test_the_fixture_city_has_nothing_inside_a_road(city):
-    from caiman.walls_check import count
+    from contravia.walls_check import count
 
     assert sum(count(city).values()) == 0

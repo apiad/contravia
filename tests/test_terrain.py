@@ -1,8 +1,8 @@
 import numpy as np
 import tifffile
 
-from caiman.citydata import CityData
-from caiman.terrain import Terrain, _tile_name, clean, read_tiles, seat
+from contravia.citydata import CityData
+from contravia.terrain import Terrain, _tile_name, clean, read_tiles, seat
 
 
 def plane(rows=40, cols=50):

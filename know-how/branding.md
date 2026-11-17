@@ -4,7 +4,7 @@ when: making a poster, cover, panel, logo or any image for Contravía, the game'
 
 # Branding: Contravía
 
-Contravía is the commercial name of the game; Caimán stays the project's name. A *contravía* is driving the wrong
+Contravía is the game's name, and `contravia` (no accent) names the repo, the package, the CLI, release assets and the data folder; the project was called Caimán until 2026-11-17. A *contravía* is driving the wrong
 way up a one-way street: a traffic offence that names an attitude toward the car and no story, so it fits any
 driving gameplay and any city. The game covers all of Cuba from the start, so no piece names one city
 in the logo; a city or a route goes in the tagline (today "DE PINAR DEL RÍO A BARACOA").

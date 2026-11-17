@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from caiman.mesh import MeshBuilder
-from caiman.rules import detail, facades
+from contravia.mesh import MeshBuilder
+from contravia.rules import detail, facades
 
 RING = np.array([(0, 0), (24, 0), (24, 14), (0, 14)], float)
 ROAD = np.array([(-50, -5, 80, -5, 12.0)])  # a 12 m street along the ring's z = 0 side

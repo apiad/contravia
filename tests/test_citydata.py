@@ -1,6 +1,6 @@
 import numpy as np
 
-from caiman.citydata import CityData
+from contravia.citydata import CityData
 
 
 def sample():

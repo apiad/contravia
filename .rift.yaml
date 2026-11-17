@@ -1,7 +1,7 @@
 rules:
-  - name: "every caiman subcommand is documented in AGENTS.md"
+  - name: "every contravia subcommand is documented in AGENTS.md"
     extract:
-      file: "caiman/cli.py"
+      file: "contravia/cli.py"
       regex: 'add_parser\("(\w+)"'
     require:
       in: "AGENTS.md"
@@ -10,6 +10,6 @@ rules:
     severity: warning
     extract:
       file: "AGENTS.md"
-      regex: '`((?:docs|caiman|bench)/[\w./-]+\.\w+)`'
+      regex: '`((?:docs|contravia|bench)/[\w./-]+\.\w+)`'
     require:
       exists: true

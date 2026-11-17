@@ -1,6 +1,6 @@
 import numpy as np
 
-from caiman.clearance import crossing
+from contravia.clearance import crossing
 
 ROAD = np.array([[0.0, 0.0, 100.0, 0.0, 6.0]])  # along x, 6 m wide: drivable within 2.5 m of z = 0
 

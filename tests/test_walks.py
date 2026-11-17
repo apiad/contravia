@@ -4,9 +4,9 @@ import numpy as np
 import shapely
 from shapely.geometry import LineString
 
-from caiman import walks
-from caiman.surface import Surface
-from caiman.terrain import Terrain
+from contravia import walks
+from contravia.surface import Surface
+from contravia.terrain import Terrain
 
 STREET = 10.0
 

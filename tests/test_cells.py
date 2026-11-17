@@ -1,6 +1,6 @@
-from caiman import cells
-from caiman.citydata import CityData
-from caiman.rules.ground import N
+from contravia import cells
+from contravia.citydata import CityData
+from contravia.rules.ground import N
 
 
 def test_every_fixture_cell_builds(city_npz):

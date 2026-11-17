@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from caiman.rain import BOX, POOL, fall, shown
+from contravia.rain import BOX, POOL, fall, shown
 
 
 def test_drops_stay_in_the_box():

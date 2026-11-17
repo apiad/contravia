@@ -3,15 +3,15 @@ streets they leave from ramp to them, and a car stays on the level it drives on.
 
 import numpy as np
 
-from caiman.camera import chase
-from caiman.car import CarState, settle
-from caiman.citydata import CityData
-from caiman.prepare import WIDTHS
-from caiman.streets import BRIDGE_CLEAR, GRADE, build, mesh
-from caiman.structures import DRY, ROOF
-from caiman.structures import build as dress
-from caiman.surface import Surface
-from caiman.terrain import Terrain
+from contravia.camera import chase
+from contravia.car import CarState, settle
+from contravia.citydata import CityData
+from contravia.prepare import WIDTHS
+from contravia.streets import BRIDGE_CLEAR, GRADE, build, mesh
+from contravia.structures import DRY, ROOF
+from contravia.structures import build as dress
+from contravia.surface import Surface
+from contravia.terrain import Terrain
 from tests.graphs import make_graph
 
 
@@ -91,7 +91,7 @@ def test_in_a_tunnel_the_camera_stays_under_the_roof_and_the_walls_hold_the_car(
     car = CarState(0.0, 600.0, 0.0, 30.0, y=y)
     eye, _ = chase(np.array([-20.0, y + 30.0, 600.0]), car, 10.0, s)
     assert eye[1] < y + ROOF
-    from caiman.walls import Walls
+    from contravia.walls import Walls
 
     w = Walls.__new__(Walls)
     w.city, w._cache, w._pending = city, {}, {}

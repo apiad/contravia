@@ -9,7 +9,7 @@ def test_play_renders_a_shot_with_streets(city_npz, tmp_path):
     out = tmp_path / "shot.png"
     clear = tmp_path / "clear.json"
     clear.write_text('{"force": "clear"}')  # today's real weather could bring the fog in
-    subprocess.run([sys.executable, "-m", "caiman.cli", "play", "--data", str(city_npz), "--time", "2026-02-10 12:00",
+    subprocess.run([sys.executable, "-m", "contravia.cli", "play", "--data", str(city_npz), "--time", "2026-02-10 12:00",
                     "--sky", str(clear), "--shot", str(out), "--frames", "60"], check=True, timeout=600)
     import numpy as np
 
@@ -20,7 +20,7 @@ def test_play_renders_a_shot_with_streets(city_npz, tmp_path):
 
 
 def test_teleport_moves_the_car_to_a_road(city):
-    from caiman.walls import Walls
+    from contravia.walls import Walls
 
     x, z, _ = Walls(city).nearest_road(9000, -2000)
     assert abs(x) < 1000 and abs(z) < 1000   # the fixture has roads only near the origin
@@ -32,9 +32,9 @@ def test_teleport_far_keeps_precision_and_sea_reports(city, city_npz, island_dir
     import manifoldx as mx
     import numpy as np
 
-    from caiman.game import Game
-    from caiman.tiles import Tiles
-    from caiman.world import World
+    from contravia.game import Game
+    from contravia.tiles import Tiles
+    from contravia.world import World
 
     os.environ["HAVANA_TILES"] = str(island_dir)
     try:
@@ -69,8 +69,8 @@ def test_teleport_far_keeps_precision_and_sea_reports(city, city_npz, island_dir
 def test_a_reload_drives_on_from_the_same_place_and_stops_the_old_game(city):
     import manifoldx as mx
 
-    from caiman.game import Game
-    from caiman.world import World
+    from contravia.game import Game
+    from contravia.world import World
 
     engine = mx.Engine("old", width=64, height=48)
     game = Game(engine, World(city))
@@ -82,7 +82,7 @@ def test_a_reload_drives_on_from_the_same_place_and_stops_the_old_game(city):
     game._shutdown()
     assert not game.layer or not game.runner._thread.is_alive()
 
-    engine2 = mx.Engine("new", width=64, height=48)  # under caiman dev both engines share one state
+    engine2 = mx.Engine("new", width=64, height=48)  # under contravia dev both engines share one state
     engine2.state.update(engine.state)
     game2 = Game(engine2, World(city))
     try:
@@ -95,8 +95,8 @@ def test_a_reload_drives_on_from_the_same_place_and_stops_the_old_game(city):
 def test_slow_frames_raise_tau_and_fast_ones_lower_it(city):
     import manifoldx as mx
 
-    from caiman import game as g
-    from caiman.world import World
+    from contravia import game as g
+    from contravia.world import World
 
     engine = mx.Engine("tune", width=64, height=48)
     game = g.Game(engine, World(city))

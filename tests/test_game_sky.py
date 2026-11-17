@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from caiman.clock import Clock, parse_at
+from contravia.clock import Clock, parse_at
 
 
 @pytest.fixture
@@ -20,7 +20,7 @@ def frames(engine, n):
 
 
 def test_sky_state_settings_and_forced_weather(engine, city):
-    from caiman.game import Game
+    from contravia.game import Game
 
     game = Game(engine, city, clock=Clock(at=datetime(2026, 7, 18, 23, 0)))
     frames(engine, 3)
