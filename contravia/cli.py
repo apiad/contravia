@@ -17,6 +17,15 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--out", default="data/havana.npz")
     p.add_argument("--dem", help="folder with the Copernicus GLO-30 tiles; without it the city is flat")
 
+    p = sub.add_parser("source", help="pack a Cuba OSM extract and the GLO-30 tiles into the compact source the game ships")
+    p.add_argument("pbf")
+    p.add_argument("--dem", required=True, help="folder with the Copernicus GLO-30 tiles")
+    p.add_argument("--out", default="data/havana.src")
+
+    p = sub.add_parser("build", help="build the city from the compact source into the player's home, as the first run does")
+    p.add_argument("--source", default="data/havana.src")
+    p.add_argument("--home", help="where to build; the per-user data folder by default")
+
     p = sub.add_parser("streets", help="rebuild the street surface of a prepared data file in place")
     p.add_argument("--data", default="data/havana.npz")
 
@@ -94,6 +103,14 @@ def main(argv: list[str] | None = None) -> None:
         from contravia.prepare import main as prepare
 
         prepare(args.pbf, args.out, dem=args.dem)
+    elif args.command == "source":
+        from contravia.source import main as source
+
+        source(args.pbf, args.dem, args.out)
+    elif args.command == "build":
+        from contravia.firstrun import main as build
+
+        build(args.source, args.home)
     elif args.command == "streets":
         from contravia.streets import main as streets
 

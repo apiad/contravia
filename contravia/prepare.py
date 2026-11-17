@@ -220,6 +220,29 @@ def choose_fillers(blocks, cents: np.ndarray, no_build: list, nb_tree) -> tuple[
 
 def build_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]:
     """Project, clip to the province and assemble the city data, with its heights, and its report."""
+    city, info = base_city(raw, terrain)
+    streets = add_streets(city) if info["edges"] else {}
+    walks = add_walks(city) if info["edges"] else {}
+    return city, report(city, info, {**streets, **walks})
+
+
+def add_streets(city: CityData) -> dict:
+    """The street surface, and the road's height at every graph point, so traffic need not ask each frame."""
+    from contravia.streets import add_to
+
+    return add_to(city, WIDTHS)
+
+
+def add_walks(city: CityData) -> dict:
+    """The pavements and the buildings' platforms, over the streets."""
+    from contravia import walks
+
+    return walks.add_to(city)
+
+
+def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]:
+    """The city data before its streets and walks: roads, buildings, fillers, trees, the road graph and the
+    buildings' tags; and what report needs of the build: counts, the road segments and the building centres."""
     import shapely
     from shapely.geometry import LineString, Polygon
     from shapely.ops import polygonize, unary_union
@@ -284,14 +307,16 @@ def build_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict
                         lambda lat, lon: to_local(lat, lon), WIDTHS, inside)
     city.a.update(graph)
     city.a.update(buildingtags.encode(city, raw.building_tags, raw.municipios))
-    street_report = {}
-    if graph:  # the street surface, and the road's height at every graph point, so traffic need not ask each frame
-        from contravia.streets import add_to
+    info = {"roads": len(raw.roads), "segments": roads, "buildings": len(rings), "buildings_skipped": skipped,
+            "blocks": len(blocks), "filler_blocks": len(fillers), "trees": len(trees), "centres": cents,
+            "edges": len(graph.get("g_from", ())), "junctions": len(graph.get("g_junction", ())),
+            "turns": len(graph.get("g_turn_in", ()))}
+    return city, info
 
-        street_report = add_to(city, WIDTHS)
-        from contravia import walks
 
-        street_report.update(walks.add_to(city))
+def report(city: CityData, info: dict, street_report: dict) -> dict:
+    """The build's report: base_city's counts, the cells, the heights and the streets' and walks' counts."""
+    roads, cents = info["segments"], info["centres"]
     road_cells = {tuple(c) for c in cell_of((roads[:, 0:2] + roads[:, 2:4]) / 2).tolist()}
     built_cells = {tuple(c) for c in cell_of(cents).tolist()}
     sizes = {tuple(c): 0 for c in city.cells().tolist()}
@@ -299,24 +324,16 @@ def build_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict
         cell = city.cell(*c)
         sizes[tuple(c)] = 4 * len(cell.roads) + sum(len(r) for r in cell.buildings) + 4 * len(cell.trees)
     largest = max(sizes.items(), key=lambda kv: kv[1]) if sizes else ((0, 0), 0)
-    report = {
-        "roads": len(raw.roads),
+    return {
+        **{k: v for k, v in info.items() if k not in ("segments", "centres", "edges", "junctions", "turns")},
         "segments": len(roads),
-        "buildings": len(rings),
-        "buildings_skipped": skipped,
-        "blocks": len(blocks),
-        "filler_blocks": len(fillers),
-        "trees": len(trees),
         "cells": len(city.cells()),
         "largest_cell": {"cell": list(largest[0]), "vertices": largest[1]},
         "cells_with_roads_no_buildings": round(len(road_cells - built_cells) / max(1, len(road_cells)), 3),
-        "edges": len(graph.get("g_from", ())),
-        "junctions": len(graph.get("g_junction", ())),
-        "turns": len(graph.get("g_turn_in", ())),
+        "edges": info["edges"], "junctions": info["junctions"], "turns": info["turns"],
         "heights_m": [round(float(city.terrain.heights.min()), 1), round(float(city.terrain.heights.max()), 1)],
         **street_report,
     }
-    return city, report
 
 
 def main(pbf, out, dem=None) -> dict:
