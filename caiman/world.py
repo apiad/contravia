@@ -14,18 +14,17 @@ from caiman.citydata import Cell, CityData
 from caiman.geo import cell_of
 from caiman.quadtree import Tree
 
-LAND = 0.3  # metres: a cell whose ground rises this high anywhere is land, and is drawn even with nothing on it
-
 
 def _land_cells(terrain) -> list[tuple[int, int]]:
-    """The cells of the relief grid where the ground rises above LAND: without them an empty cell on a hill
+    """The cells of the relief grid where the ground rises above caiman.rules.ground.SEA: without them an empty cell on a hill
     would show the flat plain under everything instead of its ground."""
     from caiman.geo import CELL
+    from caiman.rules.ground import SEA
 
     h = np.asarray(terrain.heights)
-    if not h.size or h.max() <= LAND:
+    if not h.size or h.max() <= SEA:
         return []
-    r, c = np.nonzero(h > LAND)
+    r, c = np.nonzero(h > SEA)
     i = np.floor((terrain.origin[0] + c * terrain.step[0]) / CELL).astype(np.int64)
     j = np.floor((terrain.origin[1] + r * terrain.step[1]) / CELL).astype(np.int64)
     return [tuple(k) for k in np.unique(np.stack([i, j], axis=1), axis=0).tolist()]

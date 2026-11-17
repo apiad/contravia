@@ -15,7 +15,7 @@ from caiman.citydata import Cell
 from caiman.geo import CELL
 from caiman.mesh import MeshBuilder, signed_area
 from caiman.rules import buildings
-from caiman.rules.ground import GROUND
+from caiman.rules.ground import GROUND, SEA, relief
 from caiman.rules.roads import ROAD
 from caiman.rules.trees import LEAVES
 
@@ -103,7 +103,10 @@ def summary_mesh(s: dict, L: int, a: int, b: int, origin, terrain=None) -> MeshD
     sq = side / GRID
     mb = MeshBuilder()
     built, height, green = s["built"], s["height"], s["green"]
-    rows, cols = np.nonzero((built > 0) | (green > 0))
+    gx, gz = np.meshgrid(x0 + (np.arange(GRID) + 0.5) * sq, z0 + (np.arange(GRID) + 0.5) * sq)
+    land = (terrain.height(gx.ravel(), gz.ravel()).reshape(GRID, GRID) >= SEA if terrain is not None and relief(terrain)
+            else built < 0)
+    rows, cols = np.nonzero((built > 0) | (green > 0) | land)  # every square of land shows its ground
     cx, cz = x0 + (cols + 0.5) * sq, z0 + (rows + 0.5) * sq
     ys = terrain.height(cx, cz) if terrain is not None else np.zeros(len(cx))
     leaf_share = np.minimum(green[rows, cols] * 60.0 / (sq * sq), 1.0)  # a tree shades about 60 m²

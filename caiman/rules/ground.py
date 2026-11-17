@@ -4,6 +4,8 @@ Neighbouring cells ask the terrain for the same points along their shared edge, 
 Normals come from the slope, measured a metre either side of each vertex. Each vertex's green comes from
 noise over its world position: broad patches of lush and dark grass, with dry patches inside them, and drier
 grass where the ground is steep. The same point always gets the same colour, so cells agree along edges.
+Triangles wholly below SEA are left out: there the game's water plane shows, and the shore is where the
+ground dips under it.
 """
 
 import numpy as np
@@ -16,6 +18,13 @@ DARK = (0.20, 0.33, 0.15)
 DRY = (0.50, 0.47, 0.30)
 GROUND = (0.32, 0.40, 0.22)  # their usual mix: the far summaries' ground
 N = 21  # vertices per side: 10 m apart on a 200 m cell
+SEA = 0.3  # metres: ground lower than this is the sea, drawn by the water plane instead
+
+
+def relief(terrain) -> bool:
+    """Whether the terrain holds real heights: flat data (prepared without them) has no sea to leave out."""
+    h = np.asarray(terrain.heights)
+    return bool(h.size) and float(h.max()) > SEA
 
 
 def grass(x, z, slope) -> np.ndarray:
@@ -38,4 +47,6 @@ def ground(mb, i: int, j: int, terrain) -> None:
     n /= np.linalg.norm(n, axis=1, keepdims=True)
     a = (np.arange(N - 1)[:, None] * N + np.arange(N - 1)[None, :]).ravel()  # top-left of every square
     tris = np.concatenate([np.stack([a, a + N, a + 1], 1), np.stack([a + 1, a + N, a + N + 1], 1)])
+    if relief(terrain):  # a square wholly under SEA is sea: the water shows there
+        tris = tris[(y[tris] >= SEA).any(axis=1)]
     mb.add(np.stack([x, y, z], axis=1), n, grass(x, z, np.hypot(dx, dz)), tris)

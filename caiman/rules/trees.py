@@ -15,13 +15,13 @@ import numpy as np
 
 from caiman.geo import CELL
 from caiman.mesh import MeshBuilder
+from caiman.rules.ground import SEA
 from caiman.rules.noise import fbm
 
 TRUNK = (0.25, 0.15, 0.08)
 LEAVES = (0.12, 0.35, 0.12)
 WILD_STEP = 13.0  # metres between the candidate spots of wild trees, before jitter
 WILD_CLEAR = 3.0  # metres between a wild tree and a road's edge
-LAND = 0.3  # metres: below this the ground is the sea or a beach, and grows no wild tree
 
 
 @functools.cache
@@ -79,7 +79,7 @@ def wild(i: int, j: int, terrain, roads: np.ndarray):
     gx, gz = np.meshgrid(i * CELL + t, j * CELL + t)
     p = np.stack([gx.ravel(), gz.ravel()], axis=1) + rng.uniform(-0.45, 0.45, (gx.size, 2)) * WILD_STEP
     density = np.clip((fbm(p[:, 0], p[:, 1], 150.0, seed=3) - 0.4) * 2.5, 0, 0.75)
-    keep = (rng.random(len(p)) < density) & (terrain.height(p[:, 0], p[:, 1]) > LAND)
+    keep = (rng.random(len(p)) < density) & (terrain.height(p[:, 0], p[:, 1]) > SEA)
     r = np.asarray(roads, float).reshape(-1, 5)
     if len(r) and keep.any():
         from caiman.clearance import _point_segment
