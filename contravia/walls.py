@@ -1,8 +1,9 @@
 """What the car can hit, and where it can be put back on a road.
 
-Walls are the edges of every footprint and filler box in the 3x3 cells around the car. The boxes come from
-clearance.boxes, as the cells draw them, so neither holds a box across a road; the landmarks filter both the
-same way and add their own walls, so the car hits exactly what it sees.
+Walls are the edges of every footprint and filler box, and a square round every tree trunk, in the 3x3 cells
+around the car. The boxes come from clearance.boxes, as the cells draw them, so neither holds a box across a
+road; the trees come from rules.trees.cell_trees, as the cells draw them. The landmarks filter both the same
+way and add their own walls, so the car hits exactly what it sees.
 """
 
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -13,6 +14,7 @@ from contravia.citydata import CityData
 from contravia.clearance import boxes, roads_around
 from contravia.geo import CELL
 from contravia.landmarks import Landmarks
+from contravia.rules import trees
 
 
 def _edges(ring) -> np.ndarray:
@@ -36,9 +38,11 @@ class Walls:
 
     def _build(self, i: int, j: int) -> np.ndarray:
         c = self.landmarks.keep(i, j, self.city.cell(i, j))
-        rings = [ring for ring, *_ in boxes(c, roads_around(self.city, i, j))]
+        near = roads_around(self.city, i, j)
+        rings = [ring for ring, *_ in boxes(c, near)]
         parks = [] if c.park_walls is None else [np.asarray(c.park_walls[:, :4], np.float32).reshape(-1, 2, 2)]
-        return np.concatenate([_edges(r) for r in rings] + [self.landmarks.walls(i, j)] + parks)
+        grown = trees.cell_trees(i, j, c, self.city.terrain, near, trees.arrays_of(self.city, i, j))
+        return np.concatenate([_edges(r) for r in rings] + [self.landmarks.walls(i, j)] + parks + [trees.trunks(grown)])
 
     def _cell(self, i: int, j: int) -> np.ndarray:
         if (i, j) not in self._cache:

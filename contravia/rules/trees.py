@@ -300,3 +300,22 @@ def far_green(day) -> tuple:
         total += weight * np.asarray(BARK[s] if look.crown == "bare" else look.leaf)
         w += weight
     return tuple(float(v) for v in total / w)
+
+
+def arrays_of(city, i: int, j: int) -> list:
+    """The raw arrays of each province holding cell (i, j) (a World), or the one city's (a CityData)."""
+    if hasattr(city, "provinces_of"):
+        return [city.province(k).a for k in city.provinces_of(i, j)]
+    return [city.a]
+
+
+def trunks(t) -> np.ndarray:
+    """(4N, 2, 2) wall segments: a square round each trunk of the (Trees) t, of its species' collision radius."""
+    from contravia.rules.species import SPECIES, TRUNK_R
+
+    if not len(t):
+        return np.zeros((0, 2, 2), np.float32)
+    r = np.array([TRUNK_R[s] for s in SPECIES])[t.species] * t.scale
+    corners = np.array([(-1, -1), (1, -1), (1, 1), (-1, 1)], float)
+    sq = t.xz[:, None, :] + corners[None] * r[:, None, None]
+    return np.stack([sq, np.roll(sq, -1, axis=1)], axis=2).reshape(-1, 2, 2).astype(np.float32)

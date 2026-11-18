@@ -40,12 +40,6 @@ def landmarks() -> Landmarks:
     return _landmarks
 
 
-def arrays_of(i: int, j: int) -> list:
-    """The raw arrays of each province holding cell (i, j), for what reads its parks."""
-    w = city()
-    return [w.province(k).a for k in w.provinces_of(i, j)]
-
-
 def build(i: int, j: int):
     """The MeshData of cell (i, j): its ground, roads, buildings, filler boxes and trees."""
     global SKIPPED_ROOFS
@@ -69,7 +63,7 @@ def build(i: int, j: int):
         portals = facades.portal_walls(ring, near) if plan.portal else None
         if not buildings.box(mb, ring, style_id, base=seat(ring, terrain), plan=plan, portals=portals):
             SKIPPED_ROOFS += 1
-    trees.draw(mb, trees.cell_trees(i, j, c, terrain, near, arrays_of(i, j)), trees.today())
+    trees.draw(mb, trees.cell_trees(i, j, c, terrain, near, trees.arrays_of(city(), i, j)), trees.today())
     return mb.to_meshdata(x0, z0)
 
 
