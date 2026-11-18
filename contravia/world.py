@@ -126,7 +126,7 @@ class World:
         return (x0, z0, x0 + (cols - 1) * t.step[0], z0 + (rows - 1) * t.step[1])
 
     @classmethod
-    def load(cls, data, tiles=None) -> World:
+    def load(cls, data) -> World:
         """A folder of provinces (with its index, written now if missing), or one province's data file."""
         path = Path(data)
         if path.is_dir():

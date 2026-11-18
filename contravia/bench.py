@@ -162,8 +162,7 @@ def _machine(engine) -> dict:
             "gpu_memory_mb": None}  # manifoldx does not report GPU memory yet
 
 
-def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: str = "Tue 08:00",
-         tiles: str | None = None) -> dict:
+def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: str = "Tue 08:00") -> dict:
     """Drive the route offscreen with traffic at `when` and append the run's numbers to the history."""
     import manifoldx as mx
 
@@ -172,9 +171,7 @@ def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: st
     from contravia.world import World
 
     os.environ["HAVANA_DATA"] = os.path.abspath(data)
-    if tiles:
-        os.environ["HAVANA_TILES"] = os.path.abspath(tiles)
-    city = World.load(data, tiles)
+    city = World.load(data)
     engine = mx.Engine("contravia-bench", width=size[0], height=size[1])
     game = Game(engine, city, clock=Clock(at=parse_at(when)), with_traffic=True)
     game.tune = False  # a fixed tau, so runs compare
@@ -209,7 +206,7 @@ def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: st
                 waits.append(now - wait_start)
                 wait_start = None
     result = {**summary(frame_ms[5:] or frame_ms, waits), "frames": len(frame_ms), **_machine(engine)}
-    if tiles:
+    if len(city.names) > 1:  # the island's scenes need the provinces they visit
         result["cuba"] = island_scenes(engine, game, json.loads(SCENES.read_text()))
     game.streamer.close()
     if game.layer:

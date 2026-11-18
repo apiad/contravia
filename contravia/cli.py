@@ -30,7 +30,7 @@ def _city() -> str:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="contravia", description="Drive a procedural, real-size Havana.")
+    parser = argparse.ArgumentParser(prog="contravia", description="Drive a procedural, real-size Cuba.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("prepare", help="build each province of a Cuba OSM extract into data/cuba/<province>.npz")
@@ -58,14 +58,8 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("walks", help="rebuild the pavements and building platforms of a prepared data file in place")
     p.add_argument("--data", default="data/cuba/la-habana.npz")
 
-    p = sub.add_parser("tiles", help="turn a Cuba OSM extract into the island's quadtree tiles")
-    p.add_argument("pbf")
-    p.add_argument("--out", default="data/cuba")
-    p.add_argument("--split", type=float, default=2000.0, help="a tile splits while it weighs more than this")
-
     p = sub.add_parser("play", help="drive the city")
     p.add_argument("--data", help="the built city; data/cuba in a checkout, else the one the first run builds")
-    p.add_argument("--tiles", help="folder of the island's tiles (contravia tiles); without it, Havana alone")
     p.add_argument("--at", type=_xz, default=(0.0, 0.0), help="start point as X,Z in local metres")
     p.add_argument("--shot", help="render offscreen, save this PNG and exit")
     p.add_argument("--frames", type=int, default=120, help="frames to run before --shot is saved")
@@ -80,7 +74,6 @@ def main(argv: list[str] | None = None) -> None:
                    help="run the systems and the render one after the other instead of overlapping them")
 
     p = sub.add_parser("bench", help="drive the fixed route and record frame times")
-    p.add_argument("--tiles", help="folder of the island's tiles; adds the island's scenes to the run")
     p.add_argument("--data", default="data/cuba")
     p.add_argument("--time", default="Tue 08:00", help='traffic time for the run, as "Tue 08:00"')
 
@@ -156,15 +149,11 @@ def main(argv: list[str] | None = None) -> None:
         from contravia.walks import main as walks
 
         walks(args.data)
-    elif args.command == "tiles":
-        from contravia.tiles_prepare import main as tiles
-
-        tiles(args.pbf, args.out, args.split)
     elif args.command == "play":
         from contravia.game import main as play
 
         play(args.data or _city(), at=args.at, shot=args.shot, frames=args.frames, traffic=args.traffic, when=args.time,
-             warp=args.warp, sky=args.sky, tiles=args.tiles, pipelined=args.pipeline,
+             warp=args.warp, sky=args.sky, pipelined=args.pipeline,
              with_traffic=args.with_traffic, screen=args.screen)
     elif args.command == "dev":
         from manifoldx.cli import main as manifoldx
@@ -203,7 +192,7 @@ def main(argv: list[str] | None = None) -> None:
     else:
         from contravia.bench import main as bench
 
-        bench(args.data, when=args.time, tiles=args.tiles)
+        bench(args.data, when=args.time)
 
 
 if __name__ == "__main__":

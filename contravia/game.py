@@ -293,7 +293,7 @@ class Game:
 
     def _follow_province(self) -> None:
         """When the car is in another province, drive on that province's graph: its traffic starts over there."""
-        focus = getattr(self.city, "focus", None)
+        focus = getattr(getattr(self, "city", None), "focus", None)
         if focus is None or not focus(self.car.x, self.car.z):
             return
         self.engine.state.province = self.city.focused
@@ -652,7 +652,7 @@ class Game:
 
 def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, size=(1280, 720),
          traffic: str | None = None, when: str | None = None, warp: float = 1.0, sky: str | None = None,
-         tiles: str | None = None, pipelined: bool = True, with_traffic: bool = False,
+         pipelined: bool = True, with_traffic: bool = False,
          screen: str | None = None) -> None:
     """Open a window on the main menu, or with `shot`, render offscreen until the city is drawn and save a PNG.
 
@@ -671,12 +671,10 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     from contravia.weather import load_sky_config
 
     os.environ["HAVANA_DATA"] = os.path.abspath(data)
-    if tiles:
-        os.environ["HAVANA_TILES"] = os.path.abspath(tiles)
     engine = mx.Engine("contravia", width=size[0], height=size[1], pipelined=pipelined)
     clock = Clock(warp=warp) if when == "now" else Clock(at=parse_at(when or "10:00"), warp=warp)
     sky_config = load_sky_config(sky) if sky else None
-    game = Game(engine, World.load(data, tiles), at=at, traffic=load_config(traffic) if traffic else None,
+    game = Game(engine, World.load(data), at=at, traffic=load_config(traffic) if traffic else None,
                 clock=clock, sky=sky_config, with_traffic=with_traffic or bool(traffic))
     screen = screen or ("drive" if shot else "main")
     if "car" in engine.state:  # a reload under contravia dev drives on

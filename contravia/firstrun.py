@@ -109,7 +109,8 @@ class Build:
         """Seconds left, by the reference times scaled to this machine."""
         if self.done:
             return 0.0
-        return (self._total - self._ref_done - self._ref() * self.step_fraction) * self._scale
+        # max: read from another thread between a step's end and the next one's start, the sum dips below 0
+        return max(0.0, (self._total - self._ref_done - self._ref() * self.step_fraction) * self._scale)
 
     @property
     def mb(self) -> float:

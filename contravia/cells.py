@@ -2,9 +2,8 @@
 
 manifoldx's QuadStreamer calls build_node in a worker process for each node it picks. A level-0 node is
 one cell, built in full by the rules; a coarser node is its summary's boxes, ground and roads
-(contravia/summary.py). The world is loaded once per process from the files named by HAVANA_DATA and,
-for the rest of the island, HAVANA_TILES, and every rule adds its parts to one
-MeshBuilder, so a cell is one mesh and one draw call. Buildings, filler and trees a landmark replaces or
+(contravia/summary.py). The world is loaded once per process from HAVANA_DATA (the island's folder of
+provinces, contravia/world.py), and every rule adds its parts to one MeshBuilder, so a cell is one mesh and one draw call. Buildings, filler and trees a landmark replaces or
 clears are left out; the landmarks themselves are drawn once by the game, not per cell.
 """
 
@@ -28,9 +27,9 @@ _landmarks: Landmarks | None = None
 
 
 def city() -> World:
-    """The world of this process, loaded on first use from HAVANA_DATA and HAVANA_TILES (if set)."""
+    """The world of this process, loaded on first use from HAVANA_DATA: the island's folder or one province."""
     global _city, _city_path, _landmarks
-    path = (os.environ.get("HAVANA_DATA", "data/havana.npz"), os.environ.get("HAVANA_TILES") or None)
+    path = (os.environ.get("HAVANA_DATA", "data/cuba"),)
     if _city is None or path != _city_path:
         _city, _city_path = World.load(*path), path
         _landmarks = Landmarks(_city)

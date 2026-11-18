@@ -5,7 +5,7 @@ built on it, the mean height, colour and storeys of what stands there, the area 
 number of trees, plus the roads wide enough to read at the node's size. Heights, colours and storeys come from
 the same facade plans the cells build (rules/facades.py), so a building far away keeps the height and colour
 it has up close, and the square's box carries the facade of its dominant type. A parent's summary is pooled from its four children's, two by two squares into one, so
-`contravia tiles` summarizes each leaf from its cells once and pools from there up to the root. summary_mesh turns
+`contravia.world.index` summarizes each leaf from its cells once and pools from there up to the root. summary_mesh turns
 a summary into at most 16 x 16 boxes, their ground and the roads, a few thousand triangles whatever the node
 holds.
 """
