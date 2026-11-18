@@ -85,3 +85,9 @@ def test_a_name_after_entre_drops_its_parenthesis():
 
     assert short("Avenida de los Presidentes (Calle G)") == "Avenida de los Presidentes"
     assert short("Calle 23") == "23"
+
+
+def test_the_street_name_drops_its_parenthesis():
+    a = {"g_names": np.array(["Paseo de Martí (Paseo del Prado)"]), "g_name": np.array([0]),
+         "g_between": np.array([[-1, -1]]), "g_len": np.array([100.0])}
+    assert describe(a, 0, 50.0, True)[0] == "Paseo de Martí"

@@ -56,7 +56,7 @@ def describe(a: dict, edge: int, along: float, forward: bool) -> tuple[str, str,
     when only one is known, or empty."""
     names = a["g_names"]
     n = int(a["g_name"][edge])
-    street = str(names[n]) if n >= 0 else ""
+    street = re.sub(r"\s*\(.*\)$", "", str(names[n])) if n >= 0 else ""
     behind, ahead = (int(v) for v in a["g_between"][edge])
     length = float(a["g_len"][edge])
     if not forward:
