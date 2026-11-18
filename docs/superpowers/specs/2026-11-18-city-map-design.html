@@ -92,6 +92,7 @@ ol li,ul li{margin:4px 0}
 <tr><td>Compresión semántica por nivel del árbol <span class="tag">maintainer</span></td><td>De lejos importa qué es un lugar y cómo se llega, no cuántas cajas tiene.</td></tr>
 <tr><td>Formas mixtas: genéricas por tamaño para todo asentamiento, emblema propio en las 15 capitales de provincia <span class="tag">maintainer</span></td><td>Cubre la isla sin modelar a mano cada pueblo; las capitales se reconocen de un vistazo.</td></tr>
 <tr><td>Desde la etapa ciudad, los landmarks se quedan donde están, agrandados para que se vean, mientras los barrios alrededor se comprimen en formas <span class="tag">maintainer</span></td><td>En el spike del 2026-11-18, a tamaño real el Capitolio y el Habana Libre ya son puntos a 5 km y desaparecen a 15 km.</td></tr>
+<tr><td>Al subir, la precisión se cuida con un truco, lo que choca con las vías se quita, y todo cambio de nivel se funde con dithering <span class="tag">maintainer</span></td><td>Sección 07.</td></tr>
 <tr><td>Cuatro etapas: calle, barrio, ciudad, isla <span class="tag">maintainer</span></td><td>Tabla de la sección 03.</td></tr>
 <tr><td>Solo en el modo mapa; al manejar el horizonte sigue con los resúmenes fieles de hoy <span class="tag">maintainer</span></td><td>Desde el carro nunca se ven los niveles 6 o más.</td></tr>
 <tr><td>La función de una vía sale de su clase en OSM (<code>highway</code>) y de si une asentamientos, no de su ancho <span class="tag agent">agente</span></td><td>Hoy un resumen guarda las vías más anchas que un mínimo (<code>summary.min_width</code>): una avenida ancha dentro de la ciudad queda y una carretera estrecha entre pueblos se pierde.</td></tr>
@@ -149,30 +150,54 @@ ol li,ul li{margin:4px 0}
   <li><code>contravia play --screen map --at Capitolio --height 40000 --shot</code> saca una captura del mapa a una altura dada, para las pruebas y para revisar cada etapa.</li>
 </ul>
 
-<h2><span class="n">07</span>Entrega</h2>
+<h2><span class="n">07</span>Tres problemas al subir</h2>
+<p><b>1. Precisión con la distancia.</b> El motor ya usa Z invertida con un buffer de profundidad <code>depth32float</code> (<code>renderer.py:847</code>, <code>depth_compare: greater</code>): la profundidad aguanta, a 40 km el error es de milímetros. Lo que se rompe es otra cosa:</p>
+<ul>
+  <li><b>Capas casi coplanares.</b> Una vía está unos centímetros sobre el suelo y el suelo de un resumen 0,3 m bajo el de una celda (<code>summary.BELOW</code>). Desde 15 km esas distancias son menores que un píxel de profundidad útil y las capas parpadean. El truco: en el modo mapa, cada capa sube con la altura de la cámara. La vía va a <code>h · 2·10⁻⁴</code> sobre el suelo (3 m a 15 km), las formas y los landmarks se apoyan encima, y nada de eso se ve porque desde arriba no hay perfil.</li>
+  <li><b>Vías más finas que un píxel.</b> Una calle de 10 m a 15 km mide menos de un píxel y titila al mover la cámara. Cada vía que queda en una etapa se dibuja con un ancho mínimo en pantalla: <code>max(ancho real, 1,5 px × metros por píxel del nivel)</code>. El nivel del nodo fija los metros por píxel (<code>error = CELL · 2^L / 16</code>), así que el ancho se decide al construir el nodo, no en cada cuadro.</li>
+  <li><b>Coordenadas lejos del origen.</b> Las posiciones son <code>float32</code> en metros desde el Capitolio. En Santiago, a unos 760 km, un <code>float32</code> resuelve unos 6 cm: basta para el mapa. Al manejar allí, el temblor de la cámara sí se notaría; eso es de otra spec (render relativo a la cámara).</li>
+</ul>
+<p><b>2. Quitar lo que choca con las vías.</b> Al engordar las vías con el nivel, pisan las cajas de los resúmenes y las formas. <code>build_map_node</code> resuelve el choque al construir el nodo, con este orden de prioridad:</p>
+<ol>
+  <li>los corredores y las vías que quedan en la etapa, con su ancho en pantalla;</li>
+  <li>los landmarks, en su sitio y agrandados; tapan las vías locales, nunca un corredor: su escala se recorta hasta que no pisen ninguno;</li>
+  <li>las cajas del resumen y las formas genéricas: se quita cada caja cuya huella toca una vía engordada, y las formas de un lugar se colocan en los huecos libres alrededor de su centro, buscando en espiral.</li>
+</ol>
+<p><b>3. Fundido suave con dithering.</b> Hoy un nodo cambia de golpe por sus cuatro hijos o por su padre. En el mapa, al cambiar de etapa, cambia además lo que se dibuja (cajas por formas, vías que se van), y el salto se nota. El fundido es de puerta mosquitera (<i>screen-door</i>):</p>
+<ul>
+  <li>cada malla lleva un valor de fundido <code>f</code> entre 0 y 1, y el fragment shader descarta el píxel cuando el umbral de una matriz de Bayer 4 × 4 en esa posición de pantalla es mayor que <code>f</code>;</li>
+  <li>el nodo que entra usa <code>f</code> y el que sale <code>1 − f</code> con la matriz invertida, así cada píxel lo pinta exactamente uno de los dos: ni huecos ni doble dibujo, y sin ordenar transparencias;</li>
+  <li>el fundido dura 0,35 s; el streamer guarda el nodo saliente hasta que termina, en lugar de soltarlo al llegar el nuevo;</li>
+  <li>es un cambio de manifoldx (<code>StandardMaterial</code> y <code>QuadStreamer</code>), así que sirve también al manejar, donde hoy el horizonte cambia de nivel de golpe.</li>
+</ul>
+
+<h2><span class="n">08</span>Entrega</h2>
 <ol>
   <li><b>La pantalla</b>: la cámara, el zoom, el arrastre, el clic y «Manejar aquí», con las etapas calle y barrio sobre los datos de hoy. Ya sirve sin reconstruir nada.</li>
   <li><b>Las vías por función</b>: <code>road_class</code> y los corredores en <code>prepare</code> y <code>tiles</code>, más los filtros de las etapas barrio, ciudad e isla. Reconstrucción en la máquina con GPU.</li>
   <li><b>Los asentamientos y las formas genéricas</b>: <code>places.npz</code>, <code>allegory.py</code> y las etapas ciudad e isla.</li>
   <li><b>Los emblemas</b>: La Habana primero; después una capital por PR, cada una revisada con su captura.</li>
+  <li><b>El fundido con dithering</b> en manifoldx: va antes del paso 3, porque las etapas ciudad e isla cambian lo que se dibuja y el salto se nota más.</li>
 </ol>
 
-<h2><span class="n">08</span>Pruebas</h2>
+<h2><span class="n">09</span>Pruebas</h2>
 <ul>
   <li><code>stage_of(level)</code> devuelve la etapa de la tabla para cada nivel de 0 a 13.</li>
   <li>Sobre un grafo sintético de tres pueblos, una vía secundaria que los une es corredor y una avenida ancha dentro de uno de ellos no lo es.</li>
   <li>Cada forma genérica queda por debajo de un tope de triángulos (2 000), y la misma semilla da la misma malla.</li>
   <li>Un clic sobre el Capitolio, seguido de ENTER, deja el carro en una calle a menos de 100 m del punto.</li>
+  <li>Ninguna caja ni forma de un nodo pisa una vía engordada de ese nodo.</li>
+  <li>Durante un fundido, cada píxel lo pinta un solo nodo: se cuenta en una captura con los dos nodos de colores puros.</li>
   <li>Una captura por etapa en la máquina con GPU, revisada a ojo antes de cada merge.</li>
 </ul>
 
-<h2><span class="n">09</span>No entra</h2>
+<h2><span class="n">10</span>No entra</h2>
 <ul>
   <li>Las capas, el buscador, las fichas de lugar, las postales, «Girar» y «Recorrido» del diseño de UX: van en specs posteriores.</li>
   <li>La compresión semántica al manejar.</li>
 </ul>
 
-<h2><span class="n">10</span>Preguntas</h2>
+<h2><span class="n">11</span>Preguntas</h2>
 <ul>
   <li>El emblema de cada una de las otras 14 capitales: ¿lo propongo yo por capital, para que lo apruebes en una lista?</li>
   <li>¿Las vías que quedan en la etapa isla llevan su nombre escrito sobre el mapa (Autopista Nacional, Carretera Central), o eso espera a la capa «Calles y nombres»?</li>
