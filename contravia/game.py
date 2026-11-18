@@ -23,7 +23,7 @@ import time
 import numpy as np
 
 from contravia.camera import chase
-from contravia.car import CarState, Controls, settle, step
+from contravia.car import Body, CarState, Controls, settle, spring, step
 from contravia.geo import CELL, to_local
 from contravia.hud import Hud
 from contravia.input import Driver
@@ -291,6 +291,7 @@ class Game:
             return
         x, z, yaw = found
         self.car = settle(CarState(x, z, yaw, 0.0), self.surface)
+        self.body = Body.on(self.car)
         self.eye = np.array([x, self.car.y + 3.0, z])
         self.engine.state.teleport = {"to": [x, z], "error": None}
         self._recentre()
@@ -311,6 +312,7 @@ class Game:
         """Put the car and the camera back where engine.state.car says, at the same speed."""
         x, z, yaw, speed = car["pose"]
         self.car = settle(CarState(x, z, yaw, speed), self.surface)
+        self.body = Body.on(self.car)
         self.eye = np.array(car["eye"], float)
         self._recentre()
 
@@ -477,10 +479,11 @@ class Game:
                 walls = np.concatenate([walls.reshape(-1, 2, 2), self.layer.boxes_near(self.car.x, self.car.z)])
             self._before = self.car
             self.car = step(self.car, c, self._dt, walls, self.surface)
+            self.body = spring(self.body, self.car, self._dt)
             self.km += math.hypot(self.car.x - self._before.x, self.car.z - self._before.z) / 1000
         # manifoldx turns +x toward -z for a positive yaw; the game turns it toward +z.
-        place_car(self.handles, self.model, at=(self.car.x, self.car.y, self.car.z), yaw=-self.car.yaw,
-                  pitch=self.car.pitch, roll=self.car.roll)
+        place_car(self.handles, self.model, at=(self.car.x, self.body.y, self.car.z), yaw=-self.car.yaw,
+                  pitch=self.body.pitch, roll=self.body.roll)
         half = -self.car.yaw / 2  # the same turn as the car's, about the vertical
         ground = float(self.surface.height(np.array([self.car.x]), np.array([self.car.z]), near=self.car.y)[0])
         self.shadow.transform.pos = (self.car.x, ground + SHADOW_LIFT, self.car.z)

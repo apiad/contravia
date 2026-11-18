@@ -15,7 +15,8 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   projection (`terrain.read_terrain`): 30 m in La Habana, 90 m elsewhere. Without it the island is flat.
 - `contravia source <pbf> --dem DIR` packs one `data/cuba-src/<slug>.src` per province, which the game ships; the first
   run (`contravia/firstrun.py`, `contravia build`) builds the island from them into the player's home, each province in
-  its own process and several at once: about 19 minutes and 6 GB with three at once on the GPU machine.
+  its own process and several at once: about 19 minutes and 6 GB with three at once on the GPU machine. Pack the sources again whenever
+  `contravia.source.VERSION` changes.
 - Trees in parks, woods and meadows are not stored: each green area is kept as triangles per cell and its trees grow
   when the cell opens (`rules.trees.in_green`), the same every time.
 - `contravia dev` takes the options of `contravia play` and runs it under manifoldx's hot reload: a saved file in
