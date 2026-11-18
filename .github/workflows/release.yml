@@ -30,7 +30,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           v=$(sed -n 's/^VERSION = \([0-9]*\).*/\1/p' contravia/source.py)
-          gh release download "sources-v$v" --pattern cuba-src.tar.zst --output - | tar --zstd -x -C data
+          mkdir -p data && gh release download "sources-v$v" --pattern cuba-src.tar.zst --output - | tar --zstd -x -C data
           ls data/cuba-src | wc -l
       - name: Build the files
         env:
