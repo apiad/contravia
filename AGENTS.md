@@ -53,6 +53,8 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   `manifoldx emit close x=... z=... minutes=40` closes a street; `engine.state.traffic` reports the numbers.
 - `contravia flowmap out.png --time "Tue 08:00" [--traffic my.json]` draws the flow layer over the province without a
   window; `contravia bench --time ...` adds traffic numbers to the run.
+- `contravia fleet-sheet OUTDIR [--kind car]` renders one review PNG per kind: a row per variant of `contravia/rules/fleet.py`
+  (the ten kinds' families, eras, ranges and colourways) in four views, offscreen; `variant(kind, family, k)` is seeded.
 - `bench/pipelined.py` drives the bench route's first leg offscreen and measures a frame serial against pipelined,
   where the engine draws this frame while the next frame's systems run on a worker; `--check` drives the same leg
   under `MANIFOLDX_PIPELINE=check` to catch a system that writes what the render reads.

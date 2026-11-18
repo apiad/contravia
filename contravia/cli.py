@@ -98,6 +98,10 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--year", type=int, default=2026)
     p.add_argument("--sky", help="JSON file of sky settings to change")
 
+    p = sub.add_parser("fleet-sheet", help="render a review sheet per fleet kind: a row per variant in four views")
+    p.add_argument("outdir")
+    p.add_argument("--kind", help="only this kind of vehicle (car, bus, truck, moto, ...)")
+
     p = sub.add_parser("dev", help="play under hot reload: a saved file in contravia/ rebuilds the game in the same "
                                    "window, with the car where it was; takes the options of play")
 
@@ -187,6 +191,10 @@ def main(argv: list[str] | None = None) -> None:
         from contravia.skymap import main as skymap
 
         skymap(args.out, args.year, sky=args.sky)
+    elif args.command == "fleet-sheet":
+        from contravia.fleetsheet import main as fleet_sheet
+
+        fleet_sheet(args.outdir, kind=args.kind)
     elif args.command == "timelapse":
         from contravia.timelapse import main as timelapse
 
