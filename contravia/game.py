@@ -66,6 +66,9 @@ class Game:
         self.engine, self.city, self.walls, self.terrain = engine, city, Walls(city), city.terrain
         self.surface = Surface(city, self.terrain)  # what the wheels stand on: roads level across
         self.clock = clock or Clock()
+        from contravia.rules import trees
+
+        trees.set_clock(self.clock.now)  # trees bloom and turn with the game's date
         self.weather = Weather(config=sky or SkyConfig())
         self.atmosphere = Atmosphere(engine)
         self.atmosphere.prepare()

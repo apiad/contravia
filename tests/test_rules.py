@@ -1,3 +1,5 @@
+from datetime import date
+
 import numpy as np
 import pytest
 
@@ -41,7 +43,7 @@ def test_meshdata_is_valid():
     mb = MeshBuilder()
     buildings.box(mb, L, 1)
     roads.ribbon(mb, np.array([[0, 0, 30, 0, 6]], np.float32), Terrain.flat())
-    trees.trees(mb, np.array([[5.0, 5.0], [9.0, 2.0]]))
+    trees.draw(mb, trees.grow(np.array([[5.0, 5.0], [9.0, 2.0]]), Terrain.flat(), trees.OUT), date(2026, 6, 1))
     buildings.filler(mb, np.array([[0, 0], [60, 0], [60, 60], [0, 60]], float), seed=1)
     md = mb.to_meshdata(0, 0)
     assert md.indices.dtype == np.uint32 and md.indices.max() < len(md.positions)
@@ -55,14 +57,22 @@ def test_a_broken_footprint_still_draws_its_walls():
     assert len(mb.to_meshdata(0, 0).positions) > 0
 
 
+def _laurels(xz, y=None):
+    n = len(xz)
+    return trees.Trees(np.asarray(xz, float), np.zeros(n) if y is None else np.asarray(y, float), np.zeros(n, np.int8),
+                       np.ones(n), np.zeros(n), np.zeros(n, int), np.full(n, 0.5))
+
+
 def test_each_tree_is_the_same_tree_moved_to_its_point():
     one, two = MeshBuilder(), MeshBuilder()
-    trees.trees(one, np.array([[0.0, 0.0]]))
-    trees.trees(two, np.array([[0.0, 0.0], [10.0, 20.0]]))
+    trees.draw(one, _laurels([[0.0, 0.0]]), date(2026, 6, 1))
+    trees.draw(two, _laurels([[0.0, 0.0], [10.0, 20.0]]), date(2026, 6, 1))
     a, b = one.to_meshdata(0, 0), two.to_meshdata(0, 0)
     assert len(b.indices) == 2 * len(a.indices)
-    tops = b.positions[b.positions[:, 1] == b.positions[:, 1].max()]
-    assert {tuple(p) for p in tops[:, [0, 2]].tolist()} == {(0.0, 0.0), (10.0, 20.0)}   # one cone tip per tree
+    ground = b.positions[b.positions[:, 1] < 0.01]
+    centres = {tuple(np.round(ground[ground[:, 0] < 5][:, [0, 2]].mean(axis=0), 1)),
+               tuple(np.round(ground[ground[:, 0] >= 5][:, [0, 2]].mean(axis=0), 1))}
+    assert centres == {(0.0, 0.0), (10.0, 20.0)}  # one trunk base per tree
 
 
 def tilted():
@@ -140,9 +150,9 @@ def test_a_box_on_a_slope_stands_on_its_lowest_corner():
 
 def test_trees_stand_on_the_ground():
     mb = MeshBuilder()
-    trees.trees(mb, np.array([[10.0, 0.0], [50.0, 20.0]]), np.array([1.0, 6.0]))
+    trees.draw(mb, _laurels([[10.0, 0.0], [50.0, 20.0]], [1.0, 6.0]), date(2026, 6, 1))
     p = mb.to_meshdata(0, 0).positions
-    assert np.isclose(p[np.isclose(p[:, 0], 50.2, atol=0.01), 1].min(), 6.0)          # a trunk corner of tree 2
+    assert np.isclose(p[p[:, 0] > 40, 1].min(), 6.0)  # tree 2's trunk base
 
 
 def test_wild_trees_grow_the_same_in_clumps_off_the_roads_and_out_of_the_sea():

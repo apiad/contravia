@@ -45,6 +45,10 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   Prado and wild parks outside the city, some with a lake. `contravia/props.py` builds their motifs as `park_tris`, the
   car hits `park_walls`, and `contravia walks` rebuilds them with the pavements. Land OSM tags as a cemetery, industry,
   a school or a sports ground never becomes a park.
+- No tree's look is stored (`contravia/rules/trees.py`, `contravia/rules/species.py`, spec
+  `docs/superpowers/specs/2026-11-18-trees-design.html`): when a cell opens, `cell_trees` gives each tree a species
+  from its zone, its park and a seed from its position, and `draw` colours it for the game's date (flowering, autumn
+  leaves, bare in the dry season). The car hits the trunks of the same trees (`walls.py`).
 - `contravia play` opens on the main menu (`contravia/menu.py`, drawn as `docs/ux/contravia-ux.html` shows): Story and the
   Cuba map are "próximamente", Free drive sets place, time, day, weather, traffic and clock speed
   (`contravia/settings.py`), Esc pauses, and the options are kept in the user's config folder

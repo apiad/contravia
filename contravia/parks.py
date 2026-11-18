@@ -679,3 +679,60 @@ def add_to(city) -> dict:
     city.add_kind("park_paint", paint, keys)
     city.add_kind("park_walls", walls, wkeys)
     return {"parks_built": len(parks_), "park_layout_errors": len(FAILED), "park_triangles": len(tris), "park_walls": len(walls), **count}
+
+
+CEIBA_FROM, CEIBA_CHANCE = 10_000.0, 0.3  # m² and probability: a city park this big may have a ceiba in its plaza
+_LOOKUP: dict = {}
+
+
+def _lookup(a):
+    """(STRtree of the park rings, kinds, seeds, set of ceiba spots) for city arrays a, built once per array."""
+    import weakref
+
+    arr = a["park_verts"]
+    hit = _LOOKUP.get(id(arr))
+    if hit is not None and hit[0]() is arr:
+        return hit[1]
+    for k in [k for k, (ref, _) in _LOOKUP.items() if ref() is None]:  # provinces closed since
+        del _LOOKUP[k]
+    from contravia.rules.trees import point_seeds, unit
+
+    verts, starts = np.asarray(a["park_verts"], float), np.asarray(a["park_starts"])
+    polys = [Polygon(verts[starts[k]:starts[k + 1]]) for k in range(len(starts) - 1)]
+    kinds, seeds = np.asarray(a["park_kind"], int), np.asarray(a["park_seed"], np.int64)
+    tree = shapely.STRtree(polys)
+    ceibas = set()
+    pts = np.asarray(a.get("trees", np.zeros((0, 2))), float).reshape(-1, 2)
+    big = [k for k, p in enumerate(polys) if kinds[k] == KINDS.index("city") and p.area >= CEIBA_FROM
+           and unit(np.array([seeds[k]]).view(np.uint64), 7)[0] < CEIBA_CHANCE]
+    if big and len(pts):
+        ptree = shapely.STRtree(shapely.points(pts))
+        for k in big:
+            n = int(ptree.nearest(polys[k].centroid))
+            if polys[k].contains(shapely.Point(pts[n])):
+                ceibas.add(int(point_seeds(pts[n:n + 1])[0]))
+    _LOOKUP[id(arr)] = (weakref.ref(arr), (tree, kinds, seeds, ceibas))
+    return _LOOKUP[id(arr)][1]
+
+
+def of_points(a, xz) -> tuple[np.ndarray, np.ndarray]:
+    """The kind (an index into KINDS, 0 outside every park) and the seed of the park holding each (N, 2) point."""
+    xz = np.asarray(xz, float).reshape(-1, 2)
+    kind, seed = np.zeros(len(xz), int), np.zeros(len(xz), np.int64)
+    if "park_kind" not in a or not len(a["park_kind"]) or not len(xz):
+        return kind, seed
+    tree, kinds, seeds, _ = _lookup(a)
+    pi, ti = tree.query(shapely.points(xz), predicate="within")
+    kind[pi], seed[pi] = kinds[ti], seeds[ti]
+    return kind, seed
+
+
+def is_ceiba(a, xz) -> np.ndarray:
+    """Whether each (N, 2) point is the tree nearest the centre of a big city park chosen to grow a ceiba."""
+    xz = np.asarray(xz, float).reshape(-1, 2)
+    if "park_kind" not in a or not len(a["park_kind"]) or not len(xz):
+        return np.zeros(len(xz), bool)
+    from contravia.rules.trees import point_seeds
+
+    ceibas = _lookup(a)[3]
+    return np.array([int(s) in ceibas for s in point_seeds(xz)], bool)
