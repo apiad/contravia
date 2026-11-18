@@ -120,7 +120,7 @@ class Body:
     roll: float
 
     @classmethod
-    def on(cls, s: CarState) -> "Body":
+    def on(cls, s: CarState) -> Body:
         """A body resting exactly on the ground pose s, as after a teleport."""
         return cls(s.y, s.pitch, s.roll)
 
