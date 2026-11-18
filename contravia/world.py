@@ -95,7 +95,8 @@ class World:
             self._open[0] = core
             weights = _weights(core)
             cells = np.array(sorted(weights), np.int64).reshape(-1, 2)
-            self._region_keys = [np.sort(_keys(cells))]
+            self._region_keys = [np.sort(_keys(np.array([k for k, v in weights.items() if v > BARE],
+                                                         np.int64).reshape(-1, 2)))]
             t = core.terrain
             self._grids = [self._grid_box(t)]
             self.top = float(t.heights.max()) if t.heights.size else 0.0
@@ -296,7 +297,10 @@ def index(folder) -> dict:
             weights[key] = weights.get(key, 0.0) + v
         names.append(name)
         files.append(path.name)
-        region_keys.append(np.sort(_keys(np.array(sorted(w), np.int64).reshape(-1, 2))))
+        # A province answers for the cells it holds features in; its relief grid's bare land overlaps its
+        # neighbours' and would make every cell near a border look shared.
+        mine = np.array([k for k, v in w.items() if v > BARE], np.int64).reshape(-1, 2)
+        region_keys.append(np.sort(_keys(mine)))
         t = data.terrain
         grids.append(World._grid_box(t))
         top = max(top, float(t.heights.max()) if t.heights.size else 0.0)
