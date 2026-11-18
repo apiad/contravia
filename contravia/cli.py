@@ -9,7 +9,7 @@ def _xz(text: str) -> tuple[float, float]:
 
 
 def _city() -> str:
-    """The city to play: a checkout's data/havana.npz, else the first run's, built now in its window if missing."""
+    """The island to play: a checkout's data/cuba, else the first run's, built now in its window if missing."""
     import subprocess
     import sys
     from pathlib import Path
@@ -17,13 +17,13 @@ def _city() -> str:
     from contravia.firstrun import built
     from contravia.ui import ROOT
 
-    if Path("data/havana.npz").exists():
-        return "data/havana.npz"
+    if Path("data/cuba/index.npz").exists() or Path("data/cuba/la-habana.npz").exists():
+        return "data/cuba"
     if city := built():
         return str(city)
     # its own process: the build window's engine is done with before the game's opens
     code = subprocess.call([sys.executable, "-m", "contravia.cli", "build", "--window",
-                            "--source", str(ROOT / "data" / "havana.src")])
+                            "--source", str(ROOT / "data" / "cuba-src")])
     if code or not (city := built()):
         raise SystemExit(code or 1)
     return str(city)
@@ -43,19 +43,20 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("source", help="pack a Cuba OSM extract and the GLO-30 tiles into the compact source the game ships")
     p.add_argument("pbf")
     p.add_argument("--dem", required=True, help="folder with the Copernicus GLO-30 tiles")
-    p.add_argument("--out", default="data/havana.src")
+    p.add_argument("--out", default="data/cuba-src", help="folder for one <province>.src each")
+    p.add_argument("--province", action="append", help="pack only this province (name or slug); repeatable")
 
     p = sub.add_parser("build", help="build the city from the compact source into the player's home, as the first run does")
-    p.add_argument("--source", default="data/havana.src")
+    p.add_argument("--source", default="data/cuba-src", help="folder of the province sources")
     p.add_argument("--home", help="where to build; the per-user data folder by default")
     p.add_argument("--window", action="store_true", help="show the build screen instead of printing the progress")
     p.add_argument("--shot", help="with --window: render offscreen and save SHOT-<step>.png as the build goes")
 
     p = sub.add_parser("streets", help="rebuild the street surface of a prepared data file in place")
-    p.add_argument("--data", default="data/havana.npz")
+    p.add_argument("--data", default="data/cuba/la-habana.npz")
 
     p = sub.add_parser("walks", help="rebuild the pavements and building platforms of a prepared data file in place")
-    p.add_argument("--data", default="data/havana.npz")
+    p.add_argument("--data", default="data/cuba/la-habana.npz")
 
     p = sub.add_parser("tiles", help="turn a Cuba OSM extract into the island's quadtree tiles")
     p.add_argument("pbf")
@@ -63,7 +64,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--split", type=float, default=2000.0, help="a tile splits while it weighs more than this")
 
     p = sub.add_parser("play", help="drive the city")
-    p.add_argument("--data", help="the built city; data/havana.npz in a checkout, else the one the first run builds")
+    p.add_argument("--data", help="the built city; data/cuba in a checkout, else the one the first run builds")
     p.add_argument("--tiles", help="folder of the island's tiles (contravia tiles); without it, Havana alone")
     p.add_argument("--at", type=_xz, default=(0.0, 0.0), help="start point as X,Z in local metres")
     p.add_argument("--shot", help="render offscreen, save this PNG and exit")
@@ -80,12 +81,12 @@ def main(argv: list[str] | None = None) -> None:
 
     p = sub.add_parser("bench", help="drive the fixed route and record frame times")
     p.add_argument("--tiles", help="folder of the island's tiles; adds the island's scenes to the run")
-    p.add_argument("--data", default="data/havana.npz")
+    p.add_argument("--data", default="data/cuba")
     p.add_argument("--time", default="Tue 08:00", help='traffic time for the run, as "Tue 08:00"')
 
     p = sub.add_parser("flowmap", help="draw the flow layer over the province at a time, as a PNG")
     p.add_argument("out")
-    p.add_argument("--data", default="data/havana.npz")
+    p.add_argument("--data", default="data/cuba/la-habana.npz")
     p.add_argument("--time", default="Tue 08:00", help='as "Sun 08:00"')
     p.add_argument("--traffic", help="JSON file of traffic settings to change")
     p.add_argument("--size", type=int, default=2000, help="width in pixels")
@@ -106,15 +107,15 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("building-tags", help="add what OSM says about each building (kind, levels, height, use, "
                                              "municipio) to a data file prepared before")
     p.add_argument("pbf")
-    p.add_argument("--data", default="data/havana.npz")
+    p.add_argument("--data", default="data/cuba/la-habana.npz")
 
     p = sub.add_parser("walls-check", help="count footprints, filler boxes and landmark walls inside a road; "
                                            "all must be 0")
-    p.add_argument("--data", default="data/havana.npz")
+    p.add_argument("--data", default="data/cuba/la-habana.npz")
 
     p = sub.add_parser("timelapse", help="render a day of sky over the Capitolio as a video")
     p.add_argument("out")
-    p.add_argument("--data", default="data/havana.npz")
+    p.add_argument("--data", default="data/cuba")
     p.add_argument("--day", help="YYYY-MM-DD; by default the best day of the 2026 rainy season")
     p.add_argument("--start", default="04:30")
     p.add_argument("--minutes", type=int, default=1440, help="game minutes to cover")
@@ -131,7 +132,7 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "source":
         from contravia.source import main as source
 
-        source(args.pbf, args.dem, args.out)
+        source(args.pbf, args.dem, args.out, args.province)
     elif args.command == "build":
         if args.window or args.shot:
             from contravia.buildscreen import main as window

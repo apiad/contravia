@@ -13,9 +13,11 @@ FIX = "tests/fixtures/mini.osm"
 
 @pytest.fixture
 def src(tmp_path):
-    path = tmp_path / "havana.src"
-    source.write(read_osm(FIX), Terrain.flat(), path)
-    return path
+    """A folder of province sources: La Habana from the fixture, and Artemisa as the same extract again."""
+    folder = tmp_path / "cuba-src"
+    source.write(read_osm(FIX), Terrain.flat(), folder / "la-habana.src")
+    source.write(read_osm(FIX), Terrain.flat(), folder / "artemisa.src")
+    return folder
 
 
 def same(a: CityData, b: CityData) -> list:
@@ -23,7 +25,7 @@ def same(a: CityData, b: CityData) -> list:
 
 
 def test_source_round_trip_keeps_the_extract_and_the_terrain(src):
-    raw, terrain = source.load(src)
+    raw, terrain = source.load(src / "la-habana.src")
     assert raw.roads == read_osm(FIX).roads
     assert np.array_equal(terrain.heights, Terrain.flat().heights)
 
@@ -32,9 +34,11 @@ def test_build_from_source_gives_the_city_build_city_gives(src, tmp_path):
     b = firstrun.Build(src, tmp_path / "home")
     b.run()
     assert b.done and b.overall == 1.0 and b.label == firstrun.DONE_LABEL
-    assert firstrun.built(tmp_path / "home") and not (tmp_path / "home" / "build").exists()
-    ref, _ = build_city(*source.load(src))
-    assert same(ref, CityData.load(tmp_path / "home" / firstrun.CITY)) == []
+    island = firstrun.built(tmp_path / "home")
+    assert island and not (tmp_path / "home" / "build").exists() and (island / "index.npz").exists()
+    ref, _ = build_city(*source.load(src / "la-habana.src"))
+    for slug in ("la-habana", "artemisa"):
+        assert same(ref, CityData.load(island / f"{slug}.npz")) == []
 
 
 def test_a_stopped_build_goes_on_from_its_last_step(src, tmp_path, monkeypatch):
@@ -47,16 +51,16 @@ def test_a_stopped_build_goes_on_from_its_last_step(src, tmp_path, monkeypatch):
     b = firstrun.Build(src, tmp_path / "home")
     with pytest.raises(RuntimeError):
         b.run()
-    assert b.error and b.step == 3 and (tmp_path / "home" / "build" / "streets.npz").exists()
+    assert b.error and b.step == 3 and (tmp_path / "home" / "build" / "la-habana" / "streets.npz").exists()
     monkeypatch.undo()
-    calls = []
-    monkeypatch.setattr(prepare, "base_city", lambda *a: calls.append(1))
+    calls, real = [], prepare.base_city
+    monkeypatch.setattr(prepare, "base_city", lambda *a: calls.append(1) or real(*a))
     again = firstrun.Build(src, tmp_path / "home")
     again.run()
-    assert again.done and calls == []
+    assert again.done and calls == [1]  # La Habana went on from its streets; only Artemisa was read
     monkeypatch.undo()
-    ref, _ = build_city(*source.load(src))
-    assert same(ref, CityData.load(tmp_path / "home" / firstrun.CITY)) == []
+    ref, _ = build_city(*source.load(src / "la-habana.src"))
+    assert same(ref, CityData.load(tmp_path / "home" / firstrun.CITY / "la-habana.npz")) == []
 
 
 def test_progress_is_readable_while_it_runs(src, tmp_path):
