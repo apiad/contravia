@@ -10,6 +10,8 @@ clears are left out; the landmarks themselves are drawn once by the game, not pe
 
 import os
 
+import numpy as np
+
 from contravia.clearance import boxes, roads_around
 from contravia.geo import CELL
 from contravia.landmarks import Landmarks
@@ -62,9 +64,12 @@ def build(i: int, j: int):
         portals = facades.portal_walls(ring, near) if plan.portal else None
         if not buildings.box(mb, ring, style_id, base=seat(ring, terrain), plan=plan, portals=portals):
             SKIPPED_ROOFS += 1
-    trees.trees(mb, c.trees, terrain.height(c.trees[:, 0], c.trees[:, 1]))
+    standing = c.trees[trees.off_streets(c.trees, c.street_tris)]
+    trees.trees(mb, standing, terrain.height(standing[:, 0], standing[:, 1]))
     if not (len(c.buildings) or len(c.fillers) or len(c.trees)):  # land OSM says nothing about
         spots, size, tone = trees.wild(i, j, terrain, roads_around(city(), i, j))
+        keep = trees.off_streets(spots, c.street_tris)
+        spots, size, tone = spots[keep], np.asarray(size)[keep], np.asarray(tone)[keep]
         trees.trees(mb, spots, terrain.height(spots[:, 0], spots[:, 1]), size, tone)
     return mb.to_meshdata(x0, z0)
 

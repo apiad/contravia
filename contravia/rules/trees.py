@@ -24,6 +24,31 @@ WILD_STEP = 13.0  # metres between the candidate spots of wild trees, before jit
 WILD_CLEAR = 3.0  # metres between a wild tree and a road's edge
 
 
+CLEAR = 1.0  # metres between a tree's trunk and the drawn street
+
+
+def off_streets(xz, street_tris) -> np.ndarray:
+    """For each (x, z), whether the trunk and the points CLEAR metres around it all lie off the street
+    triangles (T, 3, 3) a cell draws: a junction is wider than the road strips the build keeps trees off."""
+    xz = np.asarray(xz, float).reshape(-1, 2)
+    if street_tris is None or not len(street_tris) or not len(xz):
+        return np.ones(len(xz), bool)
+    t = np.asarray(street_tris, float)[:, :, [0, 2]]
+    a, b, c = t[:, 0], t[:, 1], t[:, 2]
+    v0, v1 = b - a, c - a
+    den = v0[:, 0] * v1[:, 1] - v1[:, 0] * v0[:, 1]
+    ok = np.abs(den) > 1e-9
+    a, v0, v1, den = a[ok], v0[ok], v1[ok], den[ok]
+    keep = np.ones(len(xz), bool)
+    for dx, dz in ((0, 0), (CLEAR, 0), (-CLEAR, 0), (0, CLEAR), (0, -CLEAR)):
+        p = xz + (dx, dz)
+        d = p[:, None, :] - a[None]
+        u = (d[..., 0] * v1[:, 1] - v1[:, 0] * d[..., 1]) / den
+        v = (v0[:, 0] * d[..., 1] - d[..., 0] * v0[:, 1]) / den
+        keep &= ~((u >= 0) & (v >= 0) & (u + v <= 1)).any(axis=1)
+    return keep
+
+
 @functools.cache
 def _template():
     """One tree at the origin: (positions, normals, triangles) for its trunk, then for its leaves."""

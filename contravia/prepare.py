@@ -30,6 +30,7 @@ PLACES = ("suburb", "neighbourhood", "quarter")  # place values that name a barr
 MAX_SEGMENT = 50.0  # metres; longer segments are split so each piece lands in the cell it crosses
 MAX_BLOCK = 30_000.0  # m², 3 ha: bigger faces of the road network are not city blocks
 TREE_EVERY = 150.0  # m² of green area per scattered tree
+GREEN_ACROSS = 15.0  # metres: a green area narrower than this (2 area / perimeter) gets no scattered trees
 
 GREEN = {("leisure", "park"), ("landuse", "forest"), ("landuse", "grass"), ("landuse", "recreation_ground"),
          ("landuse", "meadow"), ("landuse", "village_green"), ("natural", "wood"), ("natural", "scrub"),
@@ -211,6 +212,21 @@ def _block_seed(c) -> int:
     return round(c.x) * 1_000_003 + round(c.y)
 
 
+def on_road(points: np.ndarray, roads: np.ndarray, clear: float = 1.0) -> np.ndarray:
+    """For each (x, z) point, whether it stands within `clear` metres of a road strip's edge or on it."""
+    import shapely
+
+    out = np.zeros(len(points), bool)
+    if not len(points) or not len(roads):
+        return out
+    lines = shapely.linestrings(np.asarray(roads[:, :4], float).reshape(-1, 2, 2))
+    pts = shapely.points(points)
+    pi, ri = shapely.STRtree(lines).query(pts, predicate="dwithin", distance=float(roads[:, 4].max()) / 2 + clear)
+    hit = shapely.distance(pts[pi], lines[ri]) < roads[ri, 4] / 2 + clear
+    out[pi[hit]] = True
+    return out
+
+
 def choose_fillers(blocks, cents: np.ndarray, no_build: list, nb_tree) -> tuple[list, list]:
     """The blocks that get filler boxes, as rings, and their seeds: no building centroid and no green inside."""
     import shapely
@@ -299,12 +315,13 @@ def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]
     no_build = [p if p.is_valid else p.buffer(0) for p in no_build]
     fillers, seeds = choose_fillers(blocks, cents, no_build, shapely.STRtree(no_build))
 
-    # Trees: tagged points, plus one per TREE_EVERY m² of green, seeded by the area's id.
-    trees = [_local(raw.trees)] if raw.trees else []
+    # Trees: one per TREE_EVERY m² of green, seeded by the area's id. OSM's tree points are left out: they are
+    # mapped unevenly and stand in medians and on roads; the city's trees are procedural.
+    trees = []
     for osm_id, ring in raw.green:
         poly = Polygon(_local(ring))
-        if not poly.is_valid or poly.area < TREE_EVERY:
-            continue
+        if not poly.is_valid or poly.area < TREE_EVERY or 2 * poly.area / poly.length < GREEN_ACROSS:
+            continue  # a strip of grass in a median or along a road gets no trees
         n = int(poly.area // TREE_EVERY)
         rng = np.random.default_rng(abs(int(osm_id)))
         x0, z0, x1, z1 = poly.bounds
@@ -314,7 +331,7 @@ def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]
             got.append(p[shapely.contains_xy(poly, p[:, 0], p[:, 1])])
         trees.append(np.vstack(got)[:n])
     trees = np.vstack(trees) if trees else np.zeros((0, 2))
-    trees = trees[inside(trees)]
+    trees = trees[inside(trees) & ~on_road(trees, roads)]
 
     if terrain is not None and terrain.heights.size > 4:  # the relief past the Malecón's wall goes under the sea
         from contravia.landmarks import malecon

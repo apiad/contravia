@@ -4,7 +4,7 @@ Where the two one-way carriageways run close, contravia.streets pairs them into 
 on that ribbon's centreline, stopping GAP metres short of each junction:
 
 - "kerb": Carlos III's concrete strip, KERB_W wide and KERB_H high, a two-armed street lamp every LAMP_EVERY.
-- "paseo": Boyeros from the Plaza to the Ciudad Deportiva, a PASEO_W paved walk with a tree every TREE_EVERY.
+- "paseo": Boyeros from the Plaza to the Ciudad Deportiva, a PASEO_W paved walk.
 - "wall": Boyeros south of the Ciudad Deportiva, a WALL_W concrete wall WALL_H high the car hits.
 
 Where the carriageways run far apart (Paseo, Prado, 5ta Avenida), the ground between them is a block of its
@@ -28,7 +28,6 @@ KERB_W, KERB_H = 1.0, 0.2
 PASEO_W, PASEO_H = 3.0, 0.15
 WALL_W, WALL_H = 0.5, 1.0
 LAMP_EVERY, LAMP_H, LAMP_ARM = 30.0, 9.0, 1.6  # metres between lamps, their height and arm
-TREE_EVERY = 12.0
 MATCH = 0.7  # the share of a paired ribbon's points that must lie on a stretch's named edges
 ACROSS = 45.0  # metres: a boulevard's median between its carriageways' centrelines is narrower than this
 ROTONDA_Z = 3500.0  # the Ciudad Deportiva's roundabout on Boyeros: the paseo north of it, the wall south
@@ -131,21 +130,10 @@ def _lamp(q, d, y) -> tuple[list, list]:
     return body, heads
 
 
-def _tree(q, y) -> tuple[list, list]:
-    """A street tree at q on y: (trunk, crown), as triangles of contravia.rules.trees' template at 0.7 size."""
-    from contravia.rules.trees import _template
-
-    out = []
-    for pos, _, idx in _template():
-        t = pos[idx] * 0.7 + np.array([q[0], y, q[1]])
-        out.append(list(t))
-    return out[0], out[1]
-
-
 def build(ribbons, owner, axes, chains, terrain, a):
     """(tris (T, 3, 3), paint (T,), cell keys (T, 2), walls (W, 6), wall keys (W, 2)) of every median."""
     from contravia.streets import _level, cut, densify, length, tangents
-    from contravia.structures import CONCRETE, KERB_TOP, LAMPS, LEAVES, PAVING, POLE, TRUNK
+    from contravia.structures import CONCRETE, KERB_TOP, LAMPS, PAVING, POLE
 
     which = kinds(a, chains)
     tris, paint, walls = [], [], []
@@ -176,12 +164,6 @@ def build(ribbons, owner, axes, chains, terrain, a):
                 add(heads, LAMPS)
         elif kind == "paseo":
             add(_strip(p, y, PASEO_W / 2, PASEO_H), PAVING)
-            s = np.concatenate([[0], np.cumsum(np.hypot(*np.diff(p, axis=0).T))])
-            for at in np.arange(TREE_EVERY / 2, s[-1], TREE_EVERY):
-                i = min(int(np.searchsorted(s, at)), len(p) - 1)
-                trunk, crown = _tree(p[i], y[i] + PASEO_H)
-                add(trunk, TRUNK)
-                add(crown, LEAVES)
         else:
             add(_strip(p, y, WALL_W / 2, WALL_H), CONCRETE)
             t = tangents(p)

@@ -43,7 +43,7 @@ def _features(raw):
             continue
         rings.append(ring)
         ids.append(osm_id)
-    trees = [_local(raw.trees)] if raw.trees else []
+    trees = []  # OSM tree points are left out, as in contravia.prepare
     s, w, n, e = HAVANA_BOX
     for osm_id, ring in raw.green:
         if not all(s <= lat <= n and w <= lon <= e for lat, lon in ring):

@@ -69,3 +69,11 @@ def test_heights_from_glo30_tiles_reach_the_city_data(tmp_path):
     report = main(FIX, tmp_path / "city.npz", dem=dem)
     assert report["heights_m"] == [12.0, 12.0]
     assert np.isclose(CityData.load(tmp_path / "city.npz").terrain.height(0.0, 0.0), 12.0)
+
+
+def test_a_tree_never_stands_on_a_road():
+    from contravia.prepare import on_road
+
+    roads = np.array([[0.0, 0.0, 100.0, 0.0, 10.0]])  # 10 m wide along z = 0
+    pts = np.array([[50.0, 0.0], [50.0, 5.5], [50.0, 6.5], [150.0, 0.0]])
+    assert on_road(pts, roads).tolist() == [True, True, False, False]
