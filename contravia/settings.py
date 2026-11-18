@@ -85,9 +85,9 @@ class FreeDrive:
         hours = [(f"{h:02d}:{m:02d}", (h, m)) for h in range(24) for m in (0, 30)]
         rows = [
             Choice("place", "Lugar", places, help="Dónde arranca el carro: en la calle más cercana al lugar."),
-            Choice("vehicle", "Vehículo", [("Sedán", "sedan")],
-                   help="Por ahora hay un solo carro. El almendrón, el Lada, el triciclo, la moto y la "
-                        "metroguagua llegan más adelante."),
+            Choice("vehicle", "Vehículo", [("Sedán", None)],
+                   help="El vehículo que manejas: cualquiera del Garaje, tus diseños también. En el Garaje los "
+                        "ves girar y los cambias."),
             Choice("hour", "Hora", hours, help="La hora a la que arranca el reloj del juego."),
             Choice("day", "Día", list(DAYS), help="El día de la semana: el tráfico de un domingo no es el de un "
                                                   "martes."),
