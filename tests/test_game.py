@@ -33,13 +33,13 @@ def test_teleport_far_keeps_precision_and_sea_reports(city, city_npz, island_dir
     import numpy as np
 
     from contravia.game import Game
-    from contravia.tiles import Tiles
     from contravia.world import World
 
-    os.environ["HAVANA_TILES"] = str(island_dir)
+    old = os.environ["HAVANA_DATA"]
+    os.environ["HAVANA_DATA"] = str(island_dir)
     try:
         engine = mx.Engine("far", width=64, height=48)
-        game = Game(engine, World(city, Tiles(island_dir)))
+        game = Game(engine, World.load(island_dir))
         game.teleport(900_300.0, 0.0)
         t0 = time.monotonic()
         while time.monotonic() - t0 < 60:  # the builders are other processes: wait for the first node
@@ -62,8 +62,9 @@ def test_teleport_far_keeps_precision_and_sea_reports(city, city_npz, island_dir
         game.streamer.close()
         if game.layer:
             game.runner.stop()
+        assert game.city.focused == "Artemisa" or game.city.focus(game.car.x, game.car.z) is False
     finally:
-        del os.environ["HAVANA_TILES"]
+        os.environ["HAVANA_DATA"] = old
 
 
 def test_a_reload_drives_on_from_the_same_place_and_stops_the_old_game(city):
@@ -110,3 +111,16 @@ def test_slow_frames_raise_tau_and_fast_ones_lower_it(city):
         game._tune()
     assert game.streamer.tau == g.TAU[1]
     game.streamer.close()
+
+
+def test_a_game_can_start_in_another_province(island_dir):
+    import manifoldx as mx
+
+    from contravia.game import Game
+    from contravia.world import World
+
+    engine = mx.Engine("start-far", width=64, height=48)
+    game = Game(engine, World.load(island_dir), at=(900_000.0, 0.0))
+    assert game.city.focused == "Artemisa" and abs(game.car.x - 900_000.0) < 100
+    game.streamer.close()
+    game.detail.close()

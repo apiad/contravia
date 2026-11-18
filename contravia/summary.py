@@ -5,7 +5,7 @@ built on it, the mean height, colour and storeys of what stands there, the area 
 number of trees, plus the roads wide enough to read at the node's size. Heights, colours and storeys come from
 the same facade plans the cells build (rules/facades.py), so a building far away keeps the height and colour
 it has up close, and the square's box carries the facade of its dominant type. A parent's summary is pooled from its four children's, two by two squares into one, so
-`contravia tiles` summarizes each leaf from its cells once and pools from there up to the root. summary_mesh turns
+`contravia.world.index` summarizes each leaf from its cells once and pools from there up to the root. summary_mesh turns
 a summary into at most 16 x 16 boxes, their ground and the roads, a few thousand triangles whatever the node
 holds.
 """
@@ -19,7 +19,7 @@ from contravia.mesh import MeshBuilder, signed_area
 from contravia.rules import facades
 from contravia.rules.ground import GROUND, SEA, relief
 from contravia.rules.roads import ROAD
-from contravia.rules.trees import LEAVES
+from contravia.rules.trees import TREE_EVERY, far_green, today
 
 GRID = 16
 FILLER_SHARE = 0.6  # the share of a filler block's area its boxes cover, at the mean filler height
@@ -77,6 +77,12 @@ def summarize(cells: list[tuple[int, int, Cell]], L: int, a: int, b: int, origin
         if len(c.trees):
             sq = _square_of(c.trees, L, a, b, origin)
             np.add.at(green, (sq[:, 1], sq[:, 0]), 1.0)
+        if c.green_tris is not None and len(c.green_tris):  # the trees the green grows, counted by area
+            t = np.asarray(c.green_tris, float)
+            u, v = t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]
+            area = np.abs(u[:, 0] * v[:, 1] - u[:, 1] * v[:, 0]) / 2
+            sq = _square_of(t.mean(axis=1), L, a, b, origin)
+            np.add.at(green, (sq[:, 1], sq[:, 0]), area / TREE_EVERY)
         if len(c.roads):
             roads.append(np.asarray(c.roads, np.float32))
     return _finish(built, hsum, csum, ssum, types, green, roads, L)
@@ -160,9 +166,10 @@ def summary_mesh(s: dict, L: int, a: int, b: int, origin, terrain=None) -> MeshD
     cx, cz = x0 + (cols + 0.5) * sq, z0 + (rows + 0.5) * sq
     ys = terrain.height(cx, cz) if terrain is not None else np.zeros(len(cx))
     leaf_share = np.minimum(green[rows, cols] * 60.0 / (sq * sq), 1.0)  # a tree shades about 60 m²
+    leaves = far_green(today())
     for r, c, x, z, y, g in zip(rows, cols, cx, cz, ys, leaf_share, strict=True):
         h = sq / 2
-        colour = tuple(np.add(np.multiply(GROUND, 1 - g), np.multiply(LEAVES, g)))
+        colour = tuple(np.add(np.multiply(GROUND, 1 - g), np.multiply(leaves, g)))
         mb.add([(x - h, y - BELOW, z - h), (x + h, y - BELOW, z - h), (x + h, y - BELOW, z + h),
                 (x - h, y - BELOW, z + h)], [(0, 1, 0)] * 4, colour, [(0, 1, 2), (0, 2, 3)])
         if built[r, c] > 0:

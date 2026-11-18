@@ -37,9 +37,47 @@ class Cell:
     street_roofs: np.ndarray | None = None  # (R, 3, 3) tunnel roofs, from below
     walk_tris: np.ndarray | None = None  # (W, 3, 3) pavements and building platforms (contravia.walks)
     walk_paint: np.ndarray | None = None  # (W,) the contravia.walks paint of each
+    green_tris: np.ndarray | None = None  # (G, 3, 2) green the cell grows trees on when it opens
+    green_seeds: np.ndarray | None = None  # (G,) the seed of each: its green area's OSM id
     park_tris: np.ndarray | None = None  # (P, 3, 3) the parks' motifs, lakes and lamps (contravia.props)
     park_paint: np.ndarray | None = None  # (P,) their contravia.structures paint
     park_walls: np.ndarray | None = None  # (W, 6) the motifs' walls, as struct_walls rows
+
+    @classmethod
+    def join(cls, parts: list[Cell]) -> Cell:
+        """One cell from the features of several (a cell on a province border): lists and arrays end to end,
+        and each part's municipio indexes moved past the names before it."""
+        from dataclasses import fields
+
+        from contravia.buildingtags import HEIGHT, LEVELS, MUNI
+
+        out = cls()
+        names: list = []
+        attrs = []
+        tagged = next((p.building_attrs for p in parts if p.building_attrs is not None), None)
+        for p in parts:
+            if p.building_attrs is not None:
+                a = np.array(p.building_attrs, copy=True)
+                a[:, MUNI] = np.where(a[:, MUNI] >= 0, a[:, MUNI] + len(names), -1)
+                attrs.append(a)
+            elif tagged is not None:  # data without tags beside data with them: rows that say nothing
+                a = np.zeros((len(p.buildings), tagged.shape[1]), tagged.dtype)
+                a[:, [LEVELS, HEIGHT]], a[:, MUNI] = np.nan, -1
+                attrs.append(a)
+            names.extend(p.muni_names)
+        for fl in fields(cls):
+            if fl.name in ("building_attrs", "muni_names"):
+                continue
+            vals = [getattr(p, fl.name) for p in parts]
+            if isinstance(vals[0], list):
+                setattr(out, fl.name, [v for vs in vals for v in vs])
+            elif all(v is None for v in vals):
+                setattr(out, fl.name, None)
+            else:
+                setattr(out, fl.name, np.concatenate([v for v in vals if v is not None]))
+        out.building_attrs = np.concatenate(attrs) if attrs else None
+        out.muni_names = tuple(names)
+        return out
 
 
 def _rings_to_arrays(rings):
@@ -124,7 +162,7 @@ class CityData:
     def save(self, path) -> None:
         """Write the arrays to an uncompressed .npz, so loading can map them from disk."""
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        np.savez(path, **self.a)
+        np.savez_compressed(path, **self.a)  # a third of the size; a province loads in about half a second
 
     @classmethod
     def load(cls, path) -> "CityData":
@@ -181,6 +219,10 @@ class CityData:
                 if name in self.a:
                     m0, m1 = self._span(name, k)
                     streets[name] = self.a[name][m0:m1]
+        for name in ("green_tris", "green_seeds"):
+            if name in self.a:
+                g0, g1 = self._span(name, k)
+                streets[name] = self.a[name][g0:g1]
         return Cell(
             roads=self.a["roads"][r0:r1],
             buildings=self._rings("building", b0, b1),

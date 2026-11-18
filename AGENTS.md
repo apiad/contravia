@@ -1,31 +1,37 @@
 # Contravía
 
-An open-world driving game in a real-size Havana, generated while you drive from OpenStreetMap data and building
+An open-world driving game in a real-size Cuba, generated while you drive from OpenStreetMap data and building
 rules per zone, on manifoldx, for the desktop. It is a technical demo for students and a stress test for manifoldx.
 
 - The design is `docs/superpowers/specs/2026-11-13-havana-driver-design.html`; plans are in `docs/superpowers/plans/`.
 - The commercial name is Contravía; its brand (colours, fonts, logo, poster, how to make panels with klein) is in `branding/` and `know-how/branding.md`; the SVG icons, logo, palette and fonts the game draws are in `assets/`, written by `assets/build.py`; the approved UX (menus, free drive, map, options, pause, HUD, first run, icons) is `docs/ux/contravia-ux.html`.
-- `contravia prepare <cuba-latest.osm.pbf>` writes `data/havana.npz`; `contravia play` drives; `contravia bench` drives a
-  fixed route and appends its numbers to `bench/history.jsonl`. `contravia source <pbf> --dem DIR` packs the extract
-  and the DEM tiles into the compact `data/havana.src` the first run builds the city from; pack it again whenever
+- The game is always the whole island; there is no Havana-only build. `contravia prepare <cuba-latest.osm.pbf>`
+  builds each of the 16 provinces (`contravia.geo.PROVINCES`, La Habana first) into `data/cuba/<slug>.npz` with the same
+  pipeline (`--province` for one, `--resume` to go on); `contravia/world.py` joins them lazily, with `index.npz` and
+  `summary/` written on first load. `contravia play` drives; `contravia bench` drives a fixed route and appends its
+  numbers to `bench/history.jsonl`. The whole island takes about 25 minutes on the GPU machine.
+- `contravia prepare ... --dem DIR` adds the ground's heights from the Copernicus GLO-30 tiles, downloaded into DIR
+  from `https://copernicus-dem-30m.s3.amazonaws.com/<name>/<name>.tif` as needed and sampled through the island's
+  projection (`terrain.read_terrain`): 30 m in La Habana, 90 m elsewhere. Without it the island is flat.
+- `contravia source <pbf> --dem DIR` packs one `data/cuba-src/<slug>.src` per province, which the game ships; the first
+  run (`contravia/firstrun.py`, `contravia build`) builds the island from them into the player's home, each province in
+  its own process and several at once: about 19 minutes and 6 GB with three at once on the GPU machine. Pack the sources again whenever
   `contravia.source.VERSION` changes.
-- `contravia prepare ... --dem DIR` adds the ground's heights from the Copernicus GLO-30 tiles
-  `Copernicus_DSM_COG_10_N22_00_W083_00_DEM` and `..._N23_00_W083_00_DEM`, each fetched with `curl -L` from
-  `https://copernicus-dem-30m.s3.amazonaws.com/<name>/<name>.tif`. Without it the city is flat.
-- `contravia tiles <cuba-latest.osm.pbf> --out data/cuba` writes the whole island as quadtree tiles (`contravia/tiles.py`):
-  one CityData per leaf and a summary per coarser node, flat and with no traffic outside Havana.
+- Trees in parks, woods and meadows are not stored: each green area is kept as triangles per cell and its trees grow
+  when the cell opens (`rules.trees.in_green`), the same every time.
 - `contravia dev` takes the options of `contravia play` and runs it under manifoldx's hot reload: a saved file in
   `contravia/` rebuilds the game in the same window in about 3 s, with the car where it was (`engine.state.car`).
   Results that take seconds and depend only on their inputs (car meshes, traffic tables) survive a save through
   `contravia/kept.py`; the game stops its builders and its traffic thread on `shutdown`.
-- `contravia play --tiles data/cuba` drives anywhere on the island (`manifoldx emit teleport lat=20.02 lon=-75.83`);
-  `contravia bench --tiles data/cuba` adds the scenes of `bench/cuba.json` after the Havana route: a teleport to
-  Santiago, a hill view over Havana and a 300 m flight toward Santa Clara, each with frame times, nodes and triangles.
+- `contravia play` drives anywhere on the island (`manifoldx emit teleport lat=20.02 lon=-75.83`); the traffic runs on
+  the graph of the province the car is in and starts over when it crosses into another.
+  `contravia bench` adds the scenes of `bench/cuba.json` after the Havana route when the world holds several
+  provinces: a teleport to Santiago, a hill view over Havana and a 300 m flight toward Santa Clara.
 - `contravia prepare` also builds the road graph traffic drives on (g_* arrays); data from before layer 2 plays with no traffic.
 - `contravia prepare` then builds the street surface from that graph (`contravia/streets.py`): avenues' two carriageways
   joined, junctions merged and rounded, one flat height per junction, cut per cell and triangulated. The cells draw
   it and the wheels stand on the same triangles (`contravia/surface.py`). `contravia streets` rebuilds it in an existing
-  data file in about 3 minutes, without reading OSM again. Data without it, and the island's tiles, draw the old
+  data file in about 3 minutes, without reading OSM again. Data without it draws the old
   per-segment ribbons.
 - Bridges and tunnels come from OSM's bridge, tunnel and layer tags (`g_layer`): each level of streets is built
   apart, a bridge stands 6 m over what it crosses, a tunnel runs 8 m under the ground or 14 m under the sea, and the
@@ -41,6 +47,10 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   Prado and wild parks outside the city, some with a lake. `contravia/props.py` builds their motifs as `park_tris`, the
   car hits `park_walls`, and `contravia walks` rebuilds them with the pavements. Land OSM tags as a cemetery, industry,
   a school or a sports ground never becomes a park.
+- No tree's look is stored (`contravia/rules/trees.py`, `contravia/rules/species.py`, spec
+  `docs/superpowers/specs/2026-11-18-trees-design.html`): when a cell opens, `cell_trees` gives each tree a species
+  from its zone, its park and a seed from its position, and `draw` colours it for the game's date (flowering, autumn
+  leaves, bare in the dry season). The car hits the trunks of the same trees (`walls.py`).
 - `contravia play` opens on the main menu (`contravia/menu.py`, drawn as `docs/ux/contravia-ux.html` shows): Story and the
   Cuba map are "próximamente", Free drive sets place, time, day, weather, traffic and clock speed
   (`contravia/settings.py`), Esc pauses, and the options are kept in the user's config folder

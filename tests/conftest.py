@@ -22,8 +22,8 @@ def city(city_npz):
 
 
 @pytest.fixture(scope="session")
-def island_dir(tmp_path_factory, city):
-    """The island's tiles of tests/test_world.py, for the game tests."""
+def island_dir(tmp_path_factory, city_npz, city):
+    """The two-province island of tests/test_world.py, for the game tests."""
     from tests.test_world import island
 
-    return island.__wrapped__(tmp_path_factory, city)
+    return island.__wrapped__(tmp_path_factory, city_npz, city)[0]

@@ -276,7 +276,7 @@ def build(a, terrain) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
         dense = (area > 10) & (built > np.where(centre, CENTRE_DENSE, DENSE) * np.maximum(area, 1e-9))
         dense |= (area > 10) & boulevard(a, blocks)  # Paseo, Prado, 5ta: paved between the carriageways
         if laid:  # a park's block is paved by its layout below
-            dense &= ~shapely.contains(shapely.union_all([shapely.Polygon(r) for r in park_rings]),
+            dense &= ~shapely.contains(shapely.union_all(shapely.make_valid([shapely.Polygon(r) for r in park_rings])),
                                        shapely.point_on_surface(blocks))
         in_dense[fk[dense[bk]]] = True
         keep = dense[bi]

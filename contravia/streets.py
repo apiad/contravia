@@ -1028,15 +1028,21 @@ def _on(tris, xz, fallback):
     det = u[:, 0] * v[:, 1] - v[:, 0] * u[:, 1]
     ok = np.abs(det) > 1e-9
     a, u, v, det, y = a[ok], u[ok], v[ok], det[ok], tris[ok][:, :, 1]
-    d = xz[:, None, :] - a[None]
-    b1 = (d[..., 0] * v[:, 1] - d[..., 1] * v[:, 0]) / det
-    b2 = (u[:, 0] * d[..., 1] - u[:, 1] * d[..., 0]) / det
+    # Only the pairs of a point and a triangle whose box (with a margin over the tolerance below) holds it: a
+    # long highway has thousands of points and triangles, and every pair would take gigabytes.
+    xy = tris[ok][:, :, [0, 2]]
+    lo, hi = xy.min(axis=1) - 0.5, xy.max(axis=1) + 0.5
+    pi, ti = STRtree(shapely.box(lo[:, 0], lo[:, 1], hi[:, 0], hi[:, 1])).query(shapely.points(xz))
+    d = xz[pi] - a[ti]
+    b1 = (d[:, 0] * v[ti, 1] - d[:, 1] * v[ti, 0]) / det[ti]
+    b2 = (u[ti, 0] * d[:, 1] - u[ti, 1] * d[:, 0]) / det[ti]
     inside = (b1 > -1e-4) & (b2 > -1e-4) & (b1 + b2 < 1 + 1e-4)
+    pi, ti, b1, b2 = pi[inside], ti[inside], b1[inside], b2[inside]
+    first = np.lexsort((ti, pi))  # a point on several triangles takes the first, as it always has
+    first = first[np.r_[True, pi[first][1:] != pi[first][:-1]]] if len(first) else first
+    p, t, w1, w2 = pi[first], ti[first], b1[first], b2[first]
     out = np.array(fallback, float)
-    hit = inside.any(axis=1)
-    t = inside.argmax(axis=1)[hit]
-    w1, w2 = b1[hit, t], b2[hit, t]
-    out[hit] = (1 - w1 - w2) * y[t, 0] + w1 * y[t, 1] + w2 * y[t, 2]
+    out[p] = (1 - w1 - w2) * y[t, 0] + w1 * y[t, 1] + w2 * y[t, 2]
     return out
 
 

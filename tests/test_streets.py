@@ -128,3 +128,34 @@ def test_a_side_lane_beside_an_avenue_stays_straight_through_its_corners():
         assert side, f"no side street at z = {z}"
         for p in side:
             assert np.abs(p[:, 1] - z).max() < 0.5, f"the side street at z = {z} bends by {np.abs(p[:, 1] - z).max():.1f} m"
+
+
+def _on_every_pair(tris, xz, fallback):
+    """_on as it was: every point against every triangle, the first that holds it."""
+    a = tris[:, 0, [0, 2]]
+    u, v = tris[:, 1, [0, 2]] - a, tris[:, 2, [0, 2]] - a
+    det = u[:, 0] * v[:, 1] - v[:, 0] * u[:, 1]
+    ok = np.abs(det) > 1e-9
+    a, u, v, det, y = a[ok], u[ok], v[ok], det[ok], tris[ok][:, :, 1]
+    d = xz[:, None, :] - a[None]
+    b1 = (d[..., 0] * v[:, 1] - d[..., 1] * v[:, 0]) / det
+    b2 = (u[:, 0] * d[..., 1] - u[:, 1] * d[..., 0]) / det
+    inside = (b1 > -1e-4) & (b2 > -1e-4) & (b1 + b2 < 1 + 1e-4)
+    out = np.array(fallback, float)
+    hit = inside.any(axis=1)
+    t = inside.argmax(axis=1)[hit]
+    w1, w2 = b1[hit, t], b2[hit, t]
+    out[hit] = (1 - w1 - w2) * y[t, 0] + w1 * y[t, 1] + w2 * y[t, 2]
+    return out
+
+
+def test_paint_heights_match_every_pair_without_building_every_pair():
+    from contravia.streets import _on
+
+    rng = np.random.default_rng(7)
+    corners = rng.uniform(0, 100, (400, 1, 2)) + rng.uniform(-6, 6, (400, 3, 2))  # small triangles, many overlap
+    tris = np.stack([corners[..., 0], rng.uniform(0, 5, (400, 3)), corners[..., 1]], axis=-1)
+    tris[5] = tris[4][[0, 1, 1]]  # a degenerate one, skipped
+    xz = np.vstack([rng.uniform(-5, 105, (3000, 2)), tris[:50, 0, [0, 2]], (tris[:50, 0] + tris[:50, 1])[:, [0, 2]] / 2])
+    fallback = rng.uniform(0, 1, len(xz))
+    assert np.array_equal(_on(tris, xz, fallback), _on_every_pair(tris, xz, fallback))

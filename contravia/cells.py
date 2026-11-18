@@ -2,15 +2,12 @@
 
 manifoldx's QuadStreamer calls build_node in a worker process for each node it picks. A level-0 node is
 one cell, built in full by the rules; a coarser node is its summary's boxes, ground and roads
-(contravia/summary.py). The world is loaded once per process from the files named by HAVANA_DATA and,
-for the rest of the island, HAVANA_TILES, and every rule adds its parts to one
-MeshBuilder, so a cell is one mesh and one draw call. Buildings, filler and trees a landmark replaces or
+(contravia/summary.py). The world is loaded once per process from HAVANA_DATA (the island's folder of
+provinces, contravia/world.py), and every rule adds its parts to one MeshBuilder, so a cell is one mesh and one draw call. Buildings, filler and trees a landmark replaces or
 clears are left out; the landmarks themselves are drawn once by the game, not per cell.
 """
 
 import os
-
-import numpy as np
 
 from contravia.clearance import boxes, roads_around
 from contravia.geo import CELL
@@ -28,9 +25,9 @@ _landmarks: Landmarks | None = None
 
 
 def city() -> World:
-    """The world of this process, loaded on first use from HAVANA_DATA and HAVANA_TILES (if set)."""
+    """The world of this process, loaded on first use from HAVANA_DATA: the island's folder or one province."""
     global _city, _city_path, _landmarks
-    path = (os.environ.get("HAVANA_DATA", "data/havana.npz"), os.environ.get("HAVANA_TILES") or None)
+    path = (os.environ.get("HAVANA_DATA", "data/cuba"),)
     if _city is None or path != _city_path:
         _city, _city_path = World.load(*path), path
         _landmarks = Landmarks(_city)
@@ -66,13 +63,7 @@ def build(i: int, j: int):
         portals = facades.portal_walls(ring, near) if plan.portal else None
         if not buildings.box(mb, ring, style_id, base=seat(ring, terrain), plan=plan, portals=portals):
             SKIPPED_ROOFS += 1
-    standing = c.trees[trees.off_streets(c.trees, c.street_tris)]
-    trees.trees(mb, standing, terrain.height(standing[:, 0], standing[:, 1]))
-    if not (len(c.buildings) or len(c.fillers) or len(c.trees)):  # land OSM says nothing about
-        spots, size, tone = trees.wild(i, j, terrain, roads_around(city(), i, j))
-        keep = trees.off_streets(spots, c.street_tris)
-        spots, size, tone = spots[keep], np.asarray(size)[keep], np.asarray(tone)[keep]
-        trees.trees(mb, spots, terrain.height(spots[:, 0], spots[:, 1]), size, tone)
+    trees.draw(mb, trees.cell_trees(i, j, c, terrain, near, trees.arrays_of(city(), i, j)), trees.today())
     return mb.to_meshdata(x0, z0)
 
 

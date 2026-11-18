@@ -69,9 +69,26 @@ def test_heights_from_glo30_tiles_reach_the_city_data(tmp_path):
     for lat in (22, 23):
         tifffile.imwrite(dem / _tile_name(lat, -83), np.full((36, 36), 12.0, np.float32),
                          predictor=3, compression="deflate")
-    report = main(FIX, tmp_path / "city.npz", dem=dem)
-    assert report["heights_m"] == [12.0, 12.0]
-    assert np.isclose(CityData.load(tmp_path / "city.npz").terrain.height(0.0, 0.0), 12.0)
+    report = main(FIX, tmp_path / "cuba", dem=dem, provinces=["La Habana"])["La Habana"]
+    assert report["heights_m"][1] == 12.0  # the lowest is the sea the Malecón's wall carves, -2 m
+    assert np.isclose(CityData.load(tmp_path / "cuba" / "la-habana.npz").terrain.height(0.0, 0.0), 12.0)
+
+
+def test_the_relief_far_away_follows_the_projection_not_a_degree_grid(tmp_path):
+    """Near Santiago the meridians turn about 3 degrees against the local axes: a height read through the
+    projection lands on the right tile's sample, where a degree grid scaled at the Capitolio misses by kilometres."""
+    import tifffile
+
+    from contravia.geo import to_local
+    from contravia.terrain import _tile_name, read_terrain
+
+    n = 360  # 10 arc-seconds a sample
+    grid = np.zeros((n, n), np.float32)
+    grid[:, n // 2:] = 100.0  # the tile's east half, from -75.5 degrees, stands at 100 m
+    tifffile.imwrite(tmp_path / _tile_name(20, -76), grid)
+    t = read_terrain(tmp_path, (20.2, -75.8, 20.8, -75.2), stride=1, fetch=False)
+    west, east = to_local(np.array([20.5, 20.5]), np.array([-75.55, -75.45]))
+    assert t.height(*west) < 1.0 and t.height(*east) > 99.0
 
 
 def test_a_tree_never_stands_on_a_road():

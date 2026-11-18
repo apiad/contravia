@@ -1,4 +1,4 @@
-"""The first run's window, as docs/ux/contravia-ux.html draws it ("Primera vez"): "Construyendo La Habana" over
+"""The first run's window, as docs/ux/contravia-ux.html draws it ("Primera vez"): "Construyendo Cuba" over
 a dark poster panel, the four steps, a bar for the whole build, the time left and the disk it will take.
 
 It runs before the game, in its own window: the game cannot open until the city exists. contravia.firstrun
@@ -93,7 +93,7 @@ class BuildScreen:
         self.panels.append(self.fill)
         self.left, self.right = _text(" ", ui.BOLD, 16, ui.PAPER), _text(" ", ui.BOLD, 16, ui.PAPER)
         self.panels.append(Panel([self.left], anchor="top-left", offset=(x, TOP + 196),
-                                 style_overrides={**CLEAR, "width": FRAME_W // 2, "height": 24}))
+                                 style_overrides={**CLEAR, "width": FRAME_W - 230, "height": 24}))
         self.panels.append(Panel([self.right], anchor="top-left", offset=(x + FRAME_W - 220, TOP + 196),
                                  style_overrides={**CLEAR, "width": 220, "height": 24}))
         self.note = _text(" ", ui.BOLD, 16, ui.GREY)
@@ -134,7 +134,9 @@ class BuildScreen:
         self.fill.style_overrides = {**self.fill.style_overrides, "width": w}
         self.fill_img.style_overrides = {**self.fill_img.style_overrides, "width": w}
         if state == "running":
-            self.left.text = f"{b.overall:.0%} EN TOTAL · PASO {b.step + 1} DE {len(STEPS)}".replace("%", " %")
+            where = (f"{b.province.upper()} · {b.p + 1} DE {len(b.provinces)}" if b.p < len(b.provinces)
+                     else "RESUMEN DE LA ISLA")
+            self.left.text = f"{where} · {b.overall:.0%} EN TOTAL".replace("%", " %")
             self.right.text = f"quedan unos {_minutes(b.eta)}"
 
     def _layout(self, state: str) -> None:
@@ -144,7 +146,7 @@ class BuildScreen:
         b = self.build
         self._shown = state
         if state == "done":
-            self.title.text = "LA HABANA ESTÁ LISTA"
+            self.title.text = "CUBA ESTÁ LISTA"
             self._say(" ")
             took = time.perf_counter() - b._t0
             self.left.text = f"Construida en {_minutes(took)} · {b.mb:.0f} MB en disco. No hace falta repetirlo."
@@ -155,12 +157,12 @@ class BuildScreen:
             self.stripe.style_overrides = {**self.stripe.style_overrides, "width": 360, "height": 72}
             hints = [("ENTER", "Jugar")]
         elif state == "error":
-            self.title.text = "ACTUALIZANDO LA HABANA" if b.updating else "CONSTRUYENDO LA HABANA"
+            self.title.text = "ACTUALIZANDO CUBA" if b.updating else "CONSTRUYENDO CUBA"
             self._say(f"Algo falló: {b.error}")
             self.note.text = "Vuelve a abrir el juego: sigue en el paso donde iba."
             hints = [("ESC", "Salir")]
         else:
-            self.title.text = "ACTUALIZANDO LA HABANA" if b.updating else "CONSTRUYENDO LA HABANA"
+            self.title.text = "ACTUALIZANDO CUBA" if b.updating else "CONSTRUYENDO CUBA"
             self._say(SUB)
             self.note.text = "Si cierras el juego, la próxima vez sigue en el paso donde iba."
             hints = [("ESC", "Pausar y salir")]

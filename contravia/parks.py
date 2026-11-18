@@ -619,6 +619,7 @@ def add_to(city) -> dict:
     park_tris, park_paint and park_walls. Returns counts."""
     from contravia import props
     from contravia.geo import CELL
+    from contravia.streets import pmap
     from contravia.walks import KERB, PATH_LIFT, StreetHeights, _ground_streets
 
     for k in ("park_tris", "park_paint", "park_walls"):
@@ -631,10 +632,12 @@ def add_to(city) -> dict:
     heights = StreetHeights(_ground_streets(city.a, terrain), terrain)
     ground = lambda xy: terrain.height(np.asarray(xy, float).reshape(-1, 2)[:, 0], np.asarray(xy, float).reshape(-1, 2)[:, 1])
     top = lambda xy, lift: heights.top(np.asarray(xy, float).reshape(-1, 2), np.full(len(np.asarray(xy).reshape(-1, 2)), lift))
-    p = props.Props()
-    count = {"benches": 0, "lakes": 0, "boats": 0, "motifs": 0}
-    for park, _ in parks_:
-        on_plaza = {"glorieta", "fountain", "bust"}
+
+    on_plaza = {"glorieta", "fountain", "bust"}
+
+    def one(park):
+        """One park's motifs in their own Props, and its counts."""
+        p, c = props.Props(), {"benches": 0, "lakes": 0, "boats": 0, "motifs": 0}
         for name, x, z, size, head in park.motifs:
             y = float(top([x, z], PATH_LIFT)[0] if name in on_plaza else ground([x, z])[0])
             if name == "glorieta":
@@ -645,14 +648,14 @@ def add_to(city) -> dict:
                 props.bust(p, (x, z), head, y)
             else:
                 getattr(props, name)(p, (x, z), head, y)
-            count["motifs"] += 1
+            c["motifs"] += 1
         if len(park.benches):
             ys = ground(park.benches[:, :2]) if park.kind in (CITY, ORGANIC) else top(park.benches[:, :2], PATH_LIFT)
             if park.kind == PRADO:
                 ys = top(park.benches[:, :2], KERB)
             for (x, z, face), y in zip(park.benches, ys, strict=True):
                 props.bench(p, (x, z), face, float(y))
-            count["benches"] += len(park.benches)
+            c["benches"] += len(park.benches)
         if len(park.lamps):
             lift = KERB if park.kind in (CITY, PASEO, PRADO) else 0.0
             for (x, z, _), y in zip(park.lamps, top(park.lamps[:, :2], lift), strict=True):
@@ -668,8 +671,23 @@ def add_to(city) -> dict:
                 props.pier(p, lk.pier[0], lk.pier[1], yw)
             for k, (x, z, head) in enumerate(lk.boats):
                 props.boat(p, (x, z), head, yw, k)
-            count["lakes"] += 1
-            count["boats"] += len(lk.boats)
+            c["lakes"] += 1
+            c["boats"] += len(lk.boats)
+        return p, c
+
+    # The street height rasters every park needs, painted now: top() paints the missing ones on the thread pool,
+    # which one() already runs on.
+    xz = [np.asarray(m[1:3], float) for park, _ in parks_ for m in park.motifs]
+    xz += [r[:2] for park, _ in parks_ for r in (*park.benches, *park.lamps)]
+    if xz:
+        heights.top(np.array(xz, float).reshape(-1, 2), 0.0)
+    done = pmap(one, [park for park, _ in parks_], chunk=8)
+    p = props.Props()
+    for q, _ in done:
+        p.tris += q.tris
+        p.paint += q.paint
+        p.walls += q.walls
+    count = {k: sum(c[k] for _, c in done) for k in ("benches", "lakes", "boats", "motifs")}
     tris = np.array(p.tris, np.float32).reshape(-1, 3, 3)
     paint = np.array(p.paint, np.uint8)
     walls = np.array(p.walls, np.float32).reshape(-1, 6)
@@ -679,3 +697,60 @@ def add_to(city) -> dict:
     city.add_kind("park_paint", paint, keys)
     city.add_kind("park_walls", walls, wkeys)
     return {"parks_built": len(parks_), "park_layout_errors": len(FAILED), "park_triangles": len(tris), "park_walls": len(walls), **count}
+
+
+CEIBA_FROM, CEIBA_CHANCE = 10_000.0, 0.3  # m² and probability: a city park this big may have a ceiba in its plaza
+_LOOKUP: dict = {}
+
+
+def _lookup(a):
+    """(STRtree of the park rings, kinds, seeds, set of ceiba spots) for city arrays a, built once per array."""
+    import weakref
+
+    arr = a["park_verts"]
+    hit = _LOOKUP.get(id(arr))
+    if hit is not None and hit[0]() is arr:
+        return hit[1]
+    for k in [k for k, (ref, _) in _LOOKUP.items() if ref() is None]:  # provinces closed since
+        del _LOOKUP[k]
+    from contravia.rules.trees import point_seeds, unit
+
+    verts, starts = np.asarray(a["park_verts"], float), np.asarray(a["park_starts"])
+    polys = [Polygon(verts[starts[k]:starts[k + 1]]) for k in range(len(starts) - 1)]
+    kinds, seeds = np.asarray(a["park_kind"], int), np.asarray(a["park_seed"], np.int64)
+    tree = shapely.STRtree(polys)
+    ceibas = set()
+    pts = np.asarray(a.get("trees", np.zeros((0, 2))), float).reshape(-1, 2)
+    big = [k for k, p in enumerate(polys) if kinds[k] == KINDS.index("city") and p.area >= CEIBA_FROM
+           and unit(np.array([seeds[k]]).view(np.uint64), 7)[0] < CEIBA_CHANCE]
+    if big and len(pts):
+        ptree = shapely.STRtree(shapely.points(pts))
+        for k in big:
+            n = int(ptree.nearest(polys[k].centroid))
+            if polys[k].contains(shapely.Point(pts[n])):
+                ceibas.add(int(point_seeds(pts[n:n + 1])[0]))
+    _LOOKUP[id(arr)] = (weakref.ref(arr), (tree, kinds, seeds, ceibas))
+    return _LOOKUP[id(arr)][1]
+
+
+def of_points(a, xz) -> tuple[np.ndarray, np.ndarray]:
+    """The kind (an index into KINDS, 0 outside every park) and the seed of the park holding each (N, 2) point."""
+    xz = np.asarray(xz, float).reshape(-1, 2)
+    kind, seed = np.zeros(len(xz), int), np.zeros(len(xz), np.int64)
+    if "park_kind" not in a or not len(a["park_kind"]) or not len(xz):
+        return kind, seed
+    tree, kinds, seeds, _ = _lookup(a)
+    pi, ti = tree.query(shapely.points(xz), predicate="within")
+    kind[pi], seed[pi] = kinds[ti], seeds[ti]
+    return kind, seed
+
+
+def is_ceiba(a, xz) -> np.ndarray:
+    """Whether each (N, 2) point is the tree nearest the centre of a big city park chosen to grow a ceiba."""
+    xz = np.asarray(xz, float).reshape(-1, 2)
+    if "park_kind" not in a or not len(a["park_kind"]) or not len(xz):
+        return np.zeros(len(xz), bool)
+    from contravia.rules.trees import point_seeds
+
+    ceibas = _lookup(a)[3]
+    return np.array([int(s) in ceibas for s in point_seeds(xz)], bool)

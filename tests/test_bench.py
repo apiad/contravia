@@ -65,7 +65,7 @@ def test_play_takes_pipelining_off(monkeypatch):
 
     seen = {}
     monkeypatch.setattr(contravia.game, "main", lambda *a, **k: seen.update(k))
-    contravia.cli.main(["play"])
+    contravia.cli.main(["play", "--data", "data/cuba"])
     assert seen["pipelined"] is True
-    contravia.cli.main(["play", "--no-pipeline"])
+    contravia.cli.main(["play", "--data", "data/cuba", "--no-pipeline"])
     assert seen["pipelined"] is False

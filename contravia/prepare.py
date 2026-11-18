@@ -6,14 +6,16 @@ blocks that OSM left empty (they get filler boxes, or become parks: contravia.pa
 """
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 
 from contravia import buildingtags, parks
 from contravia.citydata import CityData
-from contravia.geo import HAVANA_BOX, cell_of, to_local
+from contravia.geo import CELL, HAVANA_BOX, cell_of, to_local
 from contravia.graph import build_graph, road_width
-from contravia.terrain import Terrain, clean, read_tiles
+from contravia.rules.trees import TREE_EVERY  # m² of green per tree; the trees grow when their cell opens
+from contravia.terrain import Terrain
 
 # Road width in metres by OSM highway class; anything not listed is not drivable and is dropped.
 WIDTHS = {
@@ -29,7 +31,6 @@ PLACES = ("suburb", "neighbourhood", "quarter")  # place values that name a barr
 
 MAX_SEGMENT = 50.0  # metres; longer segments are split so each piece lands in the cell it crosses
 MAX_BLOCK = 30_000.0  # m², 3 ha: bigger faces of the road network are not city blocks
-TREE_EVERY = 150.0  # m² of green area per scattered tree
 GREEN_ACROSS = 15.0  # metres: a green area narrower than this (2 area / perimeter) gets no scattered trees
 
 GREEN = {("leisure", "park"), ("landuse", "forest"), ("landuse", "grass"), ("landuse", "recreation_ground"),
@@ -379,6 +380,36 @@ def add_walks(city: CityData) -> dict:
     return {**walks.add_to(city), **parks.add_to(city)}
 
 
+def green_pieces(green) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Green areas, as (polygon, seed) in local metres, cut along the cell grid and triangulated: (T, 3, 2)
+    triangles, the seed of each and its (T, 2) cell."""
+    import shapely
+
+    tris, seeds, keys = [], [], []
+    for poly, seed in green:
+        if poly.is_empty:
+            continue  # all of it was a park
+        x0, z0, x1, z1 = poly.bounds
+        ii, jj = np.meshgrid(np.arange(np.floor(x0 / CELL), np.floor(x1 / CELL) + 1),
+                             np.arange(np.floor(z0 / CELL), np.floor(z1 / CELL) + 1))
+        ii, jj = ii.ravel().astype(np.int64), jj.ravel().astype(np.int64)
+        boxes = shapely.box(ii * CELL, jj * CELL, (ii + 1) * CELL, (jj + 1) * CELL)
+        shapely.prepare(poly)
+        pieces = shapely.intersection(boxes, poly)
+        for k in np.flatnonzero(~shapely.is_empty(pieces) & (shapely.area(pieces) > 1.0)):
+            for part in shapely.get_parts(pieces[k]):
+                if part.geom_type != "Polygon" or part.area <= 1.0:
+                    continue  # an edge or a corner the box only touches
+                for t in shapely.get_parts(shapely.constrained_delaunay_triangles(part)):
+                    c = shapely.get_coordinates(shapely.get_exterior_ring(t))[:3]
+                    if len(c) == 3:
+                        tris.append(c)
+                        seeds.append(seed)
+                        keys.append((ii[k], jj[k]))
+    return (np.array(tris, np.float32).reshape(-1, 3, 2), np.array(seeds, np.int64),
+            np.array(keys, np.int64).reshape(-1, 2))
+
+
 def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]:
     """The city data before its streets and walks: roads, buildings, fillers, trees, the road graph and the
     buildings' tags; and what report needs of the build: counts, the road segments and the building centres."""
@@ -428,23 +459,19 @@ def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]
     no_build = [p if p.is_valid else p.buffer(0) for p in no_build]
     fillers, seeds = choose_fillers(blocks, cents, no_build, shapely.STRtree(no_build))
 
-    # Trees: one per TREE_EVERY m² of green, seeded by the area's id. OSM's tree points are left out: they are
-    # mapped unevenly and stand in medians and on roads; the city's trees are procedural.
-    trees = []
+    # Green: the areas that grow trees, kept as triangles per cell; the trees themselves are seeded when the
+    # cell opens (rules.trees.in_green), so no tree is stored. OSM's tree points are left out: they are mapped
+    # unevenly and stand in medians and on roads.
+    green = []
     for osm_id, ring in raw.green:
         poly = Polygon(_local(ring))
         if not poly.is_valid or poly.area < TREE_EVERY or 2 * poly.area / poly.length < GREEN_ACROSS:
             continue  # a strip of grass in a median or along a road gets no trees
-        n = int(poly.area // TREE_EVERY)
-        rng = np.random.default_rng(abs(int(osm_id)))
-        x0, z0, x1, z1 = poly.bounds
-        got = []
-        while sum(len(g) for g in got) < n:
-            p = rng.uniform((x0, z0), (x1, z1), size=(2 * n, 2))
-            got.append(p[shapely.contains_xy(poly, p[:, 0], p[:, 1])])
-        trees.append(np.vstack(got)[:n])
-    trees = np.vstack(trees) if trees else np.zeros((0, 2))
-    trees = trees[inside(trees) & ~on_road(trees, roads)]
+        if province is not None and not province.contains(poly):
+            poly = poly.intersection(province)
+        if not poly.is_empty:
+            green.append((poly, abs(int(osm_id))))
+    trees = np.zeros((0, 2))
 
     graph = build_graph(raw.ways, raw.controls, raw.restrictions, raw.municipios, rings,
                         lambda lat, lon: to_local(lat, lon), WIDTHS, inside,
@@ -458,7 +485,8 @@ def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]
         keep = [k for k, sd in enumerate(seeds) if sd not in gone]
         fillers, seeds = [fillers[k] for k in keep], [seeds[k] for k in keep]
         polys = [Polygon(r) for r in park_rings]
-        trees = trees[~shapely.contains_xy(shapely.union_all(polys), trees[:, 0], trees[:, 1])] if len(trees) else trees
+        parks_all = shapely.union_all(polys)
+        green = [(g.difference(parks_all), gid) if g.intersects(parks_all) else (g, gid) for g, gid in green]
         laid = parks.laid({"park_verts": _rings_arrays(park_rings)[0], "park_starts": _rings_arrays(park_rings)[1],
                            "park_kind": kinds, "park_seed": park_seeds, "park_zone": park_zone})
         trees = np.vstack([trees] + [p.trees for p, _ in laid if len(p.trees)])
@@ -471,6 +499,9 @@ def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]
     city = CityData.from_features(roads, rings, np.array(ids, np.int64), fillers, np.array(seeds, np.int64),
                                   trees, terrain)
     city.a.update(graph)
+    tris, gseeds, gkeys = green_pieces(green)
+    city.add_kind("green_tris", tris, gkeys)
+    city.add_kind("green_seeds", gseeds, gkeys)
     if park_rings:  # a park overlapping a landmark's ground is left to the landmark
         from contravia.landmarks import Landmarks
 
@@ -516,18 +547,57 @@ def report(city: CityData, info: dict, street_report: dict) -> dict:
     }
 
 
-def main(pbf, out, dem=None) -> dict:
-    """Read the extract and, from the GLO-30 tiles in dem, the cleaned heights; write the file and the report."""
+BOX_MARGIN = 0.03  # degrees around a province's outline that its reading and its relief cover
+TERRAIN_STRIDE = {"La Habana": 1}  # every how many 30 m samples a province's relief keeps; 3 (90 m) elsewhere
+
+
+def province_boxes(pbf) -> dict:
+    """{name: (south, west, north, east)} of every province's outline (admin_level 4) in the extract, with
+    BOX_MARGIN around it; one quick pass over the file."""
+    import osmium
+
+    boxes: dict = {}
+
+    class Handler(osmium.SimpleHandler):
+        def area(self, a):
+            t = a.tags
+            if t.get("boundary") != "administrative" or t.get("admin_level") != "4" or a.from_way():
+                return
+            pts = [(n.lat, n.lon) for ring in a.outer_rings() for n in ring]
+            if pts:
+                lat, lon = zip(*pts, strict=True)
+                s, w, n, e = boxes.get(t.get("name"), (90.0, 180.0, -90.0, -180.0))
+                boxes[t.get("name")] = (min(s, min(lat)), min(w, min(lon)), max(n, max(lat)), max(e, max(lon)))
+
+    Handler().apply_file(str(pbf), locations=True)
+    return {k: (s - BOX_MARGIN, w - BOX_MARGIN, n + BOX_MARGIN, e + BOX_MARGIN) for k, (s, w, n, e) in boxes.items()}
+
+
+def main(pbf, out, dem=None, provinces=None, resume: bool = False) -> dict:
+    """Build each province (all of contravia.geo.PROVINCES by default) into out/<slug>.npz: read its part of the
+    extract and, from the GLO-30 tiles in dem (downloaded there if missing), its cleaned relief. With resume, a
+    province whose file is there is left as it is. Returns the reports by province."""
     import json
     import time
 
-    t0 = time.perf_counter()
-    terrain = None
-    if dem:
-        raw = read_tiles(dem, HAVANA_BOX)
-        terrain = Terrain(clean(raw.heights), raw.origin, raw.step)
-    city, report = build_city(read_osm(pbf), terrain)
-    city.save(out)
-    report["seconds"] = round(time.perf_counter() - t0, 1)
-    print(json.dumps(report, indent=2))
-    return report
+    from contravia.geo import PROVINCES
+    from contravia.terrain import read_terrain
+
+    boxes = province_boxes(pbf)
+    reports = {}
+    for name, slug in PROVINCES:
+        if provinces and name not in provinces and slug not in provinces:
+            continue
+        if name not in boxes:
+            raise ValueError(f"{pbf}: no province named {name!r} (admin_level 4)")
+        if resume and (Path(out) / f"{slug}.npz").exists():
+            continue
+        t0 = time.perf_counter()
+        terrain = read_terrain(dem, boxes[name], stride=TERRAIN_STRIDE.get(name, 3)) if dem else None
+        city, report = build_city(read_osm(pbf, boundary=name, box=boxes[name]), terrain)
+        Path(out).mkdir(parents=True, exist_ok=True)
+        city.save(Path(out) / f"{slug}.npz")
+        report["seconds"] = round(time.perf_counter() - t0, 1)
+        reports[name] = report
+        print(name, json.dumps(report), flush=True)
+    return reports
