@@ -23,6 +23,7 @@ from contravia.geo import CELL, PROVINCES, cell_of
 from contravia.quadtree import Tree
 
 OPEN = 2  # provinces kept in memory at once: the car's and the one across a border
+BARE = 0.01  # the quadtree's weight of a cell of bare land: drawn, but light
 
 
 def _keys(cells: np.ndarray) -> np.ndarray:
@@ -47,7 +48,7 @@ def _land_cells(terrain) -> list[tuple[int, int]]:
 
 def _weights(data: CityData) -> dict:
     """The quadtree's weight of each cell of a province: a building 1, a road segment a quarter, bare land 0.01."""
-    weights: dict = {key: 0.01 for key in _land_cells(data.terrain)}
+    weights: dict = {key: BARE for key in _land_cells(data.terrain)}
     for i, j in data.cells().tolist():
         c = data.cell(i, j)
         weights[(i, j)] = len(c.buildings) + 0.25 * len(c.roads)
@@ -100,6 +101,7 @@ class World:
             self.top = float(t.heights.max()) if t.heights.size else 0.0
             self.tree = Tree.build(weights)
             self._cells = cells
+            self._features = np.array([k for k, v in sorted(weights.items()) if v > BARE], np.int64).reshape(-1, 2)
             self._prepared = False
         else:
             with np.load(self.folder / "index.npz") as f:
@@ -112,6 +114,7 @@ class World:
                 self.top = float(info["top"])
                 leaves = {tuple(int(v) for v in k): float(w) for k, w in zip(f["leaves"], f["weights"], strict=True)}
                 self._cells = f["cells"].astype(np.int64)
+                self._features = (f["feature_cells"] if "feature_cells" in f.files else f["cells"]).astype(np.int64)
                 self.tree = Tree(tuple(int(v) for v in f["origin"]), leaves, self._cells)
             self._prepared = True
         self.tree = Tree(self.tree.origin, self.tree.leaves, self._cells)
@@ -266,7 +269,7 @@ class World:
             # inside it; then its cells are few enough (a leaf weighs at most SPLIT) to summarize directly.
             leaf = self.tree.leaf_of(self.tree.origin[0] + (a << L), self.tree.origin[1] + (b << L))
             if leaf is not None and leaf[0] >= L:
-                cells = self.tree.cells_in(L, a, b, self._cells)
+                cells = self.tree.cells_in(L, a, b, self._features)  # bare land adds nothing to a summary
                 s = summarize([(i, j, self.cell(i, j)) for i, j in cells.tolist()], L, a, b, self.tree.origin)
             else:
                 kids = [self.summary(L - 1, 2 * a + da, 2 * b + db) if self.exists(L - 1, 2 * a + da, 2 * b + db)
@@ -307,7 +310,8 @@ def index(folder) -> dict:
     np.savez(folder / "index.npz", info=np.array(json.dumps({"names": names, "files": files, "top": top})),
              region_offsets=off, region_keys=np.concatenate(region_keys), grids=np.array(grids, float),
              origin=np.array(tree.origin), leaves=leaves, weights=np.array(list(tree.leaves.values()), float),
-             cells=cells.astype(np.int32))
+             cells=cells.astype(np.int32),
+             feature_cells=np.array([k for k, v in sorted(weights.items()) if v > BARE], np.int32).reshape(-1, 2))
 
     # Summaries: World.summary from the root down, which summarizes each leaf from its cells and pools upward;
     # the quadtree's order keeps neighbouring leaves together, so a few open provinces are enough.
