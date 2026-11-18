@@ -30,6 +30,9 @@ from dataclasses import dataclass, field, replace
 
 import numpy as np
 from manifoldx.modeling.assets.bus import BusParams, build_bus
+from manifoldx.modeling.assets.bus import (
+    coach as _coach,
+)
 from manifoldx.modeling.assets.car import CarParams, build_car
 from manifoldx.modeling.assets.cycle import (
     CycleParams,
@@ -50,6 +53,9 @@ from manifoldx.modeling.assets.cycle import (
 from manifoldx.modeling.assets.cycle import (
     motorcycle as _motorcycle,
 )
+from manifoldx.modeling.assets.cycle import (
+    passenger_tricycle as _passenger_tricycle,
+)
 from manifoldx.modeling.assets.truck import (
     TruckParams,
     build_truck,
@@ -65,6 +71,9 @@ from manifoldx.modeling.assets.truck import (
 )
 from manifoldx.modeling.assets.truck import (
     fire_engine as _fire_engine,
+)
+from manifoldx.modeling.assets.truck import (
+    passenger_truck as _passenger_truck,
 )
 from manifoldx.modeling.assets.truck import (
     tanker as _tanker,
@@ -97,9 +106,9 @@ def almendron() -> CarParams:
         hatch_u=0.83, hatch_height=1.00, tail_top=0.94, belt_front=0.96, belt_rear=0.96,
         sill=0.21, bumper_bottom_front=0.30, bumper_bottom_rear=0.30,
         bumper="chrome_bar", bumper_height=0.42, bumper_proud=0.10, overriders=True,
-        hood_crown=0.13, nose_half=0.92, tail_half=0.92, round_front=0.14, round_rear=0.14,
+        hood_crown=0.13, nose_half=0.86, tail_half=0.92, round_front=0.14, round_rear=0.14,
         round_power=2.2, nose_bulge=0.03, tail_bulge=0.03, tumblehome=0.18, shoulder=0.96,
-        fender_crown=0.0, fender_crown_u=0.30, fin_height=0.0, fin_start_u=0.62, fin_width=0.26,
+        fender_crown=0.04, fender_crown_u=0.30, fin_height=0.12, fin_start_u=0.62, fin_width=0.26,
         windscreen_wrap=0.35, side_trim=((0.72, 0.16, 0.95, "chrome"),),
         a_pillar_foot=0.10, b_pillar_u=0.56, b_pillar_width=0.05, c_pillar_u=0.66,
         black_pillars=False, roof="paint", roof_paint=False, roof_pillars=True,
@@ -188,6 +197,8 @@ def huevito() -> CarParams:
 
 # The paint area of a bus: a band under the windows, recoloured by each colourway (see `_bus_colourways`).
 BUS_LIVERY = (("#9aa0a4", [(0.0, 0.26), (1.0, 0.26), (1.0, 0.88), (0.0, 0.88)]),)
+# A coach's band: above the luggage bays and below the windows, along the whole flank.
+COACH_LIVERY = (("#9aa0a4", [(0.0, 0.95), (1.0, 0.95), (1.0, 1.45), (0.0, 1.45)]),)
 
 
 def metroguagua() -> BusParams:
@@ -208,41 +219,8 @@ def guagua_vieja() -> BusParams:
 
 
 def interprovincial() -> BusParams:
-    """An intercity coach: long and tall, a single front door and a higher band of windows."""
-    return BusParams(
-        length=12.2, width=2.55, height=3.45, floor=0.62, front_overhang=2.4, wheelbase=6.2,
-        wheel_radius=0.52, tyre_width=0.30, track=2.10,
-        windscreen_bottom=1.18, windscreen_top=2.85, sign_bottom=3.00, sign_top=3.20,
-        window_bottom=1.50, window_top=2.85, rear_window_bottom=1.45, rear_window_top=2.80,
-        headlamp="rect", taillamp="bar", doors=((0.05, 0.95, 1),),
-        pillar_spacing=1.50, wheel="hubcap", livery=BUS_LIVERY,
-    )
-
-
-def camion_pasajeros() -> TruckParams:
-    """A passenger truck: a long body over benches, with a canvas roof.
-
-    manifoldx has no bench body with a canvas roof yet; today's closest body is the closed box, so this preset
-    paints a box truck in the canvas and wood of a passenger truck. Replacing `body` when the engine gains one
-    is all this family needs.
-    """
-    return replace(
-        _box_truck(), length=7.6, height=3.35, wheelbase=4.2, front_overhang=1.20,
-        cab_length=1.75, body_height=3.15, body_floor=1.05,
-        cab_paint="#d9d5c4", body_paint="#cfc9b4",
-    )
-
-
-def triciclo_pasajeros() -> CycleParams:
-    """An electric passenger tricycle: a delta of three wheels with a bench under a canopy.
-
-    manifoldx has no closed cab for a passenger tricycle yet, so this preset is the bicitaxi's bench and canopy
-    with a hub motor and a footboard. The canopy is what reads as a cab from the street.
-    """
-    return replace(
-        _cycle_rickshaw(), power="hub", step_through=True, footboard=True,
-        headlamp="rect", tail_lamp=True, frame_paint="#e8e4d4", box_paint="#7fa8c4",
-    )
+    """An intercity coach: a high floor over luggage bays, small windows and one front door."""
+    return replace(_coach(), livery=COACH_LIVERY)
 
 
 # The trucks and cycles the catalogue names after their trade: each family and its preset are one and the same
@@ -310,13 +288,13 @@ def bicicleta() -> CycleParams:
 # The measurements a family edits but its generator fixes through a style option or its preset instead of drawing
 # a number. They sit in the same era table as every other measurement, so the Garaje's slider and the generator
 # read one number, and the draw skips them so a family's variants stay the same.
-STYLE_ONLY = frozenset({"fin_height", "fender_crown", "whitewall", "corner_radius"})
+STYLE_ONLY = frozenset({"whitewall", "corner_radius"})
 
 # Cars: the eras table of the vehicles spec, then each family narrows the fields it has to. All the heights
 # are absolute metres and stay in order for every point of the box, so a draw never needs a repair: the sill is
 # below the belt, the belt below the roof, the bumper below the belt, and the stations along the body keep
-# their order. Fins, fender crowns and whitewalls are the era's styling: the 1950s wear them, the decades after
-# keep them small or leave them out, and a style option picks the exact value.
+# their order. Fins and fender crowns are the era's styling: the 1950s draw tall fins and raised wings, the 80s
+# raise their wings a little, and a style option leaves both out where a decade had none.
 CAR_RANGES = {
     "1950s": {
         "length": (4.80, 5.40), "width": (1.85, 2.00), "height": (1.45, 1.60),
@@ -330,9 +308,10 @@ CAR_RANGES = {
         "sill": (0.18, 0.24), "bumper_bottom_front": (0.26, 0.34), "bumper_bottom_rear": (0.26, 0.34),
         "bumper_height": (0.38, 0.46), "bumper_proud": (0.06, 0.12),
         "hood_crown": (0.10, 0.16), "windscreen_wrap": (0.00, 0.60),
+        "nose_half": (0.82, 0.90),
         "b_pillar_u": (0.52, 0.60), "c_pillar_u": (0.62, 0.68),
         "headlamp_yaw": (15.0, 30.0), "taillamp_yaw": (20.0, 35.0),
-        "fin_height": (0.0, 0.30), "fender_crown": (0.0, 0.20), "whitewall": (0.0, 0.08),
+        "fin_height": (0.0, 0.25), "fender_crown": (0.0, 0.06), "whitewall": (0.0, 0.08),
     },
     "80s": {
         "length": (3.70, 4.40), "width": (1.55, 1.70), "height": (1.38, 1.48),
@@ -347,7 +326,7 @@ CAR_RANGES = {
         "bumper_height": (0.36, 0.44), "bumper_proud": (0.04, 0.08),
         "hood_crown": (0.08, 0.12), "b_pillar_u": (0.52, 0.58), "c_pillar_u": (0.62, 0.68),
         "headlamp_yaw": (12.0, 24.0), "taillamp_yaw": (16.0, 28.0),
-        "fin_height": (0.0, 0.04), "fender_crown": (0.0, 0.04), "whitewall": (0.0, 0.0),
+        "fin_height": (0.0, 0.04), "fender_crown": (0.0, 0.06), "whitewall": (0.0, 0.0),
     },
     "modern": {
         "length": (4.30, 4.70), "width": (1.70, 1.85), "height": (1.45, 1.58),
@@ -389,14 +368,15 @@ BUS_RANGES = {
         "door_bottom": (0.60, 0.72), "pillar_spacing": (1.05, 1.30), "corner_radius": (0.05, 0.45),
     },
     "interprovincial": {
-        "length": (11.5, 13.0), "width": (2.50, 2.60), "height": (3.30, 3.60), "floor": (0.55, 0.70),
-        "front_overhang": (2.20, 2.60), "wheelbase": (5.80, 6.60), "wheel_radius": (0.50, 0.54),
+        "length": (12.60, 13.40), "width": (2.50, 2.60), "height": (3.50, 3.70), "floor": (0.95, 1.05),
+        "front_overhang": (2.55, 2.85), "wheelbase": (6.40, 6.80), "wheel_radius": (0.50, 0.54),
         "tyre_width": (0.28, 0.32), "track": (2.05, 2.15),
-        "windscreen_bottom": (1.10, 1.24), "windscreen_top": (2.72, 2.90),
-        "sign_bottom": (2.84, 2.94), "sign_top": (3.10, 3.24),
-        "window_bottom": (1.44, 1.56), "window_top": (2.70, 2.88),
-        "rear_window_bottom": (1.40, 1.54), "rear_window_top": (2.66, 2.84),
-        "door_bottom": (0.50, 0.62), "pillar_spacing": (1.35, 1.60), "corner_radius": (0.05, 0.55),
+        "windscreen_bottom": (1.45, 1.60), "windscreen_top": (2.95, 3.10),
+        "sign_bottom": (2.85, 2.95), "sign_top": (3.25, 3.40),
+        "window_bottom": (1.88, 2.00), "window_top": (2.68, 2.80),
+        "rear_window_bottom": (1.82, 1.95), "rear_window_top": (2.62, 2.76),
+        "door_bottom": (0.82, 0.95), "pillar_spacing": (1.45, 1.65), "corner_radius": (0.28, 0.36),
+        "bay_bottom": (0.32, 0.40), "bay_top": (0.78, 0.86),
     },
 }
 
@@ -432,11 +412,12 @@ TRUCK_RANGES = {
         "bin_height": (1.25, 1.45), "body_floor": (1.10, 1.25),
     },
     "pasajeros": {
-        "length": (7.00, 8.00), "width": (2.40, 2.50), "height": (3.25, 3.45),
-        "wheelbase": (3.90, 4.30), "front_overhang": (1.15, 1.35), "track": (1.98, 2.10),
-        "wheel_radius": (0.50, 0.54), "tyre_width": (0.26, 0.30),
-        "cab_length": (1.70, 1.85), "cab_height": (2.55, 2.70),
-        "body_height": (3.00, 3.25), "body_floor": (1.00, 1.15),
+        "length": (6.60, 7.20), "width": (2.25, 2.40), "height": (3.10, 3.25),
+        "wheelbase": (3.70, 4.05), "front_overhang": (1.15, 1.35), "track": (1.88, 2.00),
+        "wheel_radius": (0.46, 0.50), "tyre_width": (0.25, 0.28),
+        "cab_length": (1.50, 1.65), "cab_height": (2.45, 2.60),
+        "deck_height": (1.05, 1.15), "side_height": (0.30, 0.38),
+        "canvas_height": (2.95, 3.15), "bench_height": (0.42, 0.50),
     },
 }
 
@@ -455,13 +436,13 @@ CYCLE_RANGES = {
         "rear_track": (0.90, 0.98), "tube_radius": (0.021, 0.023), "canopy_height": (1.90, 2.00),
     },
     "triciclo_pasajeros": {
-        "wheel_radius": (0.32, 0.34), "tyre_width": (0.04, 0.05), "wheelbase": (1.70, 1.80),
-        "rear_track": (0.88, 0.96), "canopy_height": (2.00, 2.14),
-        "bench_length": (0.84, 0.92), "bench_width": (0.86, 0.94),
+        "wheel_radius": (0.25, 0.28), "tyre_width": (0.08, 0.10), "wheelbase": (1.55, 1.70),
+        "rear_track": (0.92, 1.00), "canopy_height": (1.85, 1.98),
+        "bench_length": (0.92, 1.06), "bench_width": (0.90, 1.00),
     },
     "bicitaxi": {
         "wheel_radius": (0.32, 0.34), "tyre_width": (0.04, 0.05), "wheelbase": (1.70, 1.80),
-        "rear_track": (0.88, 0.96), "canopy_height": (2.00, 2.14),
+        "rear_track": (0.88, 0.96), "canopy_height": (2.00, 2.14), "canopy_drop": (0.0, 0.20),
         "bench_length": (0.84, 0.92), "bench_width": (0.86, 0.94),
     },
     "bicicleta": {
@@ -574,7 +555,7 @@ _add(
            ranges=TRUCK_RANGES["cisterna"]),
     Family(name="volquete", kind="truck", era="modern", builder="truck", preset=volquete, variants=2,
            ranges=TRUCK_RANGES["volquete"]),
-    Family(name="pasajeros", kind="truck", era="modern", builder="truck", preset=camion_pasajeros, variants=2,
+    Family(name="pasajeros", kind="truck", era="modern", builder="truck", preset=_passenger_truck, variants=2,
            ranges=TRUCK_RANGES["pasajeros"]),
     Family(name="moto_electrica", kind="moto", era="modern", builder="cycle", preset=moto_electrica, variants=3,
            ranges=CYCLE_RANGES["moto_electrica"]),
@@ -583,7 +564,7 @@ _add(
     Family(name="triciclo_carga", kind="tricycle", era="modern", builder="cycle", preset=triciclo_carga,
            variants=1, ranges=CYCLE_RANGES["triciclo_carga"]),
     Family(name="triciclo_pasajeros", kind="tricycle", era="modern", builder="cycle",
-           preset=triciclo_pasajeros, variants=1, ranges=CYCLE_RANGES["triciclo_pasajeros"]),
+           preset=_passenger_tricycle, variants=1, ranges=CYCLE_RANGES["triciclo_pasajeros"]),
     Family(name="bicitaxi", kind="bicitaxi", era="modern", builder="cycle", preset=bicitaxi, variants=2,
            ranges=CYCLE_RANGES["bicitaxi"]),
     Family(name="bicicleta", kind="bike", era="modern", builder="cycle", preset=bicicleta, variants=2,
@@ -603,7 +584,8 @@ _add(
 
 # Each option is (field, values, weights): the generator picks one value with those probabilities. Only fields
 # that exist on the family's parameter class appear here, and every value sits inside `ranges` or the class's own
-# choices, so a style choice never makes a draw unbuildable.
+# choices, so a style choice never makes a draw unbuildable. Fins and fender crowns are not listed where a decade
+# should vary them: the 1950s draw both from their ranges, and the 80s draw raised wings but pin the fins.
 STYLES = {
     "1950s": (
         ("roof_paint", (False, True), (0.50, 0.50)),                   # a two-tone roof half the time
@@ -636,6 +618,7 @@ STYLES = {
         ("roof_paint", (False, True), (0.85, 0.15)),
         ("whitewall", (0.0,), (1.0,)),
         ("fin_height", (0.0,), (1.0,)),
+        ("fender_crown", (0.0,), (1.0,)),
         ("bumper", ("skin",), (1.0,)),
         ("headlamp", ("almond", "bar", "rect"), (0.50, 0.30, 0.20)),
         ("grille_style", ("bar", "mesh"), (0.60, 0.40)),
@@ -645,6 +628,14 @@ STYLES = {
         ("spoiler", (False, True), (0.80, 0.20)),
         ("cladding", (False, True), (0.75, 0.25)),
         ("drl_bar", (True, False), (0.40, 0.60)),
+    ),
+}
+
+# The same idea for a cycle family: the hood over a bicitaxi's bench is flat, arched or a folding hood on its ribs,
+# and its drop hangs a valance from the hood's edge. A cab already roofs its rider, so a family with a cab has none.
+CYCLE_STYLES = {
+    "bicitaxi": (
+        ("canopy_style", ("flat", "arched", "folding"), (0.40, 0.35, 0.25)),
     ),
 }
 
@@ -873,7 +864,8 @@ def _draw(base: Family, family: Family, k: int, rng: np.random.Generator) -> obj
 
     The numeric draws go in field-name order so the stream does not depend on how the ranges dict was written,
     and the style options come after them. The measurements in :data:`STYLE_ONLY` are not drawn: the preset or a
-    style option fixes them, and they sit in the table only so the Garaje can offer their whole range.
+    style option fixes them, and they sit in the table only so the Garaje can offer their whole range. A car family
+    takes its era's options and a cycle family its own.
     """
     values = {}
     for name in sorted(base.ranges):
@@ -881,7 +873,8 @@ def _draw(base: Family, family: Family, k: int, rng: np.random.Generator) -> obj
             continue
         low, high = base.ranges[name]
         values[name] = round(float(rng.uniform(low, high)), 3)
-    for name, choices, weights in (STYLES.get(base.era, ()) if base.builder == "car" else ()):
+    styles = STYLES.get(base.era, ()) if base.builder == "car" else CYCLE_STYLES.get(family.name, ())
+    for name, choices, weights in styles:
         values[name] = choices[int(rng.choice(len(choices), p=weights))]
     if family.hatch and rng.random() < family.hatch:
         for name, (low, high) in family.hatch_ranges.items():
@@ -961,12 +954,18 @@ def _truck_colourways(family: Family, base: Family, k: int) -> tuple[dict, ...]:
         return tuple({"paint": (red, 0.35, 0.0), "body": (red, 0.35, 0.0),
                       "livery0": ("#f4f4f2", 0.35, 0.0)} for red in FIRE_REDS)
     colours = COLOURS[base.era]
+    if family.name == "pasajeros":
+        # A passenger truck: a cream bed under a canvas of olive, sand, faded blue or grey, cab in its era's paint.
+        beds = ("#e9e3d2", "#ded7c4", "#f0ebdd")
+        canvases = ("#6b6f5a", "#cfc0a0", "#7fa8c4", "#9aa0a4")
+        return tuple({"paint": (colours[(5 * k + j) % len(colours)], 0.40, 0.05),
+                      "body": (beds[j], 0.45, 0.0),
+                      "canvas": (canvases[(k + j) % len(canvases)], 0.90, 0.0)} for j in range(3))
     bodies = {
         "camion_80": ("#8a5a33", "#7d5230", "#96703f"),   # a wooden flatbed
         "furgon": ("#b9bdc2", "#c6cacf", "#aeb2b7"),       # a grey cargo box
         "cisterna": ("#c9ccd0", "#d2d5d9", "#c1c4c8"),     # a silver tank
         "volquete": (None, None, None),                     # painted with the cab
-        "pasajeros": ("#cfc9b4", "#d8d2be", "#c6c0ab"),    # a canvas-covered bed
     }[family.name]
     out = []
     for j in range(3):
