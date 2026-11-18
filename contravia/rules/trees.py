@@ -145,3 +145,143 @@ def clear_of(xz, roads, clear: float = WILD_CLEAR) -> np.ndarray:
 
     d = _point_segment(xz[:, None], r[None, :, 0:2], r[None, :, 2:4]) - r[None, :, 4] / 2
     return ~(d < clear).any(axis=1)
+
+
+# --- species by zone (docs/superpowers/specs/2026-11-18-trees-design.html) -------------------------------------
+# Nothing below is stored: a tree's species, size, turn and seasonal shift come from its position.
+
+COAST, OLD, VEDADO, PARK, OUT = range(5)
+MIX = {
+    COAST: {"coco": 50, "almendro": 35, "laurel": 15},
+    OLD: {"laurel": 75, "almendro": 15, "flamboyan": 10},
+    VEDADO: {"laurel": 40, "flamboyan": 30, "almendro": 20, "palma": 10},
+    PARK: {"laurel": 45, "flamboyan": 25, "palma": 20, "almendro": 10},
+    OUT: {"palma": 45, "flamboyan": 20, "laurel": 20, "almendro": 10, "ceiba": 5},
+}
+COAST_REACH = 300.0  # metres: a tree this close to the sea grows coastal species
+SCALE = (0.8, 1.25)
+SHIFT_DAYS = 14  # a tree turns with its season up to this many days early or late
+
+
+def _cumulative():
+    from contravia.rules.species import SPECIES
+
+    cum = np.zeros((len(MIX), len(SPECIES)))
+    for z, mix in MIX.items():
+        w = np.array([mix.get(s, 0) for s in SPECIES], float)
+        cum[z] = np.cumsum(w / w.sum())
+    cum[:, -1] = 1.0
+    return cum
+
+
+_CUM = _cumulative()
+
+
+def point_seeds(xz) -> np.ndarray:
+    """A 64-bit seed per (x, z), from the position rounded to the decimetre."""
+    q = np.round(np.asarray(xz, float).reshape(-1, 2) * 10).astype(np.int64).view(np.uint64)
+    return _mix64(q[:, 0] * np.uint64(0x9E3779B97F4A7C15) ^ q[:, 1])
+
+
+def _mix64(x) -> np.ndarray:
+    x = np.asarray(x, np.uint64).copy()
+    with np.errstate(over="ignore"):
+        x ^= x >> np.uint64(30)
+        x *= np.uint64(0xBF58476D1CE4E5B9)
+        x ^= x >> np.uint64(27)
+        x *= np.uint64(0x94D049BB133111EB)
+        x ^= x >> np.uint64(31)
+    return x
+
+
+def unit(seeds, salt: int) -> np.ndarray:
+    """A uniform number in [0, 1) per seed, a different one for each salt."""
+    with np.errstate(over="ignore"):
+        s = _mix64(np.asarray(seeds, np.uint64) + np.uint64(salt) * np.uint64(0x9E3779B97F4A7C15))
+    return (s >> np.uint64(11)).astype(np.float64) / float(1 << 53)
+
+
+def pick(zones, seeds) -> np.ndarray:
+    """The species (an index into species.SPECIES) of each tree, drawn from its zone's MIX by its seed."""
+    zones = np.asarray(zones, int)
+    u = unit(seeds, 1)
+    return np.minimum((u[:, None] >= _CUM[zones]).sum(axis=1), _CUM.shape[1] - 1).astype(np.int8)
+
+
+def near_sea(xz, terrain) -> np.ndarray:
+    """Whether the ground is sea at any of 8 points COAST_REACH metres round each (x, z)."""
+    xz = np.asarray(xz, float).reshape(-1, 2)
+    out = np.zeros(len(xz), bool)
+    for a in np.arange(8) * np.pi / 4:
+        out |= terrain.height(xz[:, 0] + COAST_REACH * np.cos(a), xz[:, 1] + COAST_REACH * np.sin(a)) < SEA
+    return out
+
+
+def cell_zone(c) -> int:
+    """The zone of a cell's streets and green: from the commonest municipio of its buildings (OUT with none)."""
+    from contravia.buildingtags import MUNI
+    from contravia.walks import zone_of
+
+    if c.building_attrs is None or not len(c.building_attrs):
+        return OUT
+    m = c.building_attrs[:, MUNI].astype(int)
+    m = m[m >= 0]
+    if not len(m):
+        return OUT
+    return (OLD, VEDADO, OUT)[zone_of(c.muni_names[int(np.bincount(m).argmax())])]
+
+
+class Trees:
+    """The trees of a cell: (N, 2) xz, and per tree its ground height, species index, scale, turn and the days
+    its season is shifted by."""
+
+    def __init__(self, xz, y, species, scale, yaw, shift):
+        self.xz, self.y, self.species, self.scale, self.yaw, self.shift = xz, y, species, scale, yaw, shift
+
+    def __len__(self):
+        return len(self.xz)
+
+
+def grow(xz, terrain, zone: int, arrays=()) -> Trees:
+    """Species, size, turn and shift for trees at (N, 2) xz in a cell of `zone`, with the parks of the city arrays
+    of each province holding the cell:
+    the Prado is laurel, a paseo one species from its seed, a city park the PARK mix and its plaza's ceiba, an
+    organic park the OUT mix; near the sea, the coastal mix, except on the Prado and the paseos."""
+    from contravia import parks
+    from contravia.rules.species import SPECIES
+
+    xz = np.asarray(xz, float).reshape(-1, 2)
+    seeds = point_seeds(xz)
+    zones = np.full(len(xz), zone)
+    fixed = np.full(len(xz), -1)
+    for a in arrays if len(xz) else ():
+        kind, pseed = parks.of_points(a, xz)
+        zones[kind == parks.KINDS.index("city")] = PARK
+        zones[kind == parks.KINDS.index("organic")] = OUT
+        fixed[kind == parks.KINDS.index("prado")] = SPECIES.index("laurel")
+        paseo = kind == parks.KINDS.index("paseo")
+        fixed[paseo] = pick(np.full(paseo.sum(), PARK), _mix64(pseed[paseo].view(np.uint64)))
+        fixed[parks.is_ceiba(a, xz)] = SPECIES.index("ceiba")
+    free = fixed < 0
+    zones[free & near_sea(xz, terrain)] = COAST
+    species = np.where(free, pick(zones, seeds), fixed).astype(np.int8)
+    scale = SCALE[0] + (SCALE[1] - SCALE[0]) * unit(seeds, 2)
+    yaw = 2 * np.pi * unit(seeds, 3)
+    shift = np.round((2 * unit(seeds, 4) - 1) * SHIFT_DAYS).astype(int)
+    y = terrain.height(xz[:, 0], xz[:, 1]) if len(xz) else np.zeros(0)
+    return Trees(xz, y, species, scale, yaw, shift)
+
+
+def cell_trees(i: int, j: int, c, terrain, near, arrays=()) -> Trees:
+    """Every tree cell (i, j) draws and its car hits: its parks' trees, the trees its green grows and, on land OSM
+    says nothing about, the wild ones; each clear of the streets, with its species and look from grow()."""
+    parts = [c.trees[off_streets(c.trees, c.street_tris)]]
+    has_green = c.green_tris is not None and len(c.green_tris)
+    if has_green:
+        g = in_green(c.green_tris, c.green_seeds)
+        parts.append(g[off_streets(g, c.street_tris) & clear_of(g, near)])
+    if not (len(c.buildings) or len(c.fillers) or len(c.trees) or has_green):
+        spots, _, _ = wild(i, j, terrain, near)
+        parts.append(spots[off_streets(spots, c.street_tris)])
+    xz = np.vstack([np.asarray(p, float).reshape(-1, 2) for p in parts])
+    return grow(xz, terrain, cell_zone(c), arrays)
