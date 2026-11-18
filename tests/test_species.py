@@ -166,3 +166,19 @@ def test_ceibas_draw_fewer_triangles_in_the_dry_season_and_the_far_green_turns_w
     draw(jun, t, date(2026, 6, 15))
     assert len(feb.to_meshdata(0, 0).indices) < len(jun.to_meshdata(0, 0).indices)
     assert far_green(date(2026, 2, 15)) != far_green(date(2026, 6, 15))
+
+
+def test_a_builder_process_draws_for_the_date_the_game_set(monkeypatch):
+    import subprocess
+    import sys
+    from datetime import datetime
+
+    from contravia.rules import trees
+
+    monkeypatch.delenv("CONTRAVIA_DATE", raising=False)
+    monkeypatch.setattr(trees, "_clock", None)
+    trees.set_clock(lambda: datetime(2026, 6, 15, 10, 30))
+    out = subprocess.run([sys.executable, "-c", "from contravia.rules.trees import today; print(today())"],
+                         capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "2026-06-15"
+    monkeypatch.setattr(trees, "_clock", None)

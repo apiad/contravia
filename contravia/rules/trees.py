@@ -25,16 +25,26 @@ _clock = None
 
 
 def set_clock(now) -> None:
-    """Make today() read the date from now(), a function returning a datetime: the game's clock."""
+    """Make today() read the date from now(), a function returning a datetime: the game's clock. The date also
+    goes to CONTRAVIA_DATE, which the cell builders' processes inherit when the streamer spawns them."""
+    import os
+
     global _clock
     _clock = now
+    os.environ["CONTRAVIA_DATE"] = now().date().isoformat()
 
 
 def today():
-    """The date the trees are drawn for: the game's clock's, or the machine's while no game set one."""
+    """The date the trees are drawn for: the game's clock's; in a builder process, the CONTRAVIA_DATE it was
+    spawned with; else the machine's."""
+    import os
     from datetime import date
 
-    return _clock().date() if _clock is not None else date.today()
+    if _clock is not None:
+        return _clock().date()
+    if os.environ.get("CONTRAVIA_DATE"):
+        return date.fromisoformat(os.environ["CONTRAVIA_DATE"])
+    return date.today()
 
 
 def off_streets(xz, street_tris) -> np.ndarray:
