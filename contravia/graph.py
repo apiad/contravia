@@ -212,6 +212,8 @@ def build_graph(ways, controls, restrictions, municipios, rings, to_local, width
     keep &= np.array([core[r[0]] and core[r[1]] for r in rows])
     rows = [r for k, r in enumerate(rows) if keep[k]]
     lens = lens[keep]
+    if not rows:
+        return {}
 
     # Renumber junctions to those still used.
     used_j = sorted({r[0] for r in rows} | {r[1] for r in rows})

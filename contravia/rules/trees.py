@@ -20,6 +20,7 @@ from contravia.rules.noise import fbm
 
 TRUNK = (0.25, 0.15, 0.08)
 LEAVES = (0.12, 0.35, 0.12)
+TREE_EVERY = 150.0  # m² of mapped green (park, wood, meadow) per tree, seeded when its cell opens
 WILD_STEP = 13.0  # metres between the candidate spots of wild trees, before jitter
 WILD_CLEAR = 3.0  # metres between a wild tree and a road's edge
 
@@ -105,12 +106,42 @@ def wild(i: int, j: int, terrain, roads: np.ndarray):
     p = np.stack([gx.ravel(), gz.ravel()], axis=1) + rng.uniform(-0.45, 0.45, (gx.size, 2)) * WILD_STEP
     density = np.clip((fbm(p[:, 0], p[:, 1], 150.0, seed=3) - 0.4) * 2.5, 0, 0.75)
     keep = (rng.random(len(p)) < density) & (terrain.height(p[:, 0], p[:, 1]) > SEA)
-    r = np.asarray(roads, float).reshape(-1, 5)
-    if len(r) and keep.any():
-        from contravia.clearance import _point_segment
-
-        d = _point_segment(p[keep][:, None], r[None, :, 0:2], r[None, :, 2:4]) - r[None, :, 4] / 2
-        keep[np.flatnonzero(keep)[(d < WILD_CLEAR).any(axis=1)]] = False
+    if keep.any():
+        keep[np.flatnonzero(keep)[~clear_of(p[keep], roads)]] = False
     size = rng.uniform(0.7, 1.4, len(p))
     return p[keep], size[keep], 0.8 + 0.4 * fbm(p[keep, 0], p[keep, 1], 30.0, seed=4)
 
+
+
+def in_green(tris, seeds) -> np.ndarray:
+    """The trees of a cell's green: one per TREE_EVERY m² of each (T, 3, 2) triangle, at spots seeded by the
+    green area's id and the triangle's place, so a cell grows the same trees every time it opens."""
+    tris = np.asarray(tris, float).reshape(-1, 3, 2)
+    if not len(tris):
+        return np.zeros((0, 2))
+    a, b, c = tris[:, 0], tris[:, 1], tris[:, 2]
+    area = np.abs((b[:, 0] - a[:, 0]) * (c[:, 1] - a[:, 1]) - (c[:, 0] - a[:, 0]) * (b[:, 1] - a[:, 1])) / 2
+    out = []
+    for k in range(len(tris)):
+        centre = np.round(tris[k].mean(axis=0)).astype(np.int64)
+        rng = np.random.default_rng([abs(int(seeds[k])), int(centre[0]) & 0xFFFFFFFF, int(centre[1]) & 0xFFFFFFFF])
+        want = area[k] / TREE_EVERY
+        n = int(want) + int(rng.random() < want - int(want))
+        if not n:
+            continue
+        u, v = rng.random(n), rng.random(n)
+        flip = u + v > 1
+        u[flip], v[flip] = 1 - u[flip], 1 - v[flip]
+        out.append(a[k] + u[:, None] * (b[k] - a[k]) + v[:, None] * (c[k] - a[k]))
+    return np.vstack(out) if out else np.zeros((0, 2))
+
+
+def clear_of(xz, roads, clear: float = WILD_CLEAR) -> np.ndarray:
+    """Whether each (N, 2) spot stands at least `clear` metres off every (R, 5) road's edge."""
+    xz, r = np.asarray(xz, float).reshape(-1, 2), np.asarray(roads, float).reshape(-1, 5)
+    if not len(r) or not len(xz):
+        return np.ones(len(xz), bool)
+    from contravia.clearance import _point_segment
+
+    d = _point_segment(xz[:, None], r[None, :, 0:2], r[None, :, 2:4]) - r[None, :, 4] / 2
+    return ~(d < clear).any(axis=1)

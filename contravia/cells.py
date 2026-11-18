@@ -68,7 +68,12 @@ def build(i: int, j: int):
             SKIPPED_ROOFS += 1
     standing = c.trees[trees.off_streets(c.trees, c.street_tris)]
     trees.trees(mb, standing, terrain.height(standing[:, 0], standing[:, 1]))
-    if not (len(c.buildings) or len(c.fillers) or len(c.trees)):  # land OSM says nothing about
+    has_green = c.green_tris is not None and len(c.green_tris)
+    if has_green:  # the trees of parks, woods and meadows grow now, from their seeds: none is stored
+        grown = trees.in_green(c.green_tris, c.green_seeds)
+        grown = grown[trees.off_streets(grown, c.street_tris) & trees.clear_of(grown, near)]
+        trees.trees(mb, grown, terrain.height(grown[:, 0], grown[:, 1]))
+    if not (len(c.buildings) or len(c.fillers) or len(c.trees) or has_green):  # land OSM says nothing about
         spots, size, tone = trees.wild(i, j, terrain, roads_around(city(), i, j))
         keep = trees.off_streets(spots, c.street_tris)
         spots, size, tone = spots[keep], np.asarray(size)[keep], np.asarray(tone)[keep]

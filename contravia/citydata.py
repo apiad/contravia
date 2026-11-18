@@ -37,6 +37,8 @@ class Cell:
     street_roofs: np.ndarray | None = None  # (R, 3, 3) tunnel roofs, from below
     walk_tris: np.ndarray | None = None  # (W, 3, 3) pavements and building platforms (contravia.walks)
     walk_paint: np.ndarray | None = None  # (W,) the contravia.walks paint of each
+    green_tris: np.ndarray | None = None  # (G, 3, 2) green the cell grows trees on when it opens
+    green_seeds: np.ndarray | None = None  # (G,) the seed of each: its green area's OSM id
     park_tris: np.ndarray | None = None  # (P, 3, 3) the parks' motifs, lakes and lamps (contravia.props)
     park_paint: np.ndarray | None = None  # (P,) their contravia.structures paint
     park_walls: np.ndarray | None = None  # (W, 6) the motifs' walls, as struct_walls rows
@@ -217,6 +219,10 @@ class CityData:
                 if name in self.a:
                     m0, m1 = self._span(name, k)
                     streets[name] = self.a[name][m0:m1]
+        for name in ("green_tris", "green_seeds"):
+            if name in self.a:
+                g0, g1 = self._span(name, k)
+                streets[name] = self.a[name][g0:g1]
         return Cell(
             roads=self.a["roads"][r0:r1],
             buildings=self._rings("building", b0, b1),

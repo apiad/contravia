@@ -19,7 +19,7 @@ from contravia.mesh import MeshBuilder, signed_area
 from contravia.rules import facades
 from contravia.rules.ground import GROUND, SEA, relief
 from contravia.rules.roads import ROAD
-from contravia.rules.trees import LEAVES
+from contravia.rules.trees import LEAVES, TREE_EVERY
 
 GRID = 16
 FILLER_SHARE = 0.6  # the share of a filler block's area its boxes cover, at the mean filler height
@@ -77,6 +77,12 @@ def summarize(cells: list[tuple[int, int, Cell]], L: int, a: int, b: int, origin
         if len(c.trees):
             sq = _square_of(c.trees, L, a, b, origin)
             np.add.at(green, (sq[:, 1], sq[:, 0]), 1.0)
+        if c.green_tris is not None and len(c.green_tris):  # the trees the green grows, counted by area
+            t = np.asarray(c.green_tris, float)
+            u, v = t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]
+            area = np.abs(u[:, 0] * v[:, 1] - u[:, 1] * v[:, 0]) / 2
+            sq = _square_of(t.mean(axis=1), L, a, b, origin)
+            np.add.at(green, (sq[:, 1], sq[:, 0]), area / TREE_EVERY)
         if len(c.roads):
             roads.append(np.asarray(c.roads, np.float32))
     return _finish(built, hsum, csum, ssum, types, green, roads, L)
