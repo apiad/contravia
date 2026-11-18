@@ -6,7 +6,8 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
 - The design is `docs/superpowers/specs/2026-11-13-havana-driver-design.html`; plans are in `docs/superpowers/plans/`.
 - The commercial name is Contravía; its brand (colours, fonts, logo, poster, how to make panels with klein) is in `branding/` and `know-how/branding.md`; the SVG icons, logo, palette and fonts the game draws are in `assets/`, written by `assets/build.py`; the approved UX (menus, free drive, map, options, pause, HUD, first run, icons) is `docs/ux/contravia-ux.html`.
 - `contravia prepare <cuba-latest.osm.pbf>` writes `data/havana.npz`; `contravia play` drives; `contravia bench` drives a
-  fixed route and appends its numbers to `bench/history.jsonl`.
+  fixed route and appends its numbers to `bench/history.jsonl`. `contravia source <pbf> --dem DIR` packs the extract
+  and the DEM tiles into the compact `data/havana.src` the first run builds the city from.
 - `contravia prepare ... --dem DIR` adds the ground's heights from the Copernicus GLO-30 tiles
   `Copernicus_DSM_COG_10_N22_00_W083_00_DEM` and `..._N23_00_W083_00_DEM`, each fetched with `curl -L` from
   `https://copernicus-dem-30m.s3.amazonaws.com/<name>/<name>.tif`. Without it the city is flat.
