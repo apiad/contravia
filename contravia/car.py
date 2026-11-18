@@ -2,8 +2,9 @@
 
 The bicycle model treats the car as one front and one back wheel a wheelbase apart. Turning the front
 wheel by an angle makes the car turn at speed * tan(angle) / wheelbase radians per second. That is all the
-physics the game needs: no suspension, no tyre grip, no mass. On the terrain, the car's height, pitch and roll
-come from the ground under its four wheels, and gravity along the slope slows it uphill and speeds it down.
+physics the game needs: no tyre grip, no mass. On the terrain, the car's height, pitch and roll come from the
+ground under its four wheels, and gravity along the slope slows it uphill and speeds it down. The body is drawn
+on a spring toward that pose (Body, spring), the only suspension the car has.
 """
 
 import math
@@ -108,6 +109,32 @@ def settle(s: CarState, terrain) -> CarState:
     return replace(s, y=float((fl + fr + rl + rr) / 4),
                    pitch=math.atan2((fl + fr) / 2 - (rl + rr) / 2, WHEELBASE),
                    roll=math.atan2((fl + rl) / 2 - (fr + rr) / 2, TRACK))
+
+
+@dataclass
+class Body:
+    """The pose the car is drawn at: its height, pitch and roll, which follow the ground's on a spring."""
+
+    y: float
+    pitch: float
+    roll: float
+
+    @classmethod
+    def on(cls, s: CarState) -> "Body":
+        """A body resting exactly on the ground pose s, as after a teleport."""
+        return cls(s.y, s.pitch, s.roll)
+
+
+SPRING = 0.08  # seconds: the time constant the body takes to follow the ground
+
+
+def spring(body: Body, s: CarState, dt: float) -> Body:
+    """The body after dt seconds following the ground pose s. The ground's pose jumps where a wheel crosses
+    from one street triangle to the next or drops off a kerb; the body eases toward it, by the same amount
+    for the same time whatever the frame rate, so a seam vanishes and a kerb reads as a bump."""
+    k = 1 - math.exp(-dt / SPRING)
+    return Body(body.y + (s.y - body.y) * k, body.pitch + (s.pitch - body.pitch) * k,
+                body.roll + (s.roll - body.roll) * k)
 
 
 def step(s: CarState, c: Controls, dt: float, walls: np.ndarray, terrain=None) -> CarState:
