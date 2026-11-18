@@ -60,19 +60,23 @@ def test_every_tree_the_cell_draws_is_a_trunk_square_in_the_walls():
 
 
 def test_a_car_hits_a_trunk_head_on_and_slides_past_a_glancing_one():
-    from contravia.car import CarState, Controls, step
-    from contravia.rules import trees
+    from manifoldx.vehicles import FlatGround, strengths_for
+
+    from contravia.car import CarState, Controls, Driven
+    from contravia.rules import fleet, handling, trees
 
     t = trees.Trees(np.array([[20.0, 0.0]]), np.zeros(1), np.zeros(1, np.int8), np.ones(1), np.zeros(1),
                     np.zeros(1, int), np.full(1, 0.5))
     wall = trees.trunks(t)
-    s = CarState(0, 0, 0, 10.0)
-    for _ in range(500):
-        s = step(s, Controls(0, 0, 0, False), 0.01, wall)
+    spec = handling.spec_for(fleet.moderno(), "moderno")
+    coast = Controls(0, 0, 0, False)
+    d = Driven(spec, CarState(0, 0, 0, 0.0), FlatGround())
+    d.launch(10.0)
+    s = d.run(coast, 4.0, wall, strengths_for(30))
     assert s.x < 20.0 and abs(s.speed) < 1.0
-    from contravia.car import WIDTH
-
-    s = CarState(0, WIDTH / 2 + 0.5 - 0.15, 0.0, 10.0)  # driving straight, its side 0.15 m into the trunk's square
-    for _ in range(300):
-        s = step(s, Controls(0, 0, 0, False), 0.01, wall)
-    assert s.speed > 1.0 and s.z > WIDTH / 2 + 0.5  # it keeps going, turned away from the trunk
+    half = spec.size[2] / 2
+    # alongside the trunk already, its side 5 cm in: a graze along the side, not a corner on a corner
+    d = Driven(spec, CarState(20.0, half + 0.5 - 0.05, 0.0, 0.0), FlatGround())
+    d.launch(10.0)
+    s = d.run(coast, 1.0, wall, strengths_for(30))
+    assert s.speed > 5.0 and s.x > 25.0 and s.z > half + 0.5 - 0.02  # it keeps going, pushed off the trunk (to the 1 cm slop)
