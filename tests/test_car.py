@@ -123,3 +123,32 @@ def test_on_a_hillside_road_the_car_pitches_with_it_and_does_not_roll():
     assert abs(on_road.roll) < 1e-3 and abs(on_road.pitch - np.arctan(0.05)) < 2e-3
     off_road = settle(CarState(0.0, 60.0, 0.0, 0.0), Surface(city, t))
     assert abs(off_road.roll) > 0.1                                    # on the grass it follows the hillside
+
+
+def ride(grounds, dt):
+    """The body pose after riding over each ground pose in turn, dt seconds apart."""
+    from contravia.car import Body, spring
+
+    body = Body.on(grounds[0])
+    for g in grounds:
+        body = spring(body, g, dt)
+    return body
+
+
+def test_a_one_frame_jolt_in_the_ground_barely_moves_the_body():
+    flat, jolt = CarState(0, 0, 0, 10.0), CarState(0, 0, 0, 10.0, y=0.1, pitch=0.02, roll=math.radians(6))
+    body = ride([flat] * 10 + [jolt], 1 / 30)
+    assert abs(math.degrees(body.roll)) < 2.5 and body.y < 0.04
+
+
+def test_the_body_settles_on_a_steady_slope():
+    slope = CarState(0, 0, 0, 0.0, y=1.0, pitch=0.1, roll=0.05)
+    body = ride([CarState(0, 0, 0, 0.0)] + [slope] * 30, 1 / 30)
+    assert abs(body.y - 1.0) < 1e-3 and abs(body.pitch - 0.1) < 1e-3 and abs(body.roll - 0.05) < 1e-3
+
+
+def test_the_body_moves_alike_at_30_and_60_fps():
+    a, b = CarState(0, 0, 0, 0.0), CarState(0, 0, 0, 0.0, y=0.3, roll=0.1)
+    at30 = ride([a] + [b] * 3, 1 / 30)
+    at60 = ride([a] + [b] * 6, 1 / 60)
+    assert abs(at30.roll - at60.roll) < 0.005 and abs(at30.y - at60.y) < 0.01

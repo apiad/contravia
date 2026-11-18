@@ -6,9 +6,9 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
 - The design is `docs/superpowers/specs/2026-11-13-havana-driver-design.html`; plans are in `docs/superpowers/plans/`.
 - The commercial name is Contravía; its brand (colours, fonts, logo, poster, how to make panels with klein) is in `branding/` and `know-how/branding.md`; the SVG icons, logo, palette and fonts the game draws are in `assets/`, written by `assets/build.py`; the approved UX (menus, free drive, map, options, pause, HUD, first run, icons) is `docs/ux/contravia-ux.html`.
 - `contravia prepare <cuba-latest.osm.pbf>` writes `data/havana.npz`; `contravia play` drives; `contravia bench` drives a
-  fixed route and appends its numbers to `bench/history.jsonl`.
-- `contravia source <cuba-latest.osm.pbf> --dem DIR` packs `data/havana.src`, the compact source the first run and
-  `contravia build` build the city from; pack it again whenever `contravia.source.VERSION` changes.
+  fixed route and appends its numbers to `bench/history.jsonl`. `contravia source <pbf> --dem DIR` packs the extract
+  and the DEM tiles into the compact `data/havana.src` the first run builds the city from; pack it again whenever
+  `contravia.source.VERSION` changes.
 - `contravia prepare ... --dem DIR` adds the ground's heights from the Copernicus GLO-30 tiles
   `Copernicus_DSM_COG_10_N22_00_W083_00_DEM` and `..._N23_00_W083_00_DEM`, each fetched with `curl -L` from
   `https://copernicus-dem-30m.s3.amazonaws.com/<name>/<name>.tif`. Without it the city is flat.
@@ -52,8 +52,17 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   pedals (`contravia/input.py`). `contravia play --traffic my.json` changes demand settings
   (`contravia/rules/traffic.py`, only the keys the file names). While playing, `manifoldx emit traffic_config population=3000000` changes settings and
   `manifoldx emit close x=... z=... minutes=40` closes a street; `engine.state.traffic` reports the numbers.
+- The Garaje (`contravia/menu.py`, drawn as `docs/superpowers/specs/2026-11-18-garaje-design.html` proposes) browses
+  every vehicle of `contravia/rules/fleet.py` turning in the street, edits a copy's knobs inside their ranges
+  (`contravia/rules/designs.py`: the union over the fleet's eras of that one table, clipped to manifoldx's
+  `Params.ranges()` and narrowed live by its `validate()`), saves designs as
+  JSON in the config folder's `garaje/` (`contravia/garage.py`) and drives any car, bus or truck from the main menu,
+  the free drive's Vehículo row or the pause. A vehicle builds on a worker thread; names are never trademarks.
+  `--screen garage|design --shot` saves either screen.
 - `contravia flowmap out.png --time "Tue 08:00" [--traffic my.json]` draws the flow layer over the province without a
   window; `contravia bench --time ...` adds traffic numbers to the run.
+- `contravia fleet-sheet OUTDIR [--kind car]` renders one review PNG per kind: a row per variant of `contravia/rules/fleet.py`
+  (the ten kinds' families, eras, ranges and colourways) in four views, offscreen; `variant(kind, family, k)` is seeded.
 - `bench/pipelined.py` drives the bench route's first leg offscreen and measures a frame serial against pipelined,
   where the engine draws this frame while the next frame's systems run on a worker; `--check` drives the same leg
   under `MANIFOLDX_PIPELINE=check` to catch a system that writes what the render reads.

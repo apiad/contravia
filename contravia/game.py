@@ -23,7 +23,7 @@ import time
 import numpy as np
 
 from contravia.camera import chase
-from contravia.car import CarState, Controls, settle, step
+from contravia.car import Body, CarState, Controls, settle, spring, step
 from contravia.geo import CELL, to_local
 from contravia.hud import Hud
 from contravia.input import Driver
@@ -47,6 +47,8 @@ FLAT_BASE_Y = -1.0  # with flat data: below every streamed ground, which always 
 SHADOW = (5.0, 2.3)  # metres: the dark ellipse under the car, along and across it
 SHADOW_LIFT = 0.05  # metres above the bare ground, so it shows over the ground drawn there
 
+
+GARAGE_SHIFT = 0.2  # how far left of the vehicle the Garaje looks, as a share of the camera's distance
 
 class Game:
     """One drive: the engine, the streamed city, the car and the camera."""
@@ -112,8 +114,8 @@ class Game:
         self.driver = Driver()
         self.hud = Hud(engine)
         self.camera_override = None  # bench.py sets a function () -> (eye, target) in world metres
-        self.mode = "drive"  # or "menu", "paused", "photo", "map": see contravia/menu.py
-        self.photo = None  # the photo mode's camera around the car: (yaw, pitch, distance)
+        self.mode = "drive"  # or "menu", "paused", "photo", "map", "garage": see contravia/menu.py
+        self.photo = None  # the photo mode's and the Garaje's camera around the car: (yaw, pitch, distance)
         self.map = None  # the map's camera, a contravia.mapview.MapCam, while the map shows
         self.km, self.area, self._area_at = 0.0, "", 0.0
         self.address = ("", "", "")
@@ -286,6 +288,7 @@ class Game:
             return
         x, z, yaw = found
         self.car = settle(CarState(x, z, yaw, 0.0), self.surface)
+        self.body = Body.on(self.car)
         self.eye = np.array([x, self.car.y + 3.0, z])
         self.engine.state.teleport = {"to": [x, z], "error": None}
         self._recentre()
@@ -294,6 +297,7 @@ class Game:
         """Put the car and the camera back where engine.state.car says, at the same speed."""
         x, z, yaw, speed = car["pose"]
         self.car = settle(CarState(x, z, yaw, speed), self.surface)
+        self.body = Body.on(self.car)
         self.eye = np.array(car["eye"], float)
         self._recentre()
 
@@ -319,6 +323,23 @@ class Game:
         self.km, self.area, self.photo = 0.0, "", None
         self.address = ("", "", "")
         self.mode = "drive"
+
+    def set_vehicle(self, vehicle, palette: dict | None = None) -> None:
+        """Drive (and show) another vehicle from now on: the old one's entities go, the new one's come in its
+        place. A colour change is a new palette, so it comes through here too."""
+        from manifoldx.modeling.assets.car import spawn_car
+
+        for handles in self.handles.values():
+            for h in handles:
+                h.destroy()
+        self.model = vehicle
+        self.handles = spawn_car(self.engine, vehicle, palette=palette)
+
+    def open_garage(self) -> None:
+        """Stand the car, stop the clock and put the camera on a slow turn around it, for the Garaje."""
+        self.mode = "garage"
+        self.clock.pause()
+        self.photo = self.photo or (self.car.yaw + 2.4, 0.22, 9.0)
 
     def open_map(self) -> None:
         """Fly the map's camera up over the car, the car and the clock stopped where they are."""
@@ -442,10 +463,11 @@ class Game:
                 walls = np.concatenate([walls.reshape(-1, 2, 2), self.layer.boxes_near(self.car.x, self.car.z)])
             self._before = self.car
             self.car = step(self.car, c, self._dt, walls, self.surface)
+            self.body = spring(self.body, self.car, self._dt)
             self.km += math.hypot(self.car.x - self._before.x, self.car.z - self._before.z) / 1000
         # manifoldx turns +x toward -z for a positive yaw; the game turns it toward +z.
-        place_car(self.handles, self.model, at=(self.car.x, self.car.y, self.car.z), yaw=-self.car.yaw,
-                  pitch=self.car.pitch, roll=self.car.roll)
+        place_car(self.handles, self.model, at=(self.car.x, self.body.y, self.car.z), yaw=-self.car.yaw,
+                  pitch=self.body.pitch, roll=self.body.roll)
         half = -self.car.yaw / 2  # the same turn as the car's, about the vertical
         ground = float(self.surface.height(np.array([self.car.x]), np.array([self.car.z]), near=self.car.y)[0])
         self.shadow.transform.pos = (self.car.x, ground + SHADOW_LIFT, self.car.z)
@@ -458,11 +480,14 @@ class Game:
 
             eye, target = mapview.pose(self.map)
             self.eye, target = np.asarray(eye, float), np.asarray(target, float)
-        elif self.mode == "photo" and self.photo:
+        elif self.mode in ("photo", "garage") and self.photo:
             yaw, pitch, dist = self.photo
             target = np.array([self.car.x, self.car.y + 1.0, self.car.z])
             self.eye = target + dist * np.array([math.cos(pitch) * math.cos(yaw), math.sin(pitch),
                                                  math.cos(pitch) * math.sin(yaw)])
+            if self.mode == "garage":  # look a little left of the vehicle, so it stands right of the menu's column
+                left = np.array([-math.sin(yaw), 0.0, math.cos(yaw)]) * GARAGE_SHIFT * dist
+                self.eye, target = self.eye + left, target + left
         else:
             self.eye, target = chase(self.eye, self.car, self._dt, self.surface)
         self.o = self._recentre()
@@ -643,7 +668,8 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
          screen: str | None = None) -> None:
     """Open a window on the main menu, or with `shot`, render offscreen until the city is drawn and save a PNG.
 
-    screen opens a menu screen ("main", "free", "options", "pause", "photo", "map") or "drive" straight away; a window
+    screen opens a menu screen ("main", "free", "options", "pause", "photo", "map", "garage", "design") or "drive"
+    straight away; a window
     opens on "main" and a shot on "drive" by default. The flags fill in the free drive's rows, and "drive"
     starts with them as they are.
 
@@ -676,6 +702,16 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     menu = Menu(engine, game, free, Options.load(), screen=screen if screen in ("main", "free", "options") else None)
     if screen in ("pause", "photo", "map"):
         engine.on("startup")(lambda _=None: (menu.pause(), screen != "pause" and menu.show(screen)))
+    if screen in ("garage", "design"):
+        def garage(_=None):
+            game.to_menu()
+            menu.show("garage")
+            if screen == "design":
+                menu.screens["garage"].key("design")
+            if shot:  # an offline shot waits for the vehicle instead of drawing the one before it
+                menu._put(menu.target)
+
+        engine.on("startup")(garage)
     if not shot:
         engine.run()
         return

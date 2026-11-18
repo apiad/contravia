@@ -71,7 +71,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--time", help='start the clock at "17:30", "Sun 08:00" or "2026-09-12 17:30" (10:00 by default); "now" is the machine\'s clock')
     p.add_argument("--sky", help="JSON file of sky settings to change (see contravia/weather.py, SkyConfig)")
     p.add_argument("--warp", type=float, default=1.0, help="run the clock this many times faster; for tests")
-    p.add_argument("--screen", choices=["main", "free", "options", "pause", "photo", "map", "drive"],
+    p.add_argument("--screen", choices=["main", "free", "options", "pause", "photo", "map", "garage", "design", "drive"],
                    help="open on this menu screen, or drive at once; main for a window, drive for --shot")
     p.add_argument("--no-pipeline", dest="pipeline", action="store_false",
                    help="run the systems and the render one after the other instead of overlapping them")
@@ -97,6 +97,10 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("out")
     p.add_argument("--year", type=int, default=2026)
     p.add_argument("--sky", help="JSON file of sky settings to change")
+
+    p = sub.add_parser("fleet-sheet", help="render a review sheet per fleet kind: a row per variant in four views")
+    p.add_argument("outdir")
+    p.add_argument("--kind", help="only this kind of vehicle (car, bus, truck, moto, ...)")
 
     p = sub.add_parser("dev", help="play under hot reload: a saved file in contravia/ rebuilds the game in the same "
                                    "window, with the car where it was; takes the options of play")
@@ -187,6 +191,10 @@ def main(argv: list[str] | None = None) -> None:
         from contravia.skymap import main as skymap
 
         skymap(args.out, args.year, sky=args.sky)
+    elif args.command == "fleet-sheet":
+        from contravia.fleetsheet import main as fleet_sheet
+
+        fleet_sheet(args.outdir, kind=args.kind)
     elif args.command == "timelapse":
         from contravia.timelapse import main as timelapse
 

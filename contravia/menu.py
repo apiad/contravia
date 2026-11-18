@@ -3,11 +3,12 @@ pause and the photo mode.
 
 A Menu owns the screen that shows and turns keys into its actions. Each screen is a set of root GUI panels
 built for the window's size: shown, they go into engine.gui; hidden, they come out. The keys are the arrows (or
-WASD), Enter and Escape; a click on a row chooses it. Story and the map of Cuba stand in the main menu as
-"próximamente": choosing them says so and goes nowhere.
+WASD), Enter and Escape; a click on a row chooses it. Story stands in the main menu as "próximamente": choosing
+it says so and goes nowhere. The Garaje's two screens, the Salón (browse) and the Taller (design), are drawn as
+docs/superpowers/specs/2026-11-18-garaje-design.html proposes, over the vehicle turning in the street.
 
-The game behind runs in one of four modes (game.mode): "menu" while a menu screen covers it (the car stands,
-the clock stops, the streamer keeps loading the start's cells), "drive", "paused" and "photo". The menu tells
+The game behind runs in one of these modes (game.mode): "menu" while a menu screen covers it (the car stands,
+the clock stops, the streamer keeps loading the start's cells), "drive", "paused", "photo", "map" and "garage". The menu tells
 the game what to do through Game.start, Game.pause, Game.resume and Game.to_menu.
 """
 
@@ -15,8 +16,9 @@ import math
 import textwrap
 from typing import ClassVar
 
-from contravia import ui
+from contravia import garage, ui
 from contravia.hud import DAY_NAMES
+from contravia.rules import designs, fleet
 from contravia.settings import WEATHER_ICON, FreeDrive, Options
 
 CLEAR = {"padding": 0, "bg": "#00000000"}
@@ -25,7 +27,9 @@ ZOOM = 0.08  # how much closer a panel gets over its SLIDE seconds
 ROW_H = 72  # pixels between two options of a list menu
 NOTE_SHOWN = 2.0  # seconds the "próximamente" note stays
 KEYS = {"ArrowUp": "up", "w": "up", "ArrowDown": "down", "s": "down", "ArrowLeft": "left", "a": "left",
-        "ArrowRight": "right", "d": "right", "Enter": "enter", "Escape": "back", "Backspace": "back"}
+        "ArrowRight": "right", "d": "right", "Enter": "enter", "Escape": "back", "Backspace": "back",
+        "q": "prev", "e": "next", "Tab": "design", "g": "save", "r": "random", "z": "undo", "Delete": "delete"}
+TURN = 0.35  # radians a second the Garaje's camera goes round the vehicle
 
 
 def _row_class():
@@ -230,13 +234,14 @@ class ListScreen(Screen):
 
 class MainScreen(ListScreen):
     logo = True
-    top = 250
+    top = 226
 
     def items(self):
         m = self.menu
         return [("Historia", "Cuentos del almendrón · próximamente", None),
                 ("Modo libre", "Maneja donde quieras, cuando quieras", lambda: m.show("free")),
                 ("Mapa de Cuba", "Explora la isla desde el aire", lambda: m.show("map")),
+                ("Garaje", "Todos los vehículos de Cuba, a tu gusto", lambda: m.show("garage")),
                 ("Opciones", "", lambda: m.show("options")),
                 ("Salir", "", m.quit)]
 
@@ -262,7 +267,8 @@ class PauseScreen(ListScreen):
 
     def items(self):
         m = self.menu
-        return [("Seguir", "", m.resume), ("Mapa", "", lambda: m.show("map")), ("Modo foto", "", lambda: m.show("photo")),
+        return [("Seguir", "", m.resume), ("Mapa", "", lambda: m.show("map")),
+                ("Cambiar vehículo", "", lambda: m.show("garage")), ("Modo foto", "", lambda: m.show("photo")),
                 ("Opciones", "", lambda: m.show("options")), ("Menú principal", "", m.to_menu)]
 
     def background(self, width):
@@ -549,9 +555,306 @@ class MapScreen(Screen):
         g.map = cam
 
 
+OPTION_TEXT = {None: "Ninguno", True: "Sí", False: "No", "round_pod": "Redondos en el guardafango", "round": "Redondos",
+               "rect": "Rectangulares", "almond": "Almendra", "bar": "Barra", "mesh": "Rejilla", "skin": "De carrocería",
+               "chrome_bar": "Cromo", "blade": "Lámina", "rubber": "Goma", "pill": "Píldora", "fin": "En la aleta",
+               "block": "Bloque", "spokes": "Rayos", "hubcap": "Tapacubos", "dome": "Domo", "twin": "Dobles",
+               "over": "Sobre el motor", "forward": "Con trompa", "none": "Ninguna", "cargo_box": "Cajón",
+               "bench": "Banco", "saddle": "Sillín", "long": "Largo", "pedal": "Pedales", "engine": "Motor",
+               "hub": "Eléctrico", "delta": "Delta", "inline": "En línea", "tadpole": "Renacuajo"}
+
+
+def _number(v: float, unit: str) -> str:
+    return f"{v:.2f}".replace(".", ",") + (f" {unit}" if unit in ("m",) else "")
+
+
+def option_text(key: str, v) -> str:
+    """How the Garaje shows a knob's value."""
+    if key in ("paint", "second"):
+        return designs.colour_name(v)
+    if isinstance(v, str) or v is None or isinstance(v, bool):
+        return OPTION_TEXT.get(v, str(v))
+    if isinstance(v, int):
+        return str(v)
+    return _number(float(v), "m")
+
+
+def facts(design) -> list[str]:
+    """The card's lines: the size and what the catalogue says of it."""
+    p, pre = design.params(), design.preset
+    if pre.family == "cycle":
+        size = f"Batalla {_number(p.wheelbase, 'm')}"
+    else:
+        size = f"{_number(p.length, 'm')} de largo · {_number(p.height, 'm')} de alto"
+    return [size, f"{pre.seats} plazas" if pre.seats > 1 else "1 plaza", f"Anda por: {pre.where}"]
+
+
+class GarageScreen(Screen):
+    """The Garaje's Salón: the family tabs, the family's vehicles as rows, a card on the right, and the chosen
+    vehicle turning in the street behind. Up and down choose, Q and E change family, ENTER drives, TAB designs, a
+    drag of the mouse turns the vehicle by hand, Escape goes back where the Garaje was opened from."""
+
+    TABS: ClassVar[tuple] = (*designs.TABS, "Mis diseños")
+
+    def build(self, width):
+        from manifoldx.gui import Panel
+
+        Row = _row_class()
+        m = self.menu
+        if m.current_before not in ("garage", "design"):
+            self.back_to = "pause" if m.current_before == "pause" else "main"
+            self.tab = m.chosen.preset.tab if m.chosen and m.chosen.name == "" else self.TABS[0]
+            self.index = None
+        self.items = m.garage_items(self.tab)
+        if self.index is None:
+            self.index = next((k for k, d in enumerate(self.items) if d == m.chosen), 0)
+        self.index = min(self.index, max(len(self.items) - 1, 0))
+        self.panels = [Panel([], anchor="top-left", style_overrides={"bg": ui.alpha(ui.INK, 0.72), "width": 560,
+                                                                      "height": ui.DESIGN_H})]
+        self.panels.append(Panel([_text("GARAJE", ui.TITLE, 50, ui.PAPER)], anchor="top-left", offset=(60, 40),
+                                 style_overrides=CLEAR))
+        tabs = []
+        for tab in self.TABS:
+            on = tab == self.tab
+            tabs.append(Row([_text(tab.upper(), ui.BOLD, 14, ui.INK if on else ui.GREY)],
+                            (lambda tab=tab: self.go_tab(tab)),
+                            style_overrides={"padding": "5 10", "bg": ui.PAPER if on else ui.alpha(ui.INK, 0.8)}))
+        self.panels.append(Panel(tabs, anchor="top-left", offset=(60, 104),
+                                 style_overrides={**CLEAR, "direction": "h", "gap": 4}))
+        self.frames, rows = [], []
+        for k, d in enumerate(self.items):
+            mark = Panel([], style_overrides={"bg": ui.RED, "width": 4, "height": 44, "padding": 0})
+            r = Row([mark, Panel([_text((d.name or d.preset.name).upper(), ui.BOLD, 17, ui.PAPER)],
+                                 style_overrides={**CLEAR, "padding": "11 0 0 14"}),
+                     Panel([], style_overrides={**CLEAR, "flex": 1}),
+                     Panel([_text(d.preset.era.upper(), ui.BOLD, 13, ui.GREY)],
+                           style_overrides={**CLEAR, "padding": "13 14 0 0"})],
+                    (lambda k=k: self.click(k)),
+                    style_overrides={"direction": "h", "padding": 0, "gap": 0, "bg": ui.alpha(ui.INK, 0.82),
+                                     "border": 2, "border_color": "#00000000", "width": 470, "height": 48})
+            r.mark = mark
+            self.frames.append(r)
+            rows.append(r)
+        if not rows:
+            rows = [_text("Todavía no hay diseños: TAB en un vehículo abre el Taller.", ui.BOLD, 15, ui.PAPER)]
+        self.panels.append(Panel(rows, anchor="top-left", offset=(60, 150), style_overrides={**CLEAR, "gap": 6}))
+        self.name = _text("", ui.TITLE, 30, ui.PAPER)
+        self.kind = _text("", ui.BOLD, 14, ui.GREY)
+        self.lines = [_text("", ui.BOLD, 16, ui.PAPER) for _ in range(3)]
+        self.status = _text("", ui.BOLD, 14, ui.YELLOW)
+        self.card = Panel([Panel([], style_overrides={"bg": ui.YELLOW, "height": 4, "padding": 0}),
+                           Panel([self.name, self.kind, *self.lines, self.status],
+                                 style_overrides={**CLEAR, "padding": "12 16 16 16", "gap": 4})],
+                          anchor="top-right", offset=(56, 150),
+                          style_overrides={"padding": 0, "gap": 0, "bg": ui.alpha(ui.INK, 0.9), "width": 380})
+        self.panels.append(self.card)
+        keys = [("↑↓", "Vehículo"), ("Q E", "Familia"), ("ENTER", "Manejar"), ("TAB", "Diseñar")]
+        if self.tab == "Mis diseños":
+            keys.append(("SUPR", "Borrar"))
+        self.panels.append(_hints(width, [*keys, ("ESC", "Volver")], "Arrastra para girar"))
+        m.game.open_garage()
+        self.select(self.index)
+
+    def select(self, k: int) -> None:
+        if not self.items:
+            self.name.text, self.kind.text, self.status.text = "MIS DISEÑOS", "", ""
+            for t in self.lines:
+                t.text = ""
+            return
+        self.index = k % len(self.items)
+        for j, r in enumerate(self.frames):
+            on = j == self.index
+            r.style_overrides = {**r.style_overrides, "border_color": ui.YELLOW if on else "#00000000"}
+            r.mark.style_overrides = {**r.mark.style_overrides, "opacity": 1.0 if on else 0.0}
+        d = self.items[self.index]
+        self.menu.show_design(d)
+        self.name.text = (d.name or d.preset.name).upper()
+        self.kind.text = f"{d.preset.tab} · {d.preset.era}" + (f" · a partir de {d.preset.name}" if d.name else "")
+        for t, line in zip(self.lines, facts(d), strict=True):
+            t.text = line
+        self.status.text = "" if d.preset.drivable else "Se maneja cuando tenga ciclista."
+        ui.refit(self.card)
+
+    def go_tab(self, tab: str) -> None:
+        self.tab, self.index = tab, 0
+        self.menu.show("garage")
+
+    def click(self, k: int) -> None:
+        self.select(k)
+
+    def key(self, k):
+        m = self.menu
+        if k in ("up", "down") and self.items:
+            self.select(self.index + (1 if k == "down" else -1))
+        elif k in ("prev", "next"):
+            j = self.TABS.index(self.tab) + (1 if k == "next" else -1)
+            self.go_tab(self.TABS[j % len(self.TABS)])
+        elif k == "enter" and self.items:
+            d = self.items[self.index]
+            if not d.preset.drivable:
+                self.status.text = "Los ciclos se manejan cuando tengan ciclista."
+                return
+            m.drive_design(d, self.back_to)
+        elif k == "design" and self.items:
+            m.design = self.items[self.index]
+            m.undo = []
+            m.show("design")
+        elif k == "delete" and self.tab == "Mis diseños" and self.items:
+            garage.delete_design(self.items[self.index])
+            m.designs = garage.load_designs()
+            m.show("garage")
+        elif k == "back":
+            m.leave_garage(self.back_to)
+
+    def tick(self, dt):
+        self.menu.turn_vehicle(dt)
+
+
+class KnobRow:
+    """A row of the Taller: one knob of the design being edited, turned with left and right through designs.turn."""
+
+    def __init__(self, menu, key: str, label: str):
+        self.menu, self.key, self.label = menu, key, label
+
+    @property
+    def text(self) -> str:
+        return option_text(self.key, self.menu.design.value(self.key))
+
+    @property
+    def help(self) -> str:
+        m = self.menu
+        if m.note:
+            return m.note
+        r = designs.street_ranges(m.design.preset.family)[self.key]
+        if "choices" in r:
+            return f"{len(r['choices'])} opciones: cambia con ← y →."
+        lo, hi = designs.limits(m.design, self.key)
+        unit = r["unit"] if r["unit"] == "m" else ""
+        return (f"De {_number(r['min'], unit)} a {_number(r['max'], unit)}; con las otras medidas, entre "
+                f"{_number(lo, unit)} y {_number(hi, unit)}.")
+
+    def step(self, d: int) -> None:
+        m = self.menu
+        new, why = designs.turn(m.design, self.key, d)
+        if new != m.design:
+            m.undo.append(m.design)
+            m.design, m.saved = new, False
+        m.note = why
+
+
+class DesignScreen(RowsScreen):
+    """The Garaje's Taller: one group of the design's knobs as rows (Q and E change group), a card with its name
+    and whether it is saved, and the vehicle rebuilt behind as the rows turn. R draws a random design, Z undoes,
+    G saves to Mis diseños, ENTER drives it, Escape goes back to the Salón."""
+
+    title = "Taller"
+    hints: ClassVar[list] = [("↑↓", "Fila"), ("←→", "Cambiar"), ("Q E", "Grupo"), ("R", "Al azar"),
+                             ("Z", "Deshacer"), ("G", "Guardar"), ("ENTER", "Manejar"), ("ESC", "Salón")]
+
+    def rows(self):
+        m = self.menu
+        group = getattr(self, "group", designs.GROUPS[0])
+        return [KnobRow(m, k, label) for k, label, _ in designs.knobs(m.design.preset.family, group)]
+
+    def background(self, width):
+        from manifoldx.gui import Panel
+
+        if self.menu.current_before not in ("garage", "design"):
+            self.group = designs.GROUPS[0]
+        groups = [g for g in designs.GROUPS if designs.knobs(self.menu.design.preset.family, g)]
+        self.group = getattr(self, "group", groups[0]) if getattr(self, "group", None) in groups else groups[0]
+        self.groups = groups
+        self.menu.game.open_garage()
+        return [Panel([], anchor="top-left", style_overrides={"bg": ui.alpha(ui.INK, 0.72), "width": 580,
+                                                               "height": ui.DESIGN_H})]
+
+    def extra(self, width):
+        from manifoldx.gui import Panel
+
+        Row = _row_class()
+        tabs = []
+        for g in self.groups:
+            on = g == self.group
+            tabs.append(Row([_text(g.upper(), ui.BOLD, 14, ui.INK if on else ui.GREY)],
+                            (lambda g=g: self.go_group(g)),
+                            style_overrides={"padding": "5 10", "bg": ui.PAPER if on else ui.alpha(ui.INK, 0.8)}))
+        self.name = _text("", ui.TITLE, 28, ui.PAPER)
+        self.base = _text("", ui.BOLD, 14, ui.GREY)
+        self.status = _text("", ui.BOLD, 14, ui.YELLOW)
+        self.card = Panel([Panel([], style_overrides={"bg": ui.YELLOW, "height": 4, "padding": 0}),
+                           Panel([self.name, self.base, self.status],
+                                 style_overrides={**CLEAR, "padding": "12 16 16 16", "gap": 4})],
+                          anchor="top-right", offset=(56, 130),
+                          style_overrides={"padding": 0, "gap": 0, "bg": ui.alpha(ui.INK, 0.9), "width": 380})
+        return [Panel(tabs, anchor="top-left", offset=(250, 58), style_overrides={**CLEAR, "direction": "h", "gap": 4}),
+                self.card]
+
+    def go_group(self, g: str) -> None:
+        self.group, self.index = g, 0
+        self.menu.note = ""
+        self.menu.show("design")
+
+    def changed(self):
+        m = self.menu
+        if not hasattr(self, "card"):
+            return
+        m.show_design(m.design)
+        d = m.design
+        self.name.text = (d.name or f"Mi {d.preset.name.lower()}").upper()
+        self.base.text = f"A partir de: {d.preset.name}"
+        self.status.text = "Guardado en Mis diseños" if m.saved else "Sin guardar"
+        ui.refit(self.card)
+        lines = textwrap.wrap(self.rows()[self.index].help, 62)[:3]
+        for t, line in zip(self.help, lines + [""] * 3, strict=False):
+            t.text = line
+
+    def refresh(self) -> None:
+        """Show every row's value again, after a change that was not one row's turn."""
+        for row, (value, panel) in zip(self.rows(), self.values, strict=True):
+            value.text = f"‹  {row.text.upper()}  ›"
+            ui.refit(panel)
+        self.changed()
+
+    def key(self, k):
+        m = self.menu
+        if k in ("left", "right", "up", "down"):
+            if k in ("up", "down"):
+                m.note = ""
+            super().key(k)
+        elif k in ("prev", "next"):
+            j = self.groups.index(self.group) + (1 if k == "next" else -1)
+            self.go_group(self.groups[j % len(self.groups)])
+        elif k == "random":
+            m.undo.append(m.design)
+            m.design, m.saved, m.note = m.random_design(m.design), False, ""
+            self.refresh()
+        elif k == "undo":
+            if m.undo:
+                m.design, m.saved, m.note = m.undo.pop(), False, ""
+            else:
+                m.note = "Nada que deshacer."
+            self.refresh()
+        elif k == "save":
+            m.save_design()
+            self.changed()
+        elif k == "enter":
+            if not m.design.preset.drivable:
+                m.note = "Los ciclos se manejan cuando tengan ciclista."
+                self.changed()
+                return
+            back = self.menu.screens["garage"].back_to if "garage" in self.menu.screens else "main"
+            m.drive_design(m.design, back)
+        elif k == "back":
+            m.note = ""
+            m.show("garage")
+
+    def tick(self, dt):
+        self.menu.turn_vehicle(dt)
+
+
 SCREENS = {"main": MainScreen, "free": FreeScreen, "options": OptionsScreen, "pause": PauseScreen,
-           "photo": PhotoScreen, "map": MapScreen}
-KEY_NAMES = {"ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "w", "s", "a", "d", "Enter", "Escape", "Backspace"}
+           "photo": PhotoScreen, "map": MapScreen, "garage": GarageScreen, "design": DesignScreen}
+KEY_NAMES = set(KEYS)
 
 
 class Menu:
@@ -560,6 +863,15 @@ class Menu:
     def __init__(self, engine, game, free: FreeDrive, options: Options, screen: str | None = "main"):
         self.engine, self.game, self.free, self.options = engine, game, free, options
         self.screens, self.current, self.current_before, self._size = {}, None, None, None
+        # The Garaje: what is driven (None: the sedan the game starts with), what the Taller edits, what the
+        # game shows now and what it should show, and the player's saved designs.
+        self.builder = garage.Builder()
+        self.default_model = game.model
+        self.chosen, self.design, self.target, self.shown = None, None, None, None
+        self.undo, self.saved, self.note = [], False, ""
+        self.designs = garage.load_designs()
+        self.refresh_vehicles()
+        engine.on("shutdown")(lambda _=None: self.builder.close())
         game.apply_options(options)
         self._first = screen
         if screen:
@@ -628,7 +940,120 @@ class Menu:
     def start_free(self) -> None:
         """Drive with the free drive's rows."""
         self.show(None)
+        self.chosen = self.free["vehicle"].value
+        self._put(self.chosen)
         self.game.start(**self.free.start())
+
+    # The Garaje
+
+    def refresh_vehicles(self) -> None:
+        """The free drive's Vehículo row: the sedan, every drivable preset and every drivable saved design."""
+        row = self.free["vehicle"]
+        row.options = [("Sedán", None)] + [(p.name, designs.Design(k)) for k, p in fleet.catalogue().items()
+                                           if p.drivable]
+        row.options += [(d.name, d) for d in self.designs if d.preset.drivable]
+        row.index = 0
+        row.pick(self.chosen)
+
+    def garage_items(self, tab: str) -> list:
+        """The Salón's rows for a tab: its presets, or the saved designs."""
+        if tab == "Mis diseños":
+            return list(self.designs)
+        return [designs.Design(k) for k, p in fleet.catalogue().items() if p.tab == tab]
+
+    def _key(self, design) -> str:
+        if design is None:
+            return "default"
+        return garage.key(design) + repr(sorted(design.palette().items()))
+
+    def _put(self, design) -> None:
+        """Show (and drive) `design` now, building it here if it has to be; None is the starting sedan."""
+        if self._key(design) == self.shown:
+            return
+        if design is None:
+            self.game.set_vehicle(self.default_model)
+        else:
+            self.game.set_vehicle(self.builder.now(design), design.palette())
+        self.shown = self._key(design)
+
+    def show_design(self, design) -> None:
+        """Turn the Garaje's camera round `design`, once it is built."""
+        self.target = design
+
+    def turn_vehicle(self, dt: float) -> None:
+        """The Garaje's frame: the camera goes round (or follows a drag of the mouse), and the vehicle wanted
+        replaces the one shown as soon as it is built."""
+        g, inp = self.game, self.engine.input
+        yaw, pitch, _ = g.photo or (g.car.yaw, 0.22, 9.0)
+        if inp.is_mouse_pressed(1):
+            yaw += inp.mouse_delta[0] * 0.01
+        else:
+            yaw += TURN * dt
+        d = self.target
+        if d is not None and self._key(d) != self.shown:
+            try:
+                vehicle = self.builder.want(d)
+            except ValueError:
+                vehicle, self.note = None, "Así no se puede construir: vuelve atrás con Z."
+                self.target = None
+            if vehicle is not None:
+                g.set_vehicle(vehicle, d.palette())
+                self.shown = self._key(d)
+        p = (d or self.chosen or designs.Design("ruso")).params()
+        length = getattr(p, "length", 2.2)
+        g.photo = (yaw, pitch, max(5.5, 1.5 * length + 2.5))
+
+    def drive_design(self, design, back_to: str) -> None:
+        """Drive `design`: from the pause, on from where the car stood; from the main menu, through the free
+        drive's screen with it in the Vehículo row."""
+        self._put(design)
+        self.chosen = design
+        self.refresh_vehicles()
+        if back_to == "pause":
+            self.resume()
+        else:
+            self.game.photo = None
+            self.game.to_menu()
+            self.show("free")
+
+    def leave_garage(self, back_to: str) -> None:
+        """Back from the Salón without driving: the vehicle driven before comes back."""
+        self._put(self.chosen)
+        self.target, self.game.photo = None, None
+        if back_to == "pause":
+            self.show("pause")
+        else:
+            self.to_menu()
+
+    def random_design(self, design):
+        """A design of the same preset with every knob drawn from its range, as the fleet would draw one."""
+        rng = self.game._rng
+        r = designs.street_ranges(design.preset.family)
+        out = designs.Design(design.base, design.name)
+        for key, _, _ in designs.knobs(design.preset.family):
+            spec = r[key]
+            if "choices" in spec:
+                v = spec["choices"][int(rng.integers(len(spec["choices"])))]
+            else:
+                steps = round((spec["max"] - spec["min"]) / spec["step"])
+                v = round(spec["min"] + int(rng.integers(steps + 1)) * spec["step"], 4)
+            if key in ("paint", "second", "livery"):
+                setattr(out, key, v)
+            else:
+                out.changes[key] = v
+        return designs.fix(out)
+
+    def save_design(self) -> None:
+        """Keep the Taller's design in Mis diseños, naming it "Mi <vehículo> <n>" the first time."""
+        from dataclasses import replace
+
+        d = self.design
+        if not d.name:
+            d = replace(d, name=garage.new_name(d.preset.name, [x.name for x in self.designs]))
+        garage.save_design(d)
+        self.design, self.saved, self.note = d, True, ""
+        self.designs = garage.load_designs()
+        self.refresh_vehicles()
 
     def pause(self) -> None:
         self.game.pause()
