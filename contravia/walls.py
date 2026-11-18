@@ -37,7 +37,8 @@ class Walls:
     def _build(self, i: int, j: int) -> np.ndarray:
         c = self.landmarks.keep(i, j, self.city.cell(i, j))
         rings = [ring for ring, *_ in boxes(c, roads_around(self.city, i, j))]
-        return np.concatenate([_edges(r) for r in rings] + [self.landmarks.walls(i, j)])
+        parks = [] if c.park_walls is None else [np.asarray(c.park_walls[:, :4], np.float32).reshape(-1, 2, 2)]
+        return np.concatenate([_edges(r) for r in rings] + [self.landmarks.walls(i, j)] + parks)
 
     def _cell(self, i: int, j: int) -> np.ndarray:
         if (i, j) not in self._cache:

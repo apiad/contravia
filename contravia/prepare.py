@@ -346,10 +346,10 @@ def add_streets(city: CityData) -> dict:
 
 
 def add_walks(city: CityData) -> dict:
-    """The pavements and the buildings' platforms, over the streets."""
+    """The pavements and the buildings' platforms, over the streets, and the parks' motifs on them."""
     from contravia import walks
 
-    return walks.add_to(city)
+    return {**walks.add_to(city), **parks.add_to(city)}
 
 
 def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]:
@@ -444,6 +444,16 @@ def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]
     city = CityData.from_features(roads, rings, np.array(ids, np.int64), fillers, np.array(seeds, np.int64),
                                   trees, terrain)
     city.a.update(graph)
+    if park_rings:  # a park overlapping a landmark's ground is left to the landmark
+        from contravia.landmarks import Landmarks
+
+        clear = [Polygon(r).buffer(0) for r in Landmarks(city).clear if len(r) >= 3]
+        if clear:
+            hit = shapely.intersects(np.array([Polygon(r) for r in park_rings], dtype=object), shapely.union_all(clear))
+            park_rings = [r for r, h in zip(park_rings, hit, strict=True) if not h]
+            kinds = [k for k, h in zip(kinds, hit, strict=True) if not h]
+            park_zone = [z for z, h in zip(park_zone, hit, strict=True) if not h]
+            park_seeds = [s for s, h in zip(park_seeds, hit, strict=True) if not h]
     pv, ps = _rings_arrays(park_rings)
     city.a.update(park_verts=pv, park_starts=ps, park_kind=np.asarray(kinds, np.uint8).reshape(-1),
                   park_zone=np.asarray(park_zone, np.uint8).reshape(-1), park_seed=np.asarray(park_seeds, np.int64))

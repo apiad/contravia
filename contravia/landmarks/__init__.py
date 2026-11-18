@@ -92,7 +92,8 @@ class Landmarks:
                     street_tris=cell.street_tris, street_edges=cell.street_edges,
                     street_marks=cell.street_marks, struct_tris=cell.struct_tris, struct_paint=cell.struct_paint,
                     struct_walls=cell.struct_walls, street_cuts=cell.street_cuts, street_roofs=cell.street_roofs,
-                    walk_tris=cell.walk_tris, walk_paint=cell.walk_paint)
+                    walk_tris=cell.walk_tris, walk_paint=cell.walk_paint, park_tris=cell.park_tris,
+                    park_paint=cell.park_paint, park_walls=cell.park_walls)
 
     def walls(self, i: int, j: int) -> np.ndarray:
         """The (W, 2, 2) landmark wall segments whose midpoint lies in cell (i, j)."""

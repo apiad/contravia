@@ -44,9 +44,13 @@ SHORE = WATER_Y + 0.3  # metres: the lowest top of a cut's wall where the relief
 
 CONCRETE, SHADE, LAMPS, GRASS = 0, 1, 2, 3
 KERB_TOP, PAVING, POLE, TRUNK, LEAVES = 4, 5, 6, 7, 8  # contravia.medians
+STONE, WHITE, TILE, WOOD, IRON, WATER, THATCH, SAND, BRONZE, RED, BLUE, YELLOW = range(9, 21)  # contravia.props
 PAINTS = {CONCRETE: (0.62, 0.60, 0.56), SHADE: (0.36, 0.35, 0.33), LAMPS: (1.0, 0.94, 0.78), GRASS: None,
           KERB_TOP: (0.72, 0.71, 0.67), PAVING: (0.58, 0.55, 0.50), POLE: (0.30, 0.31, 0.33),
-          TRUNK: (0.25, 0.15, 0.08), LEAVES: (0.12, 0.35, 0.12)}
+          TRUNK: (0.25, 0.15, 0.08), LEAVES: (0.12, 0.35, 0.12),
+          STONE: (0.70, 0.67, 0.60), WHITE: (0.88, 0.87, 0.83), TILE: (0.62, 0.27, 0.18), WOOD: (0.45, 0.31, 0.19),
+          IRON: (0.16, 0.17, 0.18), WATER: (0.17, 0.36, 0.42), THATCH: (0.60, 0.50, 0.30), SAND: (0.80, 0.72, 0.52),
+          BRONZE: (0.36, 0.28, 0.16), RED: (0.72, 0.18, 0.14), BLUE: (0.16, 0.36, 0.66), YELLOW: (0.88, 0.70, 0.16)}
 
 
 class _Out:

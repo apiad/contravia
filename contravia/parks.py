@@ -600,3 +600,70 @@ def laid(a) -> list[tuple[Park, int]]:
     for k, park in zip(todo, pmap(lambda k: layout(rings[k], keys[k][1], keys[k][2]), todo, chunk=8), strict=True):
         _LAID[keys[k]] = park
     return [(_LAID[key], int(z)) for key, z in zip(keys, a["park_zone"], strict=True)]
+
+
+def add_to(city) -> dict:
+    """Build the motifs of every park stored in a city with walks (contravia.props) and store them per cell as
+    park_tris, park_paint and park_walls. Returns counts."""
+    from contravia import props
+    from contravia.geo import CELL
+    from contravia.walks import KERB, PATH_LIFT, StreetHeights, _ground_streets
+
+    for k in ("park_tris", "park_paint", "park_walls"):
+        city.a.pop(k, None)
+        city.a.pop(f"{k}_offsets", None)
+    parks_ = laid(city.a)
+    if not parks_ or "street_tris" not in city.a:
+        return {}
+    terrain = city.terrain
+    heights = StreetHeights(_ground_streets(city.a, terrain), terrain)
+    ground = lambda xy: terrain.height(np.asarray(xy, float).reshape(-1, 2)[:, 0], np.asarray(xy, float).reshape(-1, 2)[:, 1])
+    top = lambda xy, lift: heights.top(np.asarray(xy, float).reshape(-1, 2), np.full(len(np.asarray(xy).reshape(-1, 2)), lift))
+    p = props.Props()
+    count = {"benches": 0, "lakes": 0, "boats": 0, "motifs": 0}
+    for park, _ in parks_:
+        on_plaza = {"glorieta", "fountain", "bust"}
+        for name, x, z, size, head in park.motifs:
+            y = float(top([x, z], PATH_LIFT)[0] if name in on_plaza else ground([x, z])[0])
+            if name == "glorieta":
+                props.glorieta(p, (x, z), size, head, y)
+            elif name == "fountain":
+                props.fountain(p, (x, z), size, y)
+            elif name == "bust":
+                props.bust(p, (x, z), head, y)
+            else:
+                getattr(props, name)(p, (x, z), head, y)
+            count["motifs"] += 1
+        if len(park.benches):
+            ys = ground(park.benches[:, :2]) if park.kind in (CITY, ORGANIC) else top(park.benches[:, :2], PATH_LIFT)
+            if park.kind == PRADO:
+                ys = top(park.benches[:, :2], KERB)
+            for (x, z, face), y in zip(park.benches, ys, strict=True):
+                props.bench(p, (x, z), face, float(y))
+            count["benches"] += len(park.benches)
+        if len(park.lamps):
+            lift = KERB if park.kind in (CITY, PASEO, PRADO) else 0.0
+            for (x, z, _), y in zip(park.lamps, top(park.lamps[:, :2], lift), strict=True):
+                props.lamp(p, (x, z), float(y))
+        lk = park.lake
+        if lk is not None:
+            yw = float(ground(np.asarray(lk.water.exterior.coords)).max()) + 0.05
+            props.lake(p, lk.water, yw)
+            if lk.bridge is not None:
+                ya, yb = ground(np.asarray(lk.bridge)) + PATH_LIFT
+                props.footbridge(p, lk.bridge[0], lk.bridge[1], float(max(ya, yw + 0.45)), float(max(yb, yw + 0.45)))
+            if lk.pier is not None:
+                props.pier(p, lk.pier[0], lk.pier[1], yw)
+            for k, (x, z, head) in enumerate(lk.boats):
+                props.boat(p, (x, z), head, yw, k)
+            count["lakes"] += 1
+            count["boats"] += len(lk.boats)
+    tris = np.array(p.tris, np.float32).reshape(-1, 3, 3)
+    paint = np.array(p.paint, np.uint8)
+    walls = np.array(p.walls, np.float32).reshape(-1, 6)
+    keys = np.floor(tris[:, :, [0, 2]].mean(axis=1) / CELL).astype(np.int64).reshape(-1, 2)
+    wkeys = np.floor((walls[:, 0:2] + walls[:, 2:4]) / 2 / CELL).astype(np.int64).reshape(-1, 2)
+    city.add_kind("park_tris", tris, keys)
+    city.add_kind("park_paint", paint, keys)
+    city.add_kind("park_walls", walls, wkeys)
+    return {"parks_built": len(parks_), "park_triangles": len(tris), "park_walls": len(walls), **count}
