@@ -17,7 +17,7 @@ import unicodedata
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
-from contravia.rules.fleet import Design, build, fix
+from contravia.rules.designs import Design, build, fix
 from contravia.settings import config_dir
 
 CACHED = 12  # built vehicles kept

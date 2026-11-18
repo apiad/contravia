@@ -5,14 +5,14 @@ import json
 import pytest
 
 from contravia import garage
-from contravia.rules import fleet
+from contravia.rules import designs, fleet
 
 
 def test_every_preset_builds_inside_the_ranges_the_garaje_offers():
     for key, preset in fleet.catalogue().items():
-        d = fleet.Design(key)
-        assert fleet.valid(d.params()) is None, key
-        r = fleet.ranges(preset.family)
+        d = designs.Design(key)
+        assert designs.valid(d.params()) is None, key
+        r = designs.street_ranges(preset.family)
         for k, spec in r.items():
             v = d.value(k)
             if "choices" in spec:
@@ -29,47 +29,47 @@ def test_no_name_on_the_garaje_is_a_trademark():
 
 def test_each_numeric_knob_at_either_end_of_its_live_limits_is_valid():
     for key, preset in fleet.catalogue().items():
-        d = fleet.Design(key)
-        for k, spec in fleet.ranges(preset.family).items():
+        d = designs.Design(key)
+        for k, spec in designs.street_ranges(preset.family).items():
             if "choices" in spec:
                 continue
-            lo, hi = fleet.limits(d, k)
+            lo, hi = designs.limits(d, k)
             assert spec["min"] <= lo <= hi <= spec["max"]
             for v in (lo, hi):
-                assert fleet.valid(fleet._set(d, k, v).params()) is None, (key, k, v)
+                assert designs.valid(designs._set(d, k, v).params()) is None, (key, k, v)
 
 
 def test_turning_a_knob_stops_at_its_end_and_says_so():
-    d = fleet.Design("ruso")
+    d = designs.Design("ruso")
     why = ""
     for _ in range(200):
-        d, why = fleet.turn(d, "length", 1)
+        d, why = designs.turn(d, "length", 1)
         if why:
             break
-    assert d.value("length") == pytest.approx(fleet.ranges("car")["length"]["max"])
+    assert d.value("length") == pytest.approx(designs.street_ranges("car")["length"]["max"])
     assert why
 
 
 def test_turning_an_option_goes_round_its_choices():
-    d = fleet.Design("almendron")
+    d = designs.Design("almendron")
     seen = set()
-    for _ in range(len(fleet.ranges("car")["headlamp"]["choices"])):
-        d, _ = fleet.turn(d, "headlamp", 1)
+    for _ in range(len(designs.street_ranges("car")["headlamp"]["choices"])):
+        d, _ = designs.turn(d, "headlamp", 1)
         seen.add(d.value("headlamp"))
-    assert seen == set(fleet.ranges("car")["headlamp"]["choices"])
+    assert seen == set(designs.street_ranges("car")["headlamp"]["choices"])
 
 
 def test_fix_pulls_a_design_back_inside_and_leaves_a_valid_one_alone():
-    d = fleet.Design("ruso", changes={"length": 9.0, "headlamp": "laser", "nope": 1}, paint="#123456")
-    f = fleet.fix(d)
-    assert f.changes == {"length": fleet.ranges("car")["length"]["max"]}
-    assert f.paint is None and fleet.valid(f.params()) is None
-    ok = fleet.Design("ruso", changes={"length": 4.4}, paint=fleet.COLOURS[0][1], livery="Franja")
-    assert fleet.fix(ok) == ok
+    d = designs.Design("ruso", changes={"length": 9.0, "headlamp": "laser", "nope": 1}, paint="#123456")
+    f = designs.fix(d)
+    assert f.changes == {"length": designs.street_ranges("car")["length"]["max"]}
+    assert f.paint is None and designs.valid(f.params()) is None
+    ok = designs.Design("ruso", changes={"length": 4.4}, paint=designs.COLOURS[0][1], livery="Franja")
+    assert designs.fix(ok) == ok
 
 
 def test_a_livery_paints_the_side_with_the_second_colour():
-    d = fleet.Design("ruso", livery="Policía", second="#2f5fa8")
+    d = designs.Design("ruso", livery="Policía", second="#2f5fa8")
     p = d.params()
     assert p.lightbar == "bar" and p.livery[0][0] == "#2f5fa8"
     assert d.palette()["roof"][0] == "#2f5fa8"
@@ -77,7 +77,7 @@ def test_a_livery_paints_the_side_with_the_second_colour():
 
 def test_designs_are_saved_read_back_and_fixed_on_load(tmp_path, monkeypatch):
     monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path))
-    d = fleet.Design("almendron", "Mi almendrón 1", {"length": 5.0}, paint="#f2b6c6")
+    d = designs.Design("almendron", "Mi almendrón 1", {"length": 5.0}, paint=designs.COLOURS[4][1])
     garage.save_design(d)
     assert garage.load_designs() == [d]
     path = tmp_path / "garaje" / "mi-almendron-1.json"
@@ -85,7 +85,7 @@ def test_designs_are_saved_read_back_and_fixed_on_load(tmp_path, monkeypatch):
     data["changes"]["length"] = 99.0  # a range tightened after it was saved
     path.write_text(json.dumps(data))
     (back,) = garage.load_designs()
-    assert back.changes["length"] == fleet.ranges("car")["length"]["max"]
+    assert back.changes["length"] == designs.street_ranges("car")["length"]["max"]
     assert garage.new_name("Almendrón", ["mi almendrón 1"]) == "Mi almendrón 1"
     assert garage.new_name("Almendrón", ["Mi almendrón 1"]) == "Mi almendrón 2"
     garage.delete_design(back)
@@ -93,10 +93,10 @@ def test_designs_are_saved_read_back_and_fixed_on_load(tmp_path, monkeypatch):
 
 
 def test_colours_do_not_rebuild_the_geometry():
-    a = fleet.Design("moto", paint=fleet.COLOURS[0][1])
-    b = fleet.Design("moto", paint=fleet.COLOURS[1][1])
+    a = designs.Design("moto", paint=designs.COLOURS[0][1])
+    b = designs.Design("moto", paint=designs.COLOURS[1][1])
     assert garage.key(a) == garage.key(b)
-    assert garage.key(a) != garage.key(fleet.Design("moto", changes={"wheelbase": 1.5}))
+    assert garage.key(a) != garage.key(designs.Design("moto", changes={"wheelbase": 1.5}))
 
 
 def test_the_garaje_browses_designs_saves_and_drives(city_npz, tmp_path, monkeypatch):

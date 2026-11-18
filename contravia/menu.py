@@ -18,7 +18,7 @@ from typing import ClassVar
 
 from contravia import garage, ui
 from contravia.hud import DAY_NAMES
-from contravia.rules import fleet
+from contravia.rules import designs, fleet
 from contravia.settings import WEATHER_ICON, FreeDrive, Options
 
 CLEAR = {"padding": 0, "bg": "#00000000"}
@@ -571,7 +571,7 @@ def _number(v: float, unit: str) -> str:
 def option_text(key: str, v) -> str:
     """How the Garaje shows a knob's value."""
     if key in ("paint", "second"):
-        return fleet.colour_name(v)
+        return designs.colour_name(v)
     if isinstance(v, str) or v is None or isinstance(v, bool):
         return OPTION_TEXT.get(v, str(v))
     if isinstance(v, int):
@@ -594,7 +594,7 @@ class GarageScreen(Screen):
     vehicle turning in the street behind. Up and down choose, Q and E change family, ENTER drives, TAB designs, a
     drag of the mouse turns the vehicle by hand, Escape goes back where the Garaje was opened from."""
 
-    TABS: ClassVar[tuple] = (*fleet.TABS, "Mis diseños")
+    TABS: ClassVar[tuple] = (*designs.TABS, "Mis diseños")
 
     def build(self, width):
         from manifoldx.gui import Panel
@@ -711,7 +711,7 @@ class GarageScreen(Screen):
 
 
 class KnobRow:
-    """A row of the Taller: one knob of the design being edited, turned with left and right through fleet.turn."""
+    """A row of the Taller: one knob of the design being edited, turned with left and right through designs.turn."""
 
     def __init__(self, menu, key: str, label: str):
         self.menu, self.key, self.label = menu, key, label
@@ -725,17 +725,17 @@ class KnobRow:
         m = self.menu
         if m.note:
             return m.note
-        r = fleet.ranges(m.design.preset.family)[self.key]
+        r = designs.street_ranges(m.design.preset.family)[self.key]
         if "choices" in r:
             return f"{len(r['choices'])} opciones: cambia con ← y →."
-        lo, hi = fleet.limits(m.design, self.key)
+        lo, hi = designs.limits(m.design, self.key)
         unit = r["unit"] if r["unit"] == "m" else ""
         return (f"De {_number(r['min'], unit)} a {_number(r['max'], unit)}; con las otras medidas, entre "
                 f"{_number(lo, unit)} y {_number(hi, unit)}.")
 
     def step(self, d: int) -> None:
         m = self.menu
-        new, why = fleet.turn(m.design, self.key, d)
+        new, why = designs.turn(m.design, self.key, d)
         if new != m.design:
             m.undo.append(m.design)
             m.design, m.saved = new, False
@@ -753,15 +753,15 @@ class DesignScreen(RowsScreen):
 
     def rows(self):
         m = self.menu
-        group = getattr(self, "group", fleet.GROUPS[0])
-        return [KnobRow(m, k, label) for k, label, _ in fleet.knobs(m.design.preset.family, group)]
+        group = getattr(self, "group", designs.GROUPS[0])
+        return [KnobRow(m, k, label) for k, label, _ in designs.knobs(m.design.preset.family, group)]
 
     def background(self, width):
         from manifoldx.gui import Panel
 
         if self.menu.current_before not in ("garage", "design"):
-            self.group = fleet.GROUPS[0]
-        groups = [g for g in fleet.GROUPS if fleet.knobs(self.menu.design.preset.family, g)]
+            self.group = designs.GROUPS[0]
+        groups = [g for g in designs.GROUPS if designs.knobs(self.menu.design.preset.family, g)]
         self.group = getattr(self, "group", groups[0]) if getattr(self, "group", None) in groups else groups[0]
         self.groups = groups
         self.menu.game.open_garage()
@@ -949,7 +949,7 @@ class Menu:
     def refresh_vehicles(self) -> None:
         """The free drive's Vehículo row: the sedan, every drivable preset and every drivable saved design."""
         row = self.free["vehicle"]
-        row.options = [("Sedán", None)] + [(p.name, fleet.Design(k)) for k, p in fleet.catalogue().items()
+        row.options = [("Sedán", None)] + [(p.name, designs.Design(k)) for k, p in fleet.catalogue().items()
                                            if p.drivable]
         row.options += [(d.name, d) for d in self.designs if d.preset.drivable]
         row.index = 0
@@ -959,7 +959,7 @@ class Menu:
         """The Salón's rows for a tab: its presets, or the saved designs."""
         if tab == "Mis diseños":
             return list(self.designs)
-        return [fleet.Design(k) for k, p in fleet.catalogue().items() if p.tab == tab]
+        return [designs.Design(k) for k, p in fleet.catalogue().items() if p.tab == tab]
 
     def _key(self, design) -> str:
         if design is None:
@@ -999,7 +999,7 @@ class Menu:
             if vehicle is not None:
                 g.set_vehicle(vehicle, d.palette())
                 self.shown = self._key(d)
-        p = (d or self.chosen or fleet.Design("ruso")).params()
+        p = (d or self.chosen or designs.Design("ruso")).params()
         length = getattr(p, "length", 2.2)
         g.photo = (yaw, pitch, max(5.5, 1.5 * length + 2.5))
 
@@ -1028,9 +1028,9 @@ class Menu:
     def random_design(self, design):
         """A design of the same preset with every knob drawn from its range, as the fleet would draw one."""
         rng = self.game._rng
-        r = fleet.ranges(design.preset.family)
-        out = fleet.Design(design.base, design.name)
-        for key, _, _ in fleet.knobs(design.preset.family):
+        r = designs.street_ranges(design.preset.family)
+        out = designs.Design(design.base, design.name)
+        for key, _, _ in designs.knobs(design.preset.family):
             spec = r[key]
             if "choices" in spec:
                 v = spec["choices"][int(rng.integers(len(spec["choices"])))]
@@ -1041,7 +1041,7 @@ class Menu:
                 setattr(out, key, v)
             else:
                 out.changes[key] = v
-        return fleet.fix(out)
+        return designs.fix(out)
 
     def save_design(self) -> None:
         """Keep the Taller's design in Mis diseños, naming it "Mi <vehículo> <n>" the first time."""
