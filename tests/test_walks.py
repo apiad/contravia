@@ -37,12 +37,12 @@ def test_a_dense_block_rises_kerb_to_kerb():
     a = _arrays([_box(x, z, 38) for x in (8, 52) for z in (8, 52)])
     tris, paint, keys, report = walks.build(a, Terrain.flat())
     assert report["dense_blocks"] == 1 and report["aprons"] == 0
-    top = tris[paint % 4 == walks.TOP]
+    top = tris[paint % walks.PARTS == walks.TOP]
     assert len(top) and np.allclose(top[:, :, 1], walks.KERB)
     assert (_normals(top)[:, 1] > 0.99).all()
     xz = top[:, :, [0, 2]].reshape(-1, 2)
     assert xz.min() >= STREET / 2 - 0.05 and xz.max() <= 100 - STREET / 2 + 0.05  # kerb to kerb, off the street
-    kerb = tris[paint % 4 == walks.KERB_FACE]
+    kerb = tris[paint % walks.PARTS == walks.KERB_FACE]
     out = kerb.mean(axis=1)[:, [0, 2]] - 50  # the block's centre is (50, 50)
     n = _normals(kerb)[:, [0, 2]]
     assert (np.einsum("ij,ij->i", n, out) > 0).all()  # every kerb faces the street
@@ -52,15 +52,33 @@ def test_a_lone_building_gets_a_platform_and_a_path():
     a = _arrays([_box(15, 40, 10)])  # 10 m from the street along x = 0
     tris, paint, keys, report = walks.build(a, Terrain.flat())
     assert report["dense_blocks"] == 0 and report["aprons"] == 1
-    top = tris[paint % 4 == walks.APRON_TOP]
+    top = tris[paint % walks.PARTS == walks.APRON_TOP]
     xz = top[:, :, [0, 2]].reshape(-1, 2)
     assert abs(xz[:, 0].min() - STREET / 2) < 0.1  # the path runs from the platform to the street's edge
 
 
 def test_wheels_stand_on_a_platform(city):
     tris, paint = city.a["walk_tris"], city.a["walk_paint"]
-    top = tris[paint % 4 == walks.APRON_TOP]
+    top = tris[paint % walks.PARTS == walks.APRON_TOP]
     assert len(top)
     c = top[0].mean(axis=0)
     s = Surface(city, city.terrain)
     assert abs(float(s.height(c[0], c[2])[0]) - c[1]) < 1e-3
+
+
+def test_a_park_block_is_paved_by_its_layout_and_its_lawn_left_bare():
+    from contravia import parks
+
+    a = _arrays([_box(15, 40, 1)])  # one shed: the block is almost empty
+    ring = _box(5, 5, 90)  # the block, inside the streets' kerbs
+    a.update(park_verts=ring.astype(np.float32), park_starts=np.array([0, 4]), park_kind=np.array([parks.CITY], np.uint8),
+             park_zone=np.array([1], np.uint8), park_seed=np.array([parks.seed_of(shapely.Polygon(ring))]))
+    tris, paint, _, report = walks.build(a, Terrain.flat())
+    assert report["paved_parks"] == 1 and report["dense_blocks"] == 0
+    part = paint % walks.PARTS
+    path = tris[part == walks.PATH_TOP]
+    assert len(path) and np.allclose(path[:, :, 1], walks.PATH_LIFT, atol=1e-3)
+    kerb = tris[part == walks.TOP]
+    c = kerb[:, :, [0, 2]].mean(axis=1)
+    inside = (c > 5 + parks.KERB_W + 0.5).all(axis=1) & (c < 95 - parks.KERB_W - 0.5).all(axis=1)
+    assert len(kerb) and not inside.any()  # the raised pavement is only the ring round the park

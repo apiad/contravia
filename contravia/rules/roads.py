@@ -143,7 +143,9 @@ def structures(mb, tris: np.ndarray, paint: np.ndarray) -> None:
 
 WALK_TONES = (  # the pavement's tone by zone: the old centre's worn cement, Vedado's light cement, the rest
     (0.46, 0.44, 0.40), (0.54, 0.53, 0.50), (0.43, 0.42, 0.39))
-KERB_SHADE = (0.82, 1.0, 0.9, 0.75)  # each part of contravia.walks (top, kerb, platform, platform edge) against its tone
+KERB_SHADE = (0.82, 1.0, 0.9, 0.75, 1.08, 0.9)  # each part of contravia.walks (top, kerb, platform, platform edge,
+# park path, its edge) against its zone's tone; a park's dirt paths take DIRT instead
+DIRT = (0.52, 0.42, 0.29)  # the organic park's beaten earth
 # The manifoldx surface pattern of each zone's pavement top and of a platform: worn slabs (9) in the old centre and
 # the outskirts, clean slabs (8) in Vedado and Playa; kerbs stay plain.
 WALK_PATTERN = (9, 8, 9)
@@ -157,11 +159,16 @@ def walks(mb, tris: np.ndarray, paint: np.ndarray) -> None:
     if not len(t):
         return
     p = t.reshape(-1, 3)
+    from contravia.walks import DIRT_TOP, PARTS, PATH_TOP
+
     code = np.repeat(np.asarray(paint, int), 3)
-    zone, part = np.minimum(code // 4, 2), code % 4
-    col = np.asarray(WALK_TONES)[zone] * np.asarray(KERB_SHADE)[part][:, None]
+    zone, part = np.minimum(code // PARTS, 2), code % PARTS
+    col = np.asarray(WALK_TONES)[zone] * np.asarray(KERB_SHADE + (1.0, 1.0))[part][:, None]
+    dirt = part >= DIRT_TOP
+    col[dirt] = np.asarray(DIRT) * np.where(part[dirt] == DIRT_TOP, 1.0, 0.85)[:, None]
     col *= (0.9 + 0.2 * fbm(p[:, 0], p[:, 2], 3.0, seed=23))[:, None]
-    surface = np.where(part == 0, np.asarray(WALK_PATTERN)[zone], np.where(part == 2, PLATFORM_PATTERN, 0))
+    surface = np.where((part == 0) | (part == PATH_TOP), np.asarray(WALK_PATTERN)[zone],
+                       np.where(part == 2, PLATFORM_PATTERN, 0))
     mb.add(p, np.repeat(_normal(t), 3, axis=0), col, np.arange(len(p)).reshape(-1, 3), surface=surface)
 
 

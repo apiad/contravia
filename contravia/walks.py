@@ -14,6 +14,9 @@ of the ground and the nearest street, read from a raster per cell into which the
 and spread a few metres (StreetHeights), so every vertex is looked up at once; that raster is the part a GPU
 could take over.
 
+A park's block (contravia.parks) is paved by its layout instead: its kerb round the edge (or the whole Prado) as
+a pavement, its paths and plazas PATH_LIFT over the lawn and its dirt paths DIRT_LIFT.
+
 Everything is stored as walk_tris, with walk_paint telling each triangle's zone and part (paint()), so the cells
 draw it and the wheels stand on it (contravia/surface.py). `contravia walks <data.npz>` rebuilds it in place
 without reading OSM again.
@@ -24,6 +27,7 @@ import shapely
 from shapely.geometry import MultiLineString
 from shapely.ops import polygonize, unary_union
 
+from contravia import parks
 from contravia.buildingtags import MUNI
 from contravia.geo import CELL
 from contravia.medians import boulevard
@@ -45,12 +49,14 @@ SPREAD = 6  # pixels a street's height spreads beyond it (12 m): farther, a pave
 MARGIN = 16.0  # metres the raster reaches past its cell
 CENTRE = ("La Habana Vieja", "Centro Habana", "Cerro", "Diez de Octubre", "Regla", "Guanabacoa")
 VEDADO = ("Plaza de la Revolución", "Playa")
-TOP, KERB_FACE, APRON_TOP, APRON_EDGE = range(4)  # the parts of walk_paint
+PATH_LIFT, DIRT_LIFT = 0.05, 0.03  # metres a park's paths and its dirt paths stand over the ground
+TOP, KERB_FACE, APRON_TOP, APRON_EDGE, PATH_TOP, PATH_EDGE, DIRT_TOP, DIRT_EDGE = range(8)  # the parts of walk_paint
+PARTS = 8  # each top is followed by its edge
 
 
 def paint(zone: int, part: int) -> int:
-    """One walk_paint value: zone 0 is the old centre, 1 Vedado and Playa, 2 the rest; part is TOP to APRON_EDGE."""
-    return zone * 4 + part
+    """One walk_paint value: zone 0 is the old centre, 1 Vedado and Playa, 2 the rest; part is TOP to DIRT_EDGE."""
+    return zone * PARTS + part
 
 
 def zone_of(muni: str | None) -> int:
@@ -249,6 +255,10 @@ def build(a, terrain) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
     blocks = np.array([b for b in polygonize(unary_union(MultiLineString([((r[0], r[1]), (r[2], r[3])) for r in roads])))
                        if b.area < MAX_BLOCK], dtype=object)
     tris, paints, keys = [], [], []
+    laid = parks.laid(a)
+    park_rings = [np.asarray(a["park_verts"][a["park_starts"][k]:a["park_starts"][k + 1]], float)
+                  for k in range(len(laid))]
+    report_parks = 0
     dense = np.zeros(len(blocks), bool)
     in_dense = np.zeros(len(rings), bool)
     if len(blocks):
@@ -265,6 +275,9 @@ def build(a, terrain) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
         centre = np.isin(block_muni, [k for k, n in enumerate(names) if n in CENTRE])
         dense = (area > 10) & (built > np.where(centre, CENTRE_DENSE, DENSE) * np.maximum(area, 1e-9))
         dense |= (area > 10) & boulevard(a, blocks)  # Paseo, Prado, 5ta: paved between the carriageways
+        if laid:  # a park's block is paved by its layout below
+            dense &= ~shapely.contains(shapely.union_all([shapely.Polygon(r) for r in park_rings]),
+                                       shapely.point_on_surface(blocks))
         in_dense[fk[dense[bk]]] = True
         keep = dense[bi]
         if keep.any():
@@ -273,6 +286,22 @@ def build(a, terrain) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
             t, p, k = _mesh(parts[keep], ci[keep], codes, np.full(n, KERB), np.full(n, KERB + 0.4), SAMPLE, heights,
                             cells)
             tris.append(t), paints.append(p), keys.append(k)
+
+    if laid:
+        geoms, codes, lifts, drops = [], [], [], []
+        for park, zone in laid:
+            for g, part, lift, drop in ((park.kerb, TOP, KERB, KERB + 0.4),
+                                        (shapely.union_all(park.paved) if park.paved else None, PATH_TOP, PATH_LIFT, 0.3),
+                                        (shapely.union_all(park.dirt) if park.dirt else None, DIRT_TOP, DIRT_LIFT, 0.2)):
+                if g is not None and not g.is_empty:
+                    geoms.append(shapely.make_valid(g))
+                    codes.append(paint(zone, part)), lifts.append(lift), drops.append(drop)
+        if geoms:
+            parts, gi, ci = _pieces(np.array(geoms, dtype=object), land, boxes)
+            t, p, k = _mesh(parts, ci, np.array(codes)[gi], np.array(lifts)[gi], np.array(drops)[gi], SAMPLE, heights,
+                            cells)
+            tris.append(t), paints.append(p), keys.append(k)
+            report_parks = len(laid)
 
     open_ = np.flatnonzero(~in_dense & ~shapely.is_empty(feet)) if len(rings) else np.zeros(0, int)
     aprons = 0
@@ -303,7 +332,7 @@ def build(a, terrain) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
     if not tris:
         return empty
     return (np.concatenate(tris).astype(np.float32), np.concatenate(paints), np.concatenate(keys).astype(np.int64),
-            {"dense_blocks": int(dense.sum()), "aprons": aprons})
+            {"dense_blocks": int(dense.sum()), "aprons": aprons, "paved_parks": report_parks})
 
 
 def add_to(city) -> dict:

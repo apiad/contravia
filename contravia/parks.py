@@ -582,3 +582,21 @@ def _to_world(park: Park, c, u, v) -> Park:
         park.lake = Lake(geo(lk.water), tuple(pts(e)[0] for e in lk.bridge) if lk.bridge is not None else None,
                          tuple(pts(e)[0] for e in lk.pier) if lk.pier is not None else None, rows(lk.boats))
     return park
+
+
+_LAID: dict = {}  # (ring bytes, kind, seed) -> Park: prepare, walks and the motifs lay out the same parks once
+
+
+def laid(a) -> list[tuple[Park, int]]:
+    """The parks stored in city arrays a (by contravia.prepare), laid out, with each one's zone; cached."""
+    if "park_kind" not in a or not len(a["park_kind"]):
+        return []
+    from contravia.streets import pmap
+
+    verts, starts = np.asarray(a["park_verts"], float), np.asarray(a["park_starts"])
+    rings = [verts[starts[k]:starts[k + 1]] for k in range(len(starts) - 1)]
+    keys = [(r.tobytes(), int(kd), int(sd)) for r, kd, sd in zip(rings, a["park_kind"], a["park_seed"], strict=True)]
+    todo = [k for k, key in enumerate(keys) if key not in _LAID]
+    for k, park in zip(todo, pmap(lambda k: layout(rings[k], keys[k][1], keys[k][2]), todo, chunk=8), strict=True):
+        _LAID[keys[k]] = park
+    return [(_LAID[key], int(z)) for key, z in zip(keys, a["park_zone"], strict=True)]

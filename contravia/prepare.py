@@ -424,8 +424,6 @@ def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]
                         places=(raw.places, raw.place_points, raw.consejos))
 
     # Parks: blocks with few or no buildings (contravia.parks). They get no filler, and their own trees.
-    from contravia.streets import pmap
-
     park_rings, kinds, park_zone = find_parks(raw, faces, rings, cents, graph)
     park_seeds = [parks.seed_of(Polygon(r)) for r in park_rings]
     if park_rings:
@@ -434,8 +432,9 @@ def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]
         fillers, seeds = [fillers[k] for k in keep], [seeds[k] for k in keep]
         polys = [Polygon(r) for r in park_rings]
         trees = trees[~shapely.contains_xy(shapely.union_all(polys), trees[:, 0], trees[:, 1])] if len(trees) else trees
-        laid = pmap(lambda k: parks.layout(park_rings[k], kinds[k], park_seeds[k]).trees, range(len(park_rings)), chunk=8)
-        trees = np.vstack([trees] + [t for t in laid if len(t)])
+        laid = parks.laid({"park_verts": _rings_arrays(park_rings)[0], "park_starts": _rings_arrays(park_rings)[1],
+                           "park_kind": kinds, "park_seed": park_seeds, "park_zone": park_zone})
+        trees = np.vstack([trees] + [p.trees for p, _ in laid if len(p.trees)])
         trees = trees[~on_road(trees, roads)]
 
     if terrain is not None and terrain.heights.size > 4:  # the relief past the Malecón's wall goes under the sea
