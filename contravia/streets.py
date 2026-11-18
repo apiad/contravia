@@ -318,12 +318,18 @@ def network(J, edges, forced, cache, stops=frozenset()):
             parent[i] = parent[parent[i]]
             i = parent[i]
         return i
-    maxw = np.zeros(N)
+    ends = defaultdict(list)  # node -> [(outward direction, width)]
     for e in edges:
-        maxw[e.f] = max(maxw[e.f], e.w)
-        maxw[e.t] = max(maxw[e.t], e.w)
+        ends[e.f].append((unit(e.p[1] - e.p[0]), e.w))
+        ends[e.t].append((unit(e.p[-2] - e.p[-1]), e.w))
+
+    def across(node, d):
+        """How wide the junction at node is along direction d: the widest street there that d crosses."""
+        return max((w for u, w in ends[node] if abs(float(u @ d)) < 0.7), default=0.0)
+
     for e in edges:
-        if length(e.p) < 0.5 * (maxw[e.f] + maxw[e.t]):
+        d = unit(e.p[-1] - e.p[0])
+        if length(e.p) < 0.5 * (across(e.f, d) + across(e.t, d)):
             parent[root(e.f)] = root(e.t)
     for a, b in forced:
         parent[root(a)] = root(b)
@@ -485,7 +491,9 @@ def end_widths(chains, ends):
 
 def trims(chains, cache):
     """How far each end is cut back on its smooth curve, past every neighbour's ribbon, and the pairs of
-    clusters whose edge is too short for its two trims."""
+    clusters whose edge is too short for its two trims even without their corner room: two junctions that
+    only lack room for their corner arcs stay apart, joined by a short ribbon, so a side street does not
+    bend into a merged junction."""
     ends = defaultdict(list)  # node -> [(chain, which end)]
     for c, e in enumerate(chains):
         ends[e.f].append((c, 0))
@@ -528,7 +536,7 @@ def trims(chains, cache):
         for key, t in res:
             trim[key] = max(trim[key], t)
     merge = [(e.f, e.t) for c, e in enumerate(chains)
-             if trim[(c, 0)] + trim[(c, 1)] > lens[c] - 1.0 and lens[c] < MERGE_SHORT and e.f != e.t]
+             if trim[(c, 0)] + trim[(c, 1)] - 2 * CORNER > lens[c] - 1.0 and lens[c] < MERGE_SHORT and e.f != e.t]
     return ends, lens, trim, merge, ew
 
 
