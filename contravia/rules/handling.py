@@ -38,7 +38,7 @@ class Handling:
 FOUR = (3.7, 2.1, 1.4, 1.0)
 HANDLING: dict[str, Handling] = {
     # soft and floaty, drum brakes, a big lazy engine
-    "almendron": Handling(1600, 75, "rear", (2.8, 1.6, 1.0), 3.5, 4400, (1.1, 1.1), 0.25, (5000, 2000), 0.85,
+    "almendron": Handling(1600, 75, "rear", (2.5, 1.5, 1.0), 4.1, 4400, (1.1, 1.1), 0.25, (5000, 2000), 0.85,
                           3800, 0.55, 0.38, 0.45, travel=0.25),
     "ruso": Handling(1030, 52, "rear", FOUR, 4.1, 5600, (1.3, 1.3), 0.3, (6000, 2500), 0.9, 4000, 0.6, 0.38, 0.45),
     "moscovita": Handling(1080, 55, "rear", FOUR, 4.2, 5800, (1.2, 1.2), 0.3, (5500, 2500), 0.9, 4000, 0.6, 0.40,
