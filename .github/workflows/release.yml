@@ -19,7 +19,7 @@ jobs:
         with:
           go-version-file: packaging/launcher/go.mod
           cache: false
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.3
       - name: Free-threaded Python with pip, for picking the cp314t wheels
         run: |
           uv python install 3.14t
