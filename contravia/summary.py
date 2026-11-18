@@ -19,7 +19,7 @@ from contravia.mesh import MeshBuilder, signed_area
 from contravia.rules import facades
 from contravia.rules.ground import GROUND, SEA, relief
 from contravia.rules.roads import ROAD
-from contravia.rules.trees import LEAVES, TREE_EVERY
+from contravia.rules.trees import TREE_EVERY, far_green, today
 
 GRID = 16
 FILLER_SHARE = 0.6  # the share of a filler block's area its boxes cover, at the mean filler height
@@ -166,9 +166,10 @@ def summary_mesh(s: dict, L: int, a: int, b: int, origin, terrain=None) -> MeshD
     cx, cz = x0 + (cols + 0.5) * sq, z0 + (rows + 0.5) * sq
     ys = terrain.height(cx, cz) if terrain is not None else np.zeros(len(cx))
     leaf_share = np.minimum(green[rows, cols] * 60.0 / (sq * sq), 1.0)  # a tree shades about 60 m²
+    leaves = far_green(today())
     for r, c, x, z, y, g in zip(rows, cols, cx, cz, ys, leaf_share, strict=True):
         h = sq / 2
-        colour = tuple(np.add(np.multiply(GROUND, 1 - g), np.multiply(LEAVES, g)))
+        colour = tuple(np.add(np.multiply(GROUND, 1 - g), np.multiply(leaves, g)))
         mb.add([(x - h, y - BELOW, z - h), (x + h, y - BELOW, z - h), (x + h, y - BELOW, z + h),
                 (x - h, y - BELOW, z + h)], [(0, 1, 0)] * 4, colour, [(0, 1, 2), (0, 2, 3)])
         if built[r, c] > 0:

@@ -152,3 +152,17 @@ def test_a_cell_takes_the_zone_of_its_commonest_municipio():
     attrs[:, MUNI] = [0, 0, -1]
     assert cell_zone(Cell(building_attrs=attrs, muni_names=("Centro Habana",))) == OLD
     assert cell_zone(Cell()) == OUT
+
+
+def test_ceibas_draw_fewer_triangles_in_the_dry_season_and_the_far_green_turns_with_them():
+    from contravia.mesh import MeshBuilder
+    from contravia.rules.trees import Trees, draw, far_green
+
+    n = 5
+    t = Trees(np.arange(n * 2, dtype=float).reshape(n, 2) * 30, np.zeros(n), np.full(n, SPECIES.index("ceiba"), np.int8),
+              np.ones(n), np.zeros(n), np.zeros(n, int), np.full(n, 0.5))
+    feb, jun = MeshBuilder(), MeshBuilder()
+    draw(feb, t, date(2026, 2, 15))
+    draw(jun, t, date(2026, 6, 15))
+    assert len(feb.to_meshdata(0, 0).indices) < len(jun.to_meshdata(0, 0).indices)
+    assert far_green(date(2026, 2, 15)) != far_green(date(2026, 6, 15))

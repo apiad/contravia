@@ -1,31 +1,40 @@
-"""Trees in layer 0: a brown box trunk under a green cone of six sides. Ugly on purpose.
+"""Where a cell's trees stand, which species each one is, and drawing them (the species: rules/species.py).
 
-One tree is built once at the origin as a template; a cell's trees are copies of it moved to each
-position, scaled and tinted, added as one trunk batch and one leaf batch, so a cell with 700 trees costs
-two calls.
+No tree is stored. A cell's trees are its parks' trees, the ones its green grows (in_green) and, on land OSM says
+nothing about, the wild ones (wild): clumps where a broad noise is high, clearings where it is low, never on a
+road or in the sea. Each tree's species comes from its zone (the coast, the old centre, Vedado, a park or the
+rest) and a seed from its position; its size, turn, tone and seasonal shift come from the same seed. So the same
+cell always grows the same trees, and they look as the game's date says.
 
-Where OSM has nothing on a piece of land (no building, no block, no tree), wild() scatters trees: clumps
-where a broad noise is high, clearings where it is low, never on a road or in the sea. The draws are seeded
-by the cell, so the same cell always grows the same trees.
+draw() copies one template per species and crown to every tree that has it, so a cell's trees cost a few batches.
 """
-
-import functools
 
 import numpy as np
 
 from contravia.geo import CELL
-from contravia.mesh import MeshBuilder
 from contravia.rules.ground import SEA
 from contravia.rules.noise import fbm
 
-TRUNK = (0.25, 0.15, 0.08)
-LEAVES = (0.12, 0.35, 0.12)
 TREE_EVERY = 150.0  # m² of mapped green (park, wood, meadow) per tree, seeded when its cell opens
 WILD_STEP = 13.0  # metres between the candidate spots of wild trees, before jitter
 WILD_CLEAR = 3.0  # metres between a wild tree and a road's edge
 
 
 CLEAR = 1.0  # metres between a tree's trunk and the drawn street
+_clock = None
+
+
+def set_clock(now) -> None:
+    """Make today() read the date from now(), a function returning a datetime: the game's clock."""
+    global _clock
+    _clock = now
+
+
+def today():
+    """The date the trees are drawn for: the game's clock's, or the machine's while no game set one."""
+    from datetime import date
+
+    return _clock().date() if _clock is not None else date.today()
 
 
 def off_streets(xz, street_tris) -> np.ndarray:
@@ -50,52 +59,43 @@ def off_streets(xz, street_tris) -> np.ndarray:
     return keep
 
 
-@functools.cache
-def _template():
-    """One tree at the origin: (positions, normals, triangles) for its trunk, then for its leaves."""
-    trunk, leaves = MeshBuilder(), MeshBuilder()
-    r, h = 0.2, 2.0
-    corners = [(-r, -r), (r, -r), (r, r), (-r, r)]
-    for k in range(4):
-        (x0, z0), (x1, z1) = corners[k], corners[(k + 1) % 4]
-        n = np.array([z1 - z0, 0.0, -(x1 - x0)])
-        if np.dot(n[[0, 2]], [(x0 + x1) / 2, (z0 + z1) / 2]) < 0:
-            n = -n
-        n /= np.linalg.norm(n)
-        trunk.add([(x0, 0, z0), (x1, 0, z1), (x1, h, z1), (x0, h, z0)], [n] * 4, TRUNK, [(0, 1, 2), (0, 2, 3)])
-    radius, top = 1.6, 6.0
-    for k in range(6):
-        t0, t1 = 2 * np.pi * k / 6, 2 * np.pi * (k + 1) / 6
-        p0 = (radius * np.cos(t0), h, radius * np.sin(t0))
-        p1 = (radius * np.cos(t1), h, radius * np.sin(t1))
-        tm = (t0 + t1) / 2
-        n = np.array([np.cos(tm), radius / (top - h), np.sin(tm)])
-        n /= np.linalg.norm(n)
-        leaves.add([p0, p1, (0, top, 0)], [n] * 3, LEAVES, [(0, 1, 2)])
-    parts = []
-    for mb in (trunk, leaves):
-        md = mb.to_meshdata(0, 0)
-        parts.append((md.positions.astype(float), md.normals.astype(float), md.indices.reshape(-1, 3)))
-    return tuple(parts)
+def draw(mb, t, day) -> None:
+    """Add the (Trees) t to mb as they look on day: each species and crown is one template copied to its trees,
+    turned, scaled and tinted, so a cell's trees cost a few batches, not one per tree."""
+    from contravia.rules.species import ACCENT, LEAF, SPECIES, season, template
 
-
-def trees(mb, xz, y=None, scale=None, tone=None) -> None:
-    """Add a tree standing at each (x, z) of the (N, 2) array xz, on the ground heights y (0 when None),
-    each `scale` times the template's size and its leaves `tone` times their green (1 when None)."""
-    xz = np.asarray(xz, float).reshape(-1, 2)
-    if not len(xz):
+    if not len(t):
         return
-    n = len(xz)
-    y = np.zeros(n) if y is None else np.asarray(y, float)
-    scale = np.ones(n) if scale is None else np.asarray(scale, float)
-    tone = np.ones(n) if tone is None else np.asarray(tone, float)
-    shift = np.stack([xz[:, 0], y, xz[:, 1]], axis=1)[:, None, :]
-    for (pos, nrm, tri), color in zip(_template(), (TRUNK, LEAVES), strict=True):
-        v = len(pos)
-        tint = tone if color is LEAVES else np.ones(n)
-        mb.add((pos[None] * scale[:, None, None] + shift).reshape(-1, 3), np.tile(nrm, (n, 1)),
-               np.repeat(np.multiply(color, tint[:, None]), v, axis=0),
-               (tri[None] + v * np.arange(n)[:, None, None]).reshape(-1, 3))
+    looks = {}
+    crown = np.empty(len(t), object)
+    leaf, accent = np.zeros((len(t), 3)), np.zeros((len(t), 3))
+    for k in range(len(t)):
+        key = (int(t.species[k]), int(t.shift[k]))
+        if key not in looks:
+            looks[key] = season(SPECIES[key[0]], day, key[1])
+        look = looks[key]
+        crown[k], leaf[k], accent[k] = look.crown, look.leaf, look.accent
+    tone = (0.85 + 0.3 * t.tone)[:, None]
+    for s in np.unique(t.species):
+        for cr in ("full", "sparse", "bare"):
+            idx = np.flatnonzero((t.species == s) & (crown == cr))
+            if not len(idx):
+                continue
+            tp = template(SPECIES[s], cr)
+            n, v = len(idx), len(tp.positions)
+            c, si = np.cos(t.yaw[idx]), np.sin(t.yaw[idx])
+            rot = np.zeros((n, 3, 3))
+            rot[:, 0, 0], rot[:, 0, 2], rot[:, 1, 1], rot[:, 2, 0], rot[:, 2, 2] = c, -si, 1.0, si, c
+            pos = np.einsum("nij,vj->nvi", rot, tp.positions) * t.scale[idx, None, None]
+            pos += np.stack([t.xz[idx, 0], t.y[idx], t.xz[idx, 1]], axis=1)[:, None, :]
+            nrm = np.einsum("nij,vj->nvi", rot, tp.normals)
+            col = np.broadcast_to(tp.rgb, (n, v, 3)).copy()
+            is_leaf, is_accent = tp.role == LEAF, tp.role == ACCENT
+            col[:, is_leaf] = (leaf[idx] * tone[idx])[:, None, :]
+            col[:, is_accent] = (accent[idx] * tone[idx])[:, None, :]
+            col *= tp.shade[None, :, None]
+            mb.add(pos.reshape(-1, 3), nrm.reshape(-1, 3), np.clip(col, 0, 1).reshape(-1, 3),
+                   (tp.triangles[None] + v * np.arange(n)[:, None, None]).reshape(-1, 3))
 
 
 def wild(i: int, j: int, terrain, roads: np.ndarray):
@@ -232,11 +232,12 @@ def cell_zone(c) -> int:
 
 
 class Trees:
-    """The trees of a cell: (N, 2) xz, and per tree its ground height, species index, scale, turn and the days
-    its season is shifted by."""
+    """The trees of a cell: (N, 2) xz, and per tree its ground height, species index, scale, turn, the days
+    its season is shifted by and its tone."""
 
-    def __init__(self, xz, y, species, scale, yaw, shift):
+    def __init__(self, xz, y, species, scale, yaw, shift, tone):
         self.xz, self.y, self.species, self.scale, self.yaw, self.shift = xz, y, species, scale, yaw, shift
+        self.tone = tone  # in [0, 1): the leaves' shade, 0.85 to 1.15 times their colour
 
     def __len__(self):
         return len(self.xz)
@@ -269,7 +270,7 @@ def grow(xz, terrain, zone: int, arrays=()) -> Trees:
     yaw = 2 * np.pi * unit(seeds, 3)
     shift = np.round((2 * unit(seeds, 4) - 1) * SHIFT_DAYS).astype(int)
     y = terrain.height(xz[:, 0], xz[:, 1]) if len(xz) else np.zeros(0)
-    return Trees(xz, y, species, scale, yaw, shift)
+    return Trees(xz, y, species, scale, yaw, shift, unit(seeds, 5))
 
 
 def cell_trees(i: int, j: int, c, terrain, near, arrays=()) -> Trees:
@@ -285,3 +286,17 @@ def cell_trees(i: int, j: int, c, terrain, near, arrays=()) -> Trees:
         parts.append(spots[off_streets(spots, c.street_tris)])
     xz = np.vstack([np.asarray(p, float).reshape(-1, 2) for p in parts])
     return grow(xz, terrain, cell_zone(c), arrays)
+
+
+def far_green(day) -> tuple:
+    """The colour of distant tree cover on day: the leaves of the OUT mix, averaged by its weights; a bare tree
+    counts as its bark."""
+    from contravia.rules.species import BARK, SPECIES, season
+
+    total, w = np.zeros(3), 0.0
+    for s in SPECIES:
+        weight = MIX[OUT].get(s, 0)
+        look = season(s, day)
+        total += weight * np.asarray(BARK[s] if look.crown == "bare" else look.leaf)
+        w += weight
+    return tuple(float(v) for v in total / w)
