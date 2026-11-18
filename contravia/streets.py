@@ -1178,6 +1178,11 @@ def add_to(city, widths) -> dict:
     st, paint, skeys, walls, wkeys, cuts, ckeys, roofs, rkeys, holes = structures.build(
         ribbons, owner, axes, chains, keep["prof"], city.terrain, built_tree(ground) if ground else None,
         rings, rnode, keep["hj"])
+    from contravia import medians
+
+    mt, mp, mk, mw, mwk = medians.build(ribbons, owner, axes, chains, city.terrain, city.a)
+    st, paint, skeys = np.concatenate([st, mt]), np.concatenate([paint, mp.astype(paint.dtype)]), np.concatenate([skeys, mk])
+    walls, wkeys = np.concatenate([walls, mw.astype(walls.dtype)]), np.concatenate([wkeys, mwk])
     city.add_kind("struct_tris", st, skeys)
     city.add_kind("struct_paint", paint, skeys)
     city.add_kind("struct_walls", walls, wkeys)
@@ -1188,6 +1193,7 @@ def add_to(city, widths) -> dict:
     city.a["g_poly_y"] = Surface(city, city.terrain).height(poly[:, 0], poly[:, 1]).astype(np.float32)
     return {"streets": len(chains), "bridges_and_tunnels": sum(1 for c in chains if c.layer),
             "structure_triangles": len(st), "structure_walls": len(walls), "cut_triangles": len(cuts),
+            "median_triangles": len(mt), "median_walls": len(mw),
             "sea_hole_triangles": len(holes),
             "junction_pieces": len(rings), "street_triangles": len(tris),
             "street_skirt_edges": len(edges), "street_mark_triangles": len(lines)}

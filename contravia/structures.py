@@ -43,7 +43,10 @@ DRY = WATER_Y + 0.3  # metres: a road below the ground lower than this opens a h
 SHORE = WATER_Y + 0.3  # metres: the lowest top of a cut's wall where the relief has a sea, so water never laps over it
 
 CONCRETE, SHADE, LAMPS, GRASS = 0, 1, 2, 3
-PAINTS = {CONCRETE: (0.62, 0.60, 0.56), SHADE: (0.36, 0.35, 0.33), LAMPS: (1.0, 0.94, 0.78), GRASS: None}
+KERB_TOP, PAVING, POLE, TRUNK, LEAVES = 4, 5, 6, 7, 8  # contravia.medians
+PAINTS = {CONCRETE: (0.62, 0.60, 0.56), SHADE: (0.36, 0.35, 0.33), LAMPS: (1.0, 0.94, 0.78), GRASS: None,
+          KERB_TOP: (0.72, 0.71, 0.67), PAVING: (0.58, 0.55, 0.50), POLE: (0.30, 0.31, 0.33),
+          TRUNK: (0.25, 0.15, 0.08), LEAVES: (0.12, 0.35, 0.12)}
 
 
 class _Out:

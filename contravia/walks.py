@@ -26,6 +26,7 @@ from shapely.ops import polygonize, unary_union
 
 from contravia.buildingtags import MUNI
 from contravia.geo import CELL
+from contravia.medians import boulevard
 from contravia.streets import pmap
 
 KERB = 0.15  # metres a pavement stands over the street
@@ -263,6 +264,7 @@ def build(a, terrain) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
         block_muni = np.where(votes.max(axis=1) > 0, votes.argmax(axis=1), -1)
         centre = np.isin(block_muni, [k for k, n in enumerate(names) if n in CENTRE])
         dense = (area > 10) & (built > np.where(centre, CENTRE_DENSE, DENSE) * np.maximum(area, 1e-9))
+        dense |= (area > 10) & boulevard(a, blocks)  # Paseo, Prado, 5ta: paved between the carriageways
         in_dense[fk[dense[bk]]] = True
         keep = dense[bi]
         if keep.any():
