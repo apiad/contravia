@@ -58,7 +58,7 @@ def sources(folder) -> list[tuple[str, str, Path]]:
             if (Path(folder) / f"{slug}.src").exists()]
 
 
-PROVINCE_GB = 4.0  # the memory one province's build takes at its peak (Artemisa's streets: 3.7 GB)
+PROVINCE_GB = 4.0  # one province's build at its peak, with room: La Habana's walks take about 3 GB, the largest
 
 
 def free_gb() -> float:
