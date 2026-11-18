@@ -424,8 +424,8 @@ def _livery_family(kind: str, name: str, bases: tuple[str, ...], variants: int, 
     every = sorted({key for member in members for key in member.ranges})
     merged = {}
     for key in every:
-        low = min(FAMILIES[member.name].ranges[key][0] for member in members if key in member.ranges)
-        high = max(FAMILIES[member.name].ranges[key][1] for member in members if key in member.ranges)
+        low = min(member.ranges[key][0] for member in members if key in member.ranges)
+        high = max(member.ranges[key][1] for member in members if key in member.ranges)
         merged[key] = (low, high)
     return Family(name=name, kind=kind, era="services", builder="car", preset=members[0].preset,
                   variants=variants, ranges=merged, bases=bases, livery=livery)
