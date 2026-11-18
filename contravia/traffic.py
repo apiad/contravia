@@ -76,7 +76,8 @@ class Cars:
         pair = {(int(f), int(t), int(w)) for f, t, w in zip(a["g_from"], a["g_to"], a["g_way"])}
         self.twoway = np.array([(int(t), int(f), int(w)) in pair for f, t, w in zip(a["g_from"], a["g_to"], a["g_way"])],
                                bool)
-        width = np.array([WIDTHS[CLASSES[c]] for c in a["g_class"]])
+        width = (a["g_width"].astype(np.float64) if "g_width" in a
+                 else np.array([WIDTHS[CLASSES[c]] for c in a["g_class"]]))
         per_dir = np.where(self.twoway, width / 2, width) / np.maximum(self.lanes, 1)
         self.lane_w = np.minimum(LANE_WIDTH, per_dir)
         # Signal groups: at each signal, edges on the axis of the first edge entering it are group 0.

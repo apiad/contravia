@@ -105,3 +105,14 @@ def test_edges_are_sampled_every_10_m_with_road_heights(g):
     inside[a["g_poly_start"][1:-1] - 1] = False  # the step from one edge to the next is not a segment
     assert seg[inside].max() <= 10.0 + 1e-3
     assert len(a["g_poly_y"]) == len(a["g_poly"])
+
+
+def test_road_width_follows_the_lanes_tag():
+    from contravia.graph import LANE, road_width
+    from contravia.prepare import WIDTHS
+
+    assert road_width("trunk", {"lanes": "6"}, WIDTHS) == 6 * LANE + 1  # the Malecón, three each way
+    assert road_width("primary", {"lanes": "3", "oneway": "yes"}, WIDTHS) == 3 * LANE + 1  # one side of Boyeros
+    assert road_width("residential", {"lanes": "2"}, WIDTHS) == WIDTHS["residential"] + 1.6
+    assert road_width("trunk", {}, WIDTHS) == WIDTHS["trunk"]
+    assert road_width("residential", {"oneway": "yes"}, WIDTHS) == LANE + 1

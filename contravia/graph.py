@@ -70,6 +70,22 @@ def layer(tags: dict) -> int:
     return 0
 
 
+LANE = 3.3  # metres per lane
+
+
+def road_width(highway: str, tags: dict, widths: dict) -> float:
+    """Drawn width in metres: the lanes tag at LANE each plus a metre of edge, never narrower than the class
+    when two-way; without the tag, the class width, or one lane's worth when one way."""
+    total = _number(tags.get("lanes"))
+    oneway = not all(_directions(highway, tags))
+    if total:
+        need = total * LANE + 1.0
+        return need if oneway else max(widths[highway], need)
+    if oneway:
+        return min(widths[highway], (1 if widths[highway] < 8 else 2) * LANE + 1.0)
+    return widths[highway]
+
+
 def _lanes(highway: str, tags: dict, width: float, both: bool) -> int:
     """Lanes in one direction: the lanes tag split over the directions, else from the drawn width."""
     total = _number(tags.get("lanes"))
@@ -192,6 +208,7 @@ def build_graph(ways, controls, restrictions, municipios, rings, to_local, width
         "g_to": np.array([renum[r[1]] for r in rows], np.int32),
         "g_len": lens.astype(np.float32),
         "g_lanes": np.array([_lanes(r[3], r[4], r[5], r[6]) for r in rows], np.int8),
+        "g_width": np.array([road_width(r[3], r[4], widths) for r in rows], np.float32),
         "g_vfree": np.array([_vfree(r[3], r[4]) for r in rows], np.float32),
         "g_class": np.array([CLASSES.index(_base_class(r[3])) for r in rows], np.int8),
         "g_layer": np.array([layer(r[4]) for r in rows], np.int8),

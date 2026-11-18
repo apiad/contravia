@@ -176,8 +176,8 @@ class Edge:
 
 
 def load(a, widths):
-    """The junctions and the undirected edges of the road graph in the arrays a, each as wide as its class,
-    or as its lanes when it is one way."""
+    """The junctions and the undirected edges of the road graph in the arrays a, each as wide as its lanes
+    (contravia.graph.road_width)."""
     J = a["g_junction"].astype(float)
     starts, poly = a["g_poly_start"], a["g_poly"].astype(float)
     F, T, W = a["g_from"].tolist(), a["g_to"].tolist(), a["g_way"].tolist()
@@ -193,9 +193,12 @@ def load(a, widths):
         p = poly[starts[e]:starts[e + 1]].copy()
         p[0], p[-1] = J[F[e]], J[T[e]]
         oneway = (T[e], F[e], W[e]) not in directed
-        w = widths[cls]
-        if oneway:  # a one-way carriageway is as wide as its lanes, not as a whole street of its class
-            w = min(w, max(1, int(a["g_lanes"][e])) * LANE + 1.0)
+        if "g_width" in a:  # from the lanes tag (contravia.graph.road_width)
+            w = float(a["g_width"][e])
+        else:
+            w = widths[cls]
+            if oneway:  # a one-way carriageway is as wide as its lanes, not as a whole street of its class
+                w = min(w, max(1, int(a["g_lanes"][e])) * LANE + 1.0)
         w = max(w, MIN_WIDTH)
         edges.append(Edge(F[e], T[e], p, w, cls, oneway, layer=layers[e]))
     return J, edges
