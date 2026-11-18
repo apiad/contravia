@@ -98,3 +98,33 @@ def test_a_two_way_street_gets_a_dashed_centre_line_on_its_asphalt():
     city.add_kind("street_edges", np.zeros((0, 2, 3)), np.zeros((0, 2), int))
     road = Surface(city, t).height(east[:, 0], east[:, 2])
     assert (east[:, 1] > road).all() and (east[:, 1] < road + 0.1).all()   # just above the asphalt
+
+
+def test_a_side_lane_beside_an_avenue_stays_straight_through_its_corners():
+    """Carlos III: a one-lane side street 14 m from each carriageway of a three-lane avenue. Its junction with a
+    cross street must stay its own, not merge into the avenue's and bend the side street into it."""
+    from contravia.graph import build_graph
+
+    def way(i, hw, refs, pts, **tags):
+        return (i, hw, refs, pts, tags)
+
+    xs = (-200.0, 0.0, 100.0, 300.0)
+    rows = {"north": (-19.5, "residential", "1", 100), "west": (-5.2, "primary", "3", 200),
+            "east": (5.2, "primary", "3", 300), "south": (19.5, "residential", "1", 400)}
+    ways = []
+    for k, (name, (z, hw, lanes, base)) in enumerate(rows.items()):
+        pts = [(z, x) for x in xs]
+        refs = [base + n for n in range(len(xs))]
+        ways.append(way(k, hw, refs if k % 2 else refs[::-1], pts if k % 2 else pts[::-1], lanes=lanes, oneway="yes"))
+    for n, x in ((1, 0.0), (2, 100.0)):  # cross streets, two-way, through every row
+        refs = [900 + n * 10] + [base + n for _, _, _, base in rows.values()] + [901 + n * 10]
+        pts = [(-100.0, x)] + [(z, x) for z, *_ in rows.values()] + [(100.0, x)]
+        ways.append(way(10 + n, "residential", refs, pts))
+    ident = lambda lat, lon: np.stack([np.asarray(lon, float), np.asarray(lat, float)], axis=1)  # noqa: E731
+    a = build_graph(ways, {}, [], [], [], ident, WIDTHS, lambda p: np.ones(len(p), bool))
+    chains = build(a, WIDTHS)[5]
+    for z in (-19.5, 19.5):
+        side = [c.p for c in chains if c.cls == "residential" and np.allclose(c.p[:, 1].mean(), z, atol=3)]
+        assert side, f"no side street at z = {z}"
+        for p in side:
+            assert np.abs(p[:, 1] - z).max() < 0.5, f"the side street at z = {z} bends by {np.abs(p[:, 1] - z).max():.1f} m"
