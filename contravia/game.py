@@ -297,7 +297,7 @@ class Game:
         if focus is None or not focus(self.car.x, self.car.z):
             return
         self.engine.state.province = self.city.focused
-        if self.layer:
+        if getattr(self, "layer", None):  # a teleport while the game is still being made has no traffic yet
             self.runner.stop()
             self.fleet.draw(np.zeros((0, 3)), np.zeros(0), np.zeros(0), np.zeros(0, np.int64))
             self._start_traffic(self.traffic_config, True)

@@ -111,3 +111,16 @@ def test_slow_frames_raise_tau_and_fast_ones_lower_it(city):
         game._tune()
     assert game.streamer.tau == g.TAU[1]
     game.streamer.close()
+
+
+def test_a_game_can_start_in_another_province(island_dir):
+    import manifoldx as mx
+
+    from contravia.game import Game
+    from contravia.world import World
+
+    engine = mx.Engine("start-far", width=64, height=48)
+    game = Game(engine, World.load(island_dir), at=(900_000.0, 0.0))
+    assert game.city.focused == "Artemisa" and abs(game.car.x - 900_000.0) < 100
+    game.streamer.close()
+    game.detail.close()
