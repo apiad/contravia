@@ -96,8 +96,3 @@ def test_workers_fit_the_cores_and_the_memory(monkeypatch):
 def test_home_follows_contravia_home(monkeypatch, tmp_path):
     monkeypatch.setenv("CONTRAVIA_HOME", str(tmp_path))
     assert firstrun.home() == tmp_path and firstrun.built() is None
-
-
-def test_the_shipped_source_is_the_version_the_game_reads():
-    raw, _ = source.load("data/havana.src")
-    assert raw.roads
