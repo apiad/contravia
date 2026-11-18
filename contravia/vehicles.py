@@ -1,7 +1,7 @@
 """How traffic is drawn: five kinds of vehicle, each one mesh, each a pool of entities moved as arrays.
 
-The sedan, the old American car (the shared taxi) and the motorbike are manifoldx's parametric car with other
-proportions; the bus and the truck, which it cannot make, are coloured boxes. Its outside pieces are merged into one vertex-coloured mesh and
+The sedan and the old American car (the shared taxi) are manifoldx's parametric car with other proportions, the
+motorbike its cycle builder; the bus and the truck, which it cannot make, are coloured boxes. Its outside pieces are merged into one vertex-coloured mesh and
 simplified, so hundreds can be drawn. At start the game spawns a fixed pool of each kind; every frame the
 cars' positions are written into the pool as arrays, and the slots no car uses wait far below the ground.
 """
@@ -19,8 +19,6 @@ SLOT = 10_000  # a slot's number is kind · SLOT + its index in the pool
 PARAMS = {
     "car": {},
     "taxi": {"length": 5.0, "width": 1.95, "height": 1.5, "wheelbase": 3.0, "front_overhang": 0.95},
-    "moto": {"length": 2.0, "width": 0.75, "height": 1.2, "wheelbase": 1.35, "front_overhang": 0.35, "wheel_radius": 0.3,
-                 "track": 0.1},
 }
 PAINT = {"car": "#8a2b22", "taxi": "#2f5d8c", "bus": "#c9a227", "moto": "#303236", "truck": "#d6d3c8"}
 INSIDE = {"interior", "carpet", "dash", "seat", "liner"}  # pieces never seen from the street
@@ -75,8 +73,13 @@ def merged(kind: str) -> dict:
         return _boxes(kind)
     from manifoldx.modeling.mesh import Mesh
 
-    car = build_car(CarParams(**PARAMS[kind]))
-    palette = {**PALETTE, "paint": (PAINT[kind], *PALETTE["paint"][1:])}
+    if kind == "moto":  # a car's builder cannot make a motorbike: manifoldx's cycle builder can
+        from manifoldx.modeling.assets import build_cycle, motorcycle
+
+        car = build_cycle(motorcycle())
+    else:
+        car = build_car(CarParams(**PARAMS[kind]))
+    palette = {**car.palette, "paint": (PAINT[kind], *PALETTE["paint"][1:])}
     pose = car.pose()
     pos, faces, cols, base = [], [], [], 0
     for part in car.parts:
