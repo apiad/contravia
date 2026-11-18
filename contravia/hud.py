@@ -29,6 +29,7 @@ STATS_LINES = 9  # lines of the F1 panel
 STATS_EVERY = 10  # frames between two refreshes of its text
 AREA_SHOWN = 3.0  # seconds the municipio's name stays before it fades
 AREA_FADE = 0.8  # seconds it takes to fade
+ADDRESS_H = 84  # pixels the address takes at the bottom left; the municipio's flash shows above it
 GEARS = (0.0, 18.0, 35.0, 55.0, 80.0, 110.0, 160.0)  # km/h where each gear of the drawn gearbox starts and ends
 REV_SEGMENTS = 10
 DAY_NAMES = ("LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM")
@@ -82,6 +83,7 @@ class Hud:
         self.units, self.minimap_on, self.shown = "kmh", True, False
         self._frame = 0
         self._area, self._area_t = "", 0.0
+        self._address = None
         self._clock_text, self._weather, self._lit, self._gear = None, None, None, None
         self.panels, self.minimap = [], []
         self.stats_panel, self.stats_lines, self.stats_on = None, [], False
@@ -120,10 +122,27 @@ class Hud:
         self.area_text = Text("", style_overrides={**big, "fg": ui.alpha(ui.PAPER, 0)})
         self.area_city = Text("LA HABANA", style_overrides={"font": ui.BOLD, "font_size": 14, "fg": ui.alpha(ui.INK, 0)})
         self.area_chip = Panel([self.area_city], style_overrides={"padding": "2 10", "bg": ui.alpha(ui.PAPER, 0)})
-        area_back = Panel([self.area_shadow], anchor="bottom-left", offset=(MARGIN + 3, MARGIN + 34 - 3),
+        area_back = Panel([self.area_shadow], anchor="bottom-left", offset=(MARGIN + 3, MARGIN + ADDRESS_H + 34 - 3),
                           style_overrides=CLEAR)
-        area = Panel([self.area_text, self.area_chip], anchor="bottom-left", offset=(MARGIN, MARGIN),
+        area = Panel([self.area_text, self.area_chip], anchor="bottom-left", offset=(MARGIN, MARGIN + ADDRESS_H),
                      style_overrides={**CLEAR, "gap": 2})
+        # Under it, always: the street with the same red shadow, the streets it is between, barrio and municipio.
+        # The shadow is a copy of the whole column with only its street drawn, so both lay out alike.
+        street = {"font": ui.TITLE, "font_size": 30}
+        line = {"font": ui.BOLD, "font_size": 15}
+        place = {"font": ui.BOLD, "font_size": 12}
+        self.street_text = Text("", style_overrides={**street, "fg": ui.PAPER})
+        self.line_text = Text("", style_overrides={**line, "fg": ui.PAPER})
+        self.place_text = Text("", style_overrides={**place, "fg": ui.INK})
+        self.street_shadow = Text("", style_overrides={**street, "fg": ui.RED})
+        self.line_ghost = Text("", style_overrides={**line, "fg": ui.alpha(ui.PAPER, 0)})
+        self.place_ghost = Text("", style_overrides={**place, "fg": ui.alpha(ui.INK, 0)})
+        self.place_chip = Panel([self.place_text], style_overrides={"padding": "2 8", "bg": ui.PAPER})
+        self.address_back = Panel([self.street_shadow, self.line_ghost,
+                                   Panel([self.place_ghost], style_overrides={**CLEAR, "padding": "2 8"})],
+                                  anchor="bottom-left", offset=(MARGIN + 2, MARGIN - 2), style_overrides={**CLEAR, "gap": 1})
+        self.address = Panel([self.street_text, self.line_text, self.place_chip], anchor="bottom-left",
+                             offset=(MARGIN, MARGIN), style_overrides={**CLEAR, "gap": 1})
         # Bottom right: the speed, the gear and the revs; an ink copy of the number behind it as its shadow.
         self.speed_shadow = Text("0", style_overrides={"font": ui.TITLE, "font_size": 76, "fg": ui.alpha(ui.INK, 0.8)})
         self.speed_text = Text("0", style_overrides={"font": ui.TITLE, "font_size": 76, "fg": ui.PAPER})
@@ -138,13 +157,15 @@ class Hud:
         gear_panel = Panel([gear], anchor="bottom-right", offset=(MARGIN, MARGIN + 92), style_overrides=CLEAR)
         tail = Panel([self.units_text, self.revs], anchor="bottom-right", offset=(MARGIN, MARGIN),
                      style_overrides={**CLEAR, "gap": 4})
-        self.panels = [clock, area_back, area, speed_back, self._number_panel, gear_panel, tail]
+        self.panels = [clock, area_back, area, self.address_back, self.address, speed_back, self._number_panel,
+                       gear_panel, tail]
+        self.area_panel = area
         self.stats_lines = [Text("", style_overrides={"font": ui.KEYS, "font_size": 16, "fg": "#e8e8e8"})
                             for _ in range(STATS_LINES)]
         self.stats_panel = Panel(self.stats_lines, anchor="top-left", offset=(MARGIN, MARGIN + 60),
                                  style_overrides={"padding": 10, "gap": 2, "bg": "#000000b0", "width": 460,
                                                   "height": 24 + 22 * STATS_LINES})
-        for p in (clock, area, gear_panel):  # the others hold no panels and fit their text by their anchor
+        for p in (clock, area, gear_panel, self.address_back, self.address):  # the others fit by their anchor
             ui.fit(p)
         if self.shown:
             self.shown = False
@@ -215,7 +236,7 @@ class Hud:
         if name != self._area:
             self._area, self._area_t = name, 0.0
             self.area_text.text = self.area_shadow.text = name.upper()
-            ui.refit(self.panels[2])
+            ui.refit(self.area_panel)
         else:
             self._area_t += dt
         a = 0.0 if not name else min(1.0, max(0.0, 1.0 - (self._area_t - AREA_SHOWN) / AREA_FADE))
@@ -225,6 +246,18 @@ class Hud:
         self.area_shadow.style_overrides = {**self.area_shadow.style_overrides, "fg": ui.alpha(ui.RED, a)}
         self.area_city.style_overrides = {**self.area_city.style_overrides, "fg": ui.alpha(ui.INK, a)}
         self.area_chip.style_overrides = {**self.area_chip.style_overrides, "bg": ui.alpha(ui.PAPER, a)}
+
+    def set_address(self, street: str, line: str, place: str) -> None:
+        """The street the car is on, the line under it ("entre L y M") and "barrio · municipio"."""
+        if not self.panels or (street, line, place) == self._address:
+            return
+        self._address = (street, line, place)
+        self.street_text.text = self.street_shadow.text = street.upper()
+        self.line_text.text = self.line_ghost.text = line
+        self.place_text.text = self.place_ghost.text = place.upper()
+        self.place_chip.style_overrides = {**self.place_chip.style_overrides, "bg": ui.PAPER if place else "#00000000"}
+        ui.refit(self.address_back)
+        ui.refit(self.address)
 
     def update(self, car, origin: np.ndarray) -> None:
         """Show the car's speed, gear and revs, turn the north badge, and every MINIMAP_EVERY frames render the

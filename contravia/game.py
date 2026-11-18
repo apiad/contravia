@@ -115,6 +115,7 @@ class Game:
         self.mode = "drive"  # or "menu", "paused", "photo": see contravia/menu.py
         self.photo = None  # the photo mode's camera around the car: (yaw, pitch, distance)
         self.km, self.area, self._area_at = 0.0, "", 0.0
+        self.address = ("", "", "")
         self.weather_state = None
         self.tau_range, self.rain_on = TAU, True
 
@@ -315,6 +316,7 @@ class Game:
             at = self.walls.random_road(self._rng)[:2]
         self.teleport(*at)
         self.km, self.area, self.photo = 0.0, "", None
+        self.address = ("", "", "")
         self.mode = "drive"
 
     def pause(self) -> None:
@@ -340,20 +342,22 @@ class Game:
         self.hud.configure(options["units"].value, options["minimap"].value)
 
     def _find_area(self, now: float) -> None:
-        """Twice a second, the municipio of the street nearest the car, from the road graph."""
+        """Twice a second, from the road graph, the street the car drives on: its municipio and its address."""
         if now - self._area_at < 0.5:
             return
         self._area_at = now
         a = self.city.graph.a
         if "g_muni" not in a or not len(self.city.graph):
             return
-        near = self.city.graph.edges_near(self.car.x, self.car.z, 150.0)
-        if not len(near):
+        from contravia.address import describe, locate
+
+        at = locate(self.city.graph, self.car.x, self.car.z, self.car.yaw)
+        if at is None:
             return
-        mid = a["g_mid"][near]
-        k = int(near[np.argmin(np.hypot(mid[:, 0] - self.car.x, mid[:, 1] - self.car.z))])
+        k = at[0]
         m = int(a["g_muni"][k])
         self.area = str(a["g_muni_names"][m]) if 0 <= m < len(a["g_muni_names"]) else ""
+        self.address = describe(a, *at) if "g_name" in a else ("", "", self.area)
 
     def _shutdown(self, _=None) -> None:
         """Stop what the game started itself: the street builders, the wall builder and the traffic thread. A reload under
@@ -445,6 +449,7 @@ class Game:
             self.hud.set_time(self.clock.now(), self.weather_state)
             self._find_area(now)
             self.hud.set_area(self.area, self._dt)
+            self.hud.set_address(*self.address)
             self.hud.show_stats(self._stats_lines())
         st = self.engine.state
         st.car = {"pose": [self.car.x, self.car.z, self.car.yaw, self.car.speed], "eye": self.eye.tolist()}

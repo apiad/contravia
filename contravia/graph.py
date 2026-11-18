@@ -110,13 +110,14 @@ def _reach(start: int, succ: list[list[int]]) -> np.ndarray:
     return seen
 
 
-def build_graph(ways, controls, restrictions, municipios, rings, to_local, widths, inside=None) -> dict:
+def build_graph(ways, controls, restrictions, municipios, rings, to_local, widths, inside=None, places=None) -> dict:
     """The g_* arrays of the drivable graph.
 
     ways: (way id, highway, node ids, [(lat, lon)], tags) per road; controls: node id -> kind; restrictions:
     (from way, via node, to way, kind); municipios: (name, ring in degrees); rings: building footprints in local
     metres; to_local: (lat, lon) arrays -> (N, 2) metres; widths: road width by highway; inside: optional
-    (N, 2) -> bool mask, edges whose midpoint is outside are dropped.
+    (N, 2) -> bool mask, edges whose midpoint is outside are dropped; places: the barrios, as addresses() reads
+    them.
     """
     from shapely import contains_xy
     from shapely.geometry import Polygon
@@ -270,7 +271,110 @@ def build_graph(ways, controls, restrictions, municipios, rings, to_local, width
     a["g_turn_in"] = np.array(t_in, np.int32)
     a["g_turn_out"] = np.array(t_out, np.int32)
     a["g_turn_w"] = np.array(t_w, np.float32)
+    a.update(addresses(a, [r[4].get("name") for r in rows], places, to_local))
     return a
+
+
+def addresses(a: dict, names: list, places, to_local) -> dict:
+    """What a driver's address is made of, per edge: its street's name (g_name, an index into g_names, -1 for
+    none), the named streets crossing it behind and ahead (g_between, (E, 2), -1 for none) and its barrio
+    (g_barrio, into g_barrio_names, -1 for none).
+
+    The street crossing at an end is the first one with another name found going on along the same street
+    through junctions where nothing else named meets it, the highest class first. places is (areas, points,
+    consejos): (name, ring) of place=suburb|neighbourhood|quarter areas, (name, (lat, lon), place) of such
+    points, and (name, ring) of the consejos populares (admin_level 9). A barrio is the smallest place area
+    holding the edge's midpoint, else the nearest place point within its kind's PLACE_REACH, else the consejo
+    popular."""
+    E = len(a["g_from"])
+    table = sorted({n for n in names if n})
+    index = {n: k for k, n in enumerate(table)}
+    name = np.array([index.get(n, -1) if n else -1 for n in names], np.int32)
+    touching = defaultdict(list)  # junction -> edges that start or end there
+    for e in range(E):
+        touching[int(a["g_from"][e])].append(e)
+        touching[int(a["g_to"][e])].append(e)
+    cls = a["g_class"]
+
+    def other(o: int, j: int) -> int:
+        return int(a["g_to"][o]) if int(a["g_from"][o]) == j else int(a["g_from"][o])
+
+    def cross(e: int, j: int) -> int:
+        """The named street crossing e's street at junction j, going on through j and beyond along it, never
+        back toward the junction it came from."""
+        prev = other(e, j)
+        for _ in range(12):
+            others = [o for o in touching[j] if name[o] >= 0 and name[o] != name[e]]
+            if others:
+                return int(name[min(others, key=lambda o: cls[o])])
+            on = [o for o in touching[j] if name[o] == name[e] and other(o, j) != prev]
+            if not on:
+                return -1
+            prev, j = j, other(on[0], j)
+        return -1
+
+    between = np.full((E, 2), -1, np.int32)
+    for e in np.flatnonzero(name >= 0):
+        between[e] = cross(int(e), int(a["g_from"][e])), cross(int(e), int(a["g_to"][e]))
+    out = {"g_name": name, "g_names": np.array(table, dtype=str), "g_between": between}
+    out.update(_barrios(a["g_mid"], places, to_local))
+    return out
+
+
+PLACE_REACH = {"suburb": 1800.0, "neighbourhood": 700.0, "quarter": 700.0}  # metres from a place's point that
+# still count as that place: a suburb (Vedado, Miramar) is wider than a neighbourhood
+
+
+def _barrios(mid: np.ndarray, places, to_local) -> dict:
+    """g_barrio and g_barrio_names for the midpoints, as addresses describes."""
+    import shapely
+
+    E = len(mid)
+    areas, points, consejos = places or ((), (), ())
+
+    def polys(items):
+        out = []
+        for nm, ring in items:
+            if len(ring) < 3:
+                continue
+            xz = to_local(np.array([p[0] for p in ring]), np.array([p[1] for p in ring]))
+            g = shapely.Polygon(xz)
+            out.append((nm, g if g.is_valid else g.buffer(0)))
+        return out
+
+    table, barrio = [], np.full(E, -1, np.int32)
+
+    def take(nm):
+        if nm not in table:
+            table.append(nm)
+        return table.index(nm)
+
+    pts = shapely.points(mid)
+    best = np.full(E, np.inf)
+    for nm, g in polys(areas):  # the smallest place area holding the point
+        hit = shapely.contains(g, pts) & (g.area < best)
+        if hit.any():
+            barrio[hit], best[hit] = take(nm), g.area
+    if points:
+        xz = to_local(np.array([p[1][0] for p in points]), np.array([p[1][1] for p in points]))
+        reach = np.array([PLACE_REACH.get(p[2] if len(p) > 2 else "", 700.0) for p in points])
+        tree = shapely.STRtree(shapely.points(xz))
+        free = np.flatnonzero(barrio < 0)
+        if len(free):  # the nearest point whose own reach takes in the edge
+            i, k = tree.query(pts[free], predicate="dwithin", distance=float(reach.max()))
+            d = np.hypot(*(mid[free[i]] - xz[k]).T)
+            ok = d <= reach[k]
+            i, k, d = i[ok], k[ok], d[ok]
+            order = np.lexsort((d, i))
+            i, k = i[order], k[order]
+            first = np.r_[True, i[1:] != i[:-1]] if len(i) else np.zeros(0, bool)
+            for ii, kk in zip(i[first], k[first], strict=True):
+                barrio[free[ii]] = take(points[kk][0])
+    for nm, g in polys(consejos):
+        hit = (barrio < 0) & shapely.contains(g, pts)
+        if hit.any():
+            barrio[hit] = take(nm)
+    return {"g_barrio": barrio, "g_barrio_names": np.array(table, dtype=str)}
 
 
 class Graph:

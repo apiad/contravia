@@ -155,12 +155,12 @@ class BuildScreen:
             self.stripe.style_overrides = {**self.stripe.style_overrides, "width": 360, "height": 72}
             hints = [("ENTER", "Jugar")]
         elif state == "error":
-            self.title.text = "CONSTRUYENDO LA HABANA"
+            self.title.text = "ACTUALIZANDO LA HABANA" if b.updating else "CONSTRUYENDO LA HABANA"
             self._say(f"Algo falló: {b.error}")
             self.note.text = "Vuelve a abrir el juego: sigue en el paso donde iba."
             hints = [("ESC", "Salir")]
         else:
-            self.title.text = "CONSTRUYENDO LA HABANA"
+            self.title.text = "ACTUALIZANDO LA HABANA" if b.updating else "CONSTRUYENDO LA HABANA"
             self._say(SUB)
             self.note.text = "Si cierras el juego, la próxima vez sigue en el paso donde iba."
             hints = [("ESC", "Pausar y salir")]

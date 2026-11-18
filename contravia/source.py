@@ -13,7 +13,7 @@ import numpy as np
 from contravia.prepare import HAVANA_BOX, Raw, read_osm
 from contravia.terrain import Terrain, clean, read_tiles
 
-VERSION = 1
+VERSION = 2  # 2: road names, places and consejos populares
 LEVEL = 19  # zstd level: packing is done once, unpacking stays fast at any level
 
 

@@ -23,8 +23,9 @@ WIDTHS = {
 for _k in ("motorway", "trunk", "primary", "secondary", "tertiary"):
     WIDTHS[f"{_k}_link"] = WIDTHS[_k]
 
-ROAD_TAGS = ("oneway", "lanes", "maxspeed", "junction", "bridge", "tunnel", "layer")  # what the graph reads from a road
+ROAD_TAGS = ("oneway", "lanes", "maxspeed", "junction", "bridge", "tunnel", "layer", "name")  # what the graph reads from a road
 CONTROLS = {"traffic_signals": "signal", "stop": "stop", "give_way": "give_way"}
+PLACES = ("suburb", "neighbourhood", "quarter")  # place values that name a barrio
 
 MAX_SEGMENT = 50.0  # metres; longer segments are split so each piece lands in the cell it crosses
 MAX_BLOCK = 30_000.0  # m², 3 ha: bigger faces of the road network are not city blocks
@@ -53,6 +54,9 @@ class Raw:
     controls: dict = field(default_factory=dict)  # node id -> "signal", "stop" or "give_way"
     restrictions: list = field(default_factory=list)  # (from way, via node, to way, kind)
     municipios: list = field(default_factory=list)  # (name, outer ring) of admin_level 6 boundaries
+    places: list = field(default_factory=list)  # (name, outer ring) of place=suburb|neighbourhood|quarter areas
+    place_points: list = field(default_factory=list)  # (name, (lat, lon), place) of such places mapped as points
+    consejos: list = field(default_factory=list)  # (name, outer ring) of consejos populares (admin_level 9)
 
 
 def _tagged(tags, pairs) -> bool:
@@ -78,6 +82,8 @@ def read_osm(path, boundary: str = "La Habana", box=HAVANA_BOX, keep_ways: bool 
         def node(self, n):
             if n.tags.get("natural") == "tree" and near([(n.location.lat, n.location.lon)]):
                 raw.trees.append((n.location.lat, n.location.lon))
+            if n.tags.get("place") in PLACES and "name" in n.tags and near([(n.location.lat, n.location.lon)]):
+                raw.place_points.append((n.tags["name"], (n.location.lat, n.location.lon), n.tags["place"]))
             kind = CONTROLS.get(n.tags.get("highway")) if keep_ways else None
             if kind and near([(n.location.lat, n.location.lon)]):
                 raw.controls[n.id] = kind
@@ -117,6 +123,11 @@ def read_osm(path, boundary: str = "La Habana", box=HAVANA_BOX, keep_ways: bool 
             if (tags.get("boundary") == "administrative" and tags.get("admin_level") == "6"
                     and not a.from_way() and "name" in tags):
                 raw.municipios.extend((tags["name"], r) for r in rings)
+            if tags.get("place") in PLACES and "name" in tags:
+                raw.places.extend((tags["name"], r) for r in rings)
+            if (tags.get("boundary") == "administrative" and tags.get("admin_level") == "9"
+                    and not a.from_way() and "name" in tags):
+                raw.consejos.extend((tags["name"], r) for r in rings)
 
         def relation(self, r):
             if not keep_ways or r.tags.get("type") != "restriction" or "restriction" not in r.tags:
@@ -304,7 +315,8 @@ def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]
     city = CityData.from_features(roads, rings, np.array(ids, np.int64), fillers, np.array(seeds, np.int64),
                                   trees, terrain)
     graph = build_graph(raw.ways, raw.controls, raw.restrictions, raw.municipios, rings,
-                        lambda lat, lon: to_local(lat, lon), WIDTHS, inside)
+                        lambda lat, lon: to_local(lat, lon), WIDTHS, inside,
+                        places=(raw.places, raw.place_points, raw.consejos))
     city.a.update(graph)
     city.a.update(buildingtags.encode(city, raw.building_tags, raw.municipios))
     info = {"roads": len(raw.roads), "segments": roads, "buildings": len(rings), "buildings_skipped": skipped,

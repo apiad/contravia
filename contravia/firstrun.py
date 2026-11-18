@@ -20,6 +20,7 @@ STEPS = (("map", "Leer el mapa", 1.0), ("buildings", "Edificios", 14.0), ("stree
          ("walks", "Aceras", 25.0))
 DONE_LABEL = "Listo"
 CITY = "havana.npz"
+FORMAT = 2  # the built city's format: a city of another format is built again (2: street names and barrios)
 
 
 def home() -> Path:
@@ -32,9 +33,15 @@ def home() -> Path:
 
 
 def built(where: Path | None = None) -> Path | None:
-    """The built city's file, if the first run has finished."""
-    city = (where or home()) / CITY
-    return city if city.exists() else None
+    """The built city's file, if the first run has finished with this FORMAT."""
+    where = where or home()
+    city, stamp = where / CITY, where / "build.json"
+    if not city.exists() or not stamp.exists():
+        return None
+    try:
+        return city if json.loads(stamp.read_text()).get("format") == FORMAT else None
+    except ValueError:
+        return None
 
 
 class Build:
@@ -45,6 +52,7 @@ class Build:
         self.source, self.where = Path(source), Path(where or home())
         self.work = self.where / "build"
         self.step, self.done, self.error, self.report = 0, False, None, {}
+        self.updating = (self.where / CITY).exists()  # an older city is there: this build replaces it
         self._t0 = self._start = time.perf_counter()
         self._scale = 1.0  # actual over reference seconds, from the steps finished in this run
         self._spent = self._ref_spent = 0.0
@@ -143,7 +151,7 @@ class Build:
         report.update(prepare.add_walks(city) if info["edges"] else {})
         self.report = prepare.report(city, info, report)
         self._save(city, self.where / CITY)
-        (self.where / "build.json").write_text(json.dumps(self.report, indent=2))
+        (self.where / "build.json").write_text(json.dumps({"format": FORMAT, **self.report}, indent=2))
         self._finish(3)
         shutil.rmtree(self.work, ignore_errors=True)
         self.done = True
