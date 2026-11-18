@@ -68,7 +68,7 @@ ol li,ul li{margin:4px 0}
 </style>
 </head>
 <body>
-<div class="chrome"><span class="tab">Parques y paseos</span><span class="pill">spec · borrador</span><span class="pill opt">2026-11-18</span><span class="pill opt">contravia #41</span></div>
+<div class="chrome"><span class="tab">Parques y paseos</span><span class="pill">spec · aprobada</span><span class="pill opt">2026-11-18</span><span class="pill opt">contravia #41</span></div>
 <main>
 <p class="lede">Una manzana grande sin edificios, o con muy pocos, se vuelve parque: acera alrededor, césped, árboles y caminos por dentro. En la ciudad el parque tiene caminos rectos que se cruzan en una plaza. Fuera de la ciudad es orgánico, con grupos de árboles y caminos curvos. Una manzana larga y estrecha entre dos calzadas sale como paseo, y así salen el Prado, Paseo y 5ta Avenida. Cada parque se llena de motivos según su tamaño: glorieta, fuente o busto en la plaza, bancos, mesas de dominó, parque infantil y, en los más grandes, un laguito con bancos alrededor. Más adelante, con la gente de M5, los parques tendrán vida según el día y la hora: dominó por la tarde, pícnic el domingo, un cumpleaños o una boda el fin de semana.</p>
 
@@ -120,7 +120,7 @@ ol li,ul li{margin:4px 0}
 <table>
   <thead><tr><th>Tipo</th><th>Cuándo</th><th>Cómo es</th></tr></thead>
   <tbody>
-    <tr><td>Paseo</td><td class="v">largo ≥ 4 × ancho<br>ancho ≤ 45 m</td><td>Paseo pavimentado por el centro, del 50 % del ancho (entre 4 y 20 m). Una franja de césped a cada lado con una fila de árboles cada 8 m. Un farol cada 25 m en el centro. Un paso pavimentado en cada extremo. Así salen Paseo, el Prado y 5ta Avenida; reemplaza la regla de bulevares de 027ad7f.</td></tr>
+    <tr><td>Paseo</td><td class="v">largo ≥ 4 × ancho<br>ancho ≤ 45 m</td><td>Paseo pavimentado por el centro, del 50 % del ancho (entre 4 y 20 m). Una franja de césped a cada lado con una fila de árboles cada 8 m. Un farol cada 25 m en el centro. Un paso pavimentado en cada extremo. Así salen Paseo y 5ta Avenida; reemplaza la regla de bulevares de 027ad7f. El Prado va todo pavimentado, de borde a borde, con sus bancos, faroles y árboles en alcorques.</td></tr>
     <tr><td>Parque de ciudad</td><td class="v">ciudad<br>1&nbsp;500 – 30&nbsp;000 m²</td><td>Acera de 3 m alrededor. Dos caminos de 3 m en cruz por los ejes; con 4&nbsp;000 m² o más, también las dos diagonales de 2,5 m. Plaza redonda en el cruce, de radio igual al 10 % del lado corto (entre 6 y 15 m). Césped en el resto. Árboles a lo largo de los caminos cada 8 m, a 2 m del borde, y uno cada 150 m² sueltos en el césped. Faroles en cada cruce de caminos y cada 25 m por la acera.</td></tr>
     <tr><td>Parque grande de ciudad</td><td class="v">ciudad<br>&gt; 30&nbsp;000 m²</td><td>Lo mismo, más un camino de 3 m que da la vuelta a 15 m del borde, y más caminos en cruz cada 80 m.</td></tr>
     <tr><td>Parque orgánico</td><td class="v">fuera</td><td>Sin acera. Césped con grupos de árboles según un ruido amplio, como <code>trees.wild</code>: 1 árbol cada 40 m² dentro de los grupos, claros entre ellos. De 1 a 3 caminos curvos de 2 m, de tierra, que van desde las calles más cercanas hasta un punto descentrado del parque. Sin faroles.</td></tr>
@@ -136,7 +136,9 @@ ol li,ul li{margin:4px 0}
     <tr><td>Glorieta</td><td class="v">octágono de 8 m<br>techo a 4 m, cúpula a 6 m</td><td>Plaza central. Piso de piedra elevado 0,6 m con 3 escalones, 8 columnas, baranda de hierro de 0,9 m entre ellas salvo en las dos entradas, techo de tejas rojas.</td></tr>
     <tr><td>Fuente</td><td class="v">taza de 6 a 10 m<br>borde de 0,5 m</td><td>Plaza central, cruces secundarios de los parques grandes y extremos de un paseo ancho. Columna de 2 m en el centro con un plato. La taza mide el 70 % de la plaza, sin pasar de 10 m.</td></tr>
     <tr><td>Busto</td><td class="v">pedestal 1,2 × 1,2 × 1,6 m</td><td>Plaza de un parque pequeño y cruces secundarios. Un busto genérico sobre un pedestal blanco, con 4 bancos mirándolo.</td></tr>
-    <tr><td>Laguito</td><td class="v">400 – 3&nbsp;000 m²<br>8 % del parque</td><td>Un cuadrante de un parque grande. Contorno orgánico, borde de piedra de 0,5 m, agua 0,4 m por debajo del borde. Camino de 2,5 m alrededor, a 2 m del agua, y un banco cada 10 m mirando al agua. Ningún árbol a menos de 4 m del camino. Un parque de ciudad con laguito no lleva diagonales.</td></tr>
+    <tr><td>Laguito</td><td class="v">400 – 3&nbsp;000 m²<br>8 % del parque</td><td>Un cuadrante de un parque grande. Su forma es la unión de 2 o 3 círculos: los otros miden entre 0,5 y 0,9 veces el primero, y cada centro queda del primero a entre el 70 % y el 95 % de la suma de los dos radios, en una dirección al azar, así se solapan con un cuello. El contorno se traza desde el centro del primer círculo cada 5°: en cada rayo, el borde más lejano de cualquier círculo. Cada rayo sube a la media de sus 9 vecinos si esta es mayor, y así se rellenan las esquinas donde se juntan dos círculos. Si no cabe en el parque, se prueba con el 70 % del área, hasta tres veces. Borde de piedra de 0,5 m, agua 0,4 m por debajo del borde. Camino de 2,5 m alrededor, a 2 m del agua, y un banco cada 10 m mirando al agua. Ningún árbol a menos de 4 m del camino. Un parque de ciudad con laguito no lleva diagonales.</td></tr>
+    <tr><td>Puentecito</td><td class="v">2,5 m de ancho<br>arco de 1 m</td><td>Cruza el cuello entre los dos primeros círculos si mide menos de 1,4 veces el radio del menor y menos de 25 m, con probabilidad 0,7, y une el camino de las dos orillas. Tablas de madera, barandas de 1 m. El carro puede cruzarlo despacio; las barandas chocan.</td></tr>
+    <tr><td>Muelle y botes</td><td class="v">muelle 2 × 6 m<br>bote 3 × 1,2 m</td><td>En un laguito de 1&nbsp;000 m² o más. Un muelle de madera sale del camino hacia el agua con 2 a 4 botes de remo amarrados, de colores (azul, rojo, blanco, amarillo). Hasta 2 botes más quietos en el agua, que se mecen.</td></tr>
     <tr><td>Banco</td><td class="v">1,8 × 0,5 m<br>asiento a 0,45 m</td><td>A lo largo de los caminos, alternando el lado, 0,8 m fuera del borde y mirando al camino. 8 bancos alrededor de la plaza (4 si la plaza mide menos de 8 m de radio).</td></tr>
     <tr><td>Mesa de dominó</td><td class="v">0,9 × 0,9 × 0,75 m<br>4 banquetas</td><td>Hormigón, a menos de 25 m de la plaza, en césped libre.</td></tr>
     <tr><td>Parque infantil</td><td class="v">15 × 12 m de arena</td><td>Un cuadrante. Columpios, tobogán y cachumbambé, con un borde bajo de hormigón.</td></tr>
@@ -167,6 +169,7 @@ ol li,ul li{margin:4px 0}
     <tr><td>Cumpleaños</td><td class="v">sáb – dom<br>14:00 – 18:00</td><td>Mesa con el cake, globos colgados de un árbol, piñata, 10 niños y 6 adultos.</td><td>Un claro de 8 m en un parque de 3&nbsp;000 m² o más: 35 % en la ciudad, 25 % fuera. Uno por parque.</td></tr>
     <tr><td>Boda</td><td class="v">sáb 10:00 – 18:00<br>dom, menos</td><td>Arco de flores, dos bloques de sillas con un pasillo, los novios y 30 a 60 invitados.</td><td>Un claro de 10 m, o la glorieta, en un parque de 15&nbsp;000 m² o más: 40 % el sábado y 15 % el domingo.</td></tr>
     <tr><td>Fotos de quince</td><td class="v">todos los días<br>8:00 – 11:00 y 16:00 – 19:00</td><td>La quinceañera de vestido largo, el fotógrafo y la madre.</td><td>Junto a la glorieta o la fuente, en el 20 % de los parques que la tienen.</td></tr>
+    <tr><td>Paseo en bote</td><td class="v">sáb – dom<br>10:00 – 18:00</td><td>Una pareja o una familia remando; el bote da vueltas despacio por el agua.</td><td>Cada bote quieto del laguito, con probabilidad 0,5; entre semana 0,15.</td></tr>
     <tr><td>Parejas</td><td class="v">18:00 – 22:00</td><td>Dos personas sentadas.</td><td>Cada banco, con probabilidad 0,08.</td></tr>
   </tbody>
 </table>
@@ -179,6 +182,8 @@ ol li,ul li{margin:4px 0}
     <tr><td>Manzana de cierto tamaño sin edificios o con pocos → parque, con acera, césped, árboles y caminos <span class="tag">maintainer</span></td><td>Lo pediste; da plazas, parques y paseos sin dibujarlos a mano.</td></tr>
     <tr><td>En la ciudad, caminos pavimentados en cruz; fuera, orgánico <span class="tag">maintainer</span></td><td>Lo pediste; así son los parques del centro y los de las afueras.</td></tr>
     <tr><td>Glorieta, fuente, laguito con bancos, y escenas de pícnic, cumpleaños y boda el fin de semana <span class="tag">maintainer</span></td><td>Lo pediste; llenan el parque y lo hacen distinto según el día.</td></tr>
+    <tr><td>Laguito hecho de 2 o 3 círculos unidos, con puentecito, muelle y botes <span class="tag">maintainer</span></td><td>Lo pediste; una forma orgánica que sale de pocos números y se ve distinta en cada parque.</td></tr>
+    <tr><td>Umbrales de la sección 03, Prado pavimentado, casas de relleno fuera de la ciudad, probabilidades de motivos y escenas <span class="tag">maintainer</span></td><td>Respondiste que sí a las preguntas 1 a 4.</td></tr>
     <tr><td>Riqueza por parque, de 0,3 a 1 <span class="tag agent">agente</span></td><td>Que unos parques salgan llenos y otros casi pelados, sin una regla aparte para cada motivo.</td></tr>
     <tr><td>Todo motivo de más de 0,4 m choca; el carro no entra al laguito <span class="tag agent">agente</span></td><td>La misma regla que el muro de Boyeros; no hace falta física de agua.</td></tr>
     <tr><td>Las escenas dependen de la fecha y no de la hora, y cambian fuera de la vista <span class="tag agent">agente</span></td><td>Una boda no desaparece porque des la vuelta a la manzana.</td></tr>
@@ -212,12 +217,9 @@ ol li,ul li{margin:4px 0}
 </ul>
 
 <h2><span class="n">10</span>Preguntas</h2>
-<ol>
-  <li>¿Te sirven los umbrales: 1&nbsp;500 m², 3 edificios o menos y menos del 5 % construido?</li>
-  <li>¿El Prado lo quieres todo pavimentado, como es en la realidad, en vez de paseo con césped a los lados?</li>
-  <li>¿Fuera de la ciudad mantenemos las casas de relleno en las manzanas vacías de menos de 1 ha?</li>
-  <li>¿Te sirven las probabilidades de los motivos y de las escenas? Pruébalas en la maqueta con «otra semilla», el día y la hora.</li>
-  <li>¿Las escenas esperan a la gente animada de M5, o las adelantamos como escenas quietas (gente de pie, sin animar) en cuanto estén los parques?</li>
+<p>Las preguntas 1 a 4 están respondidas (sección 07). Queda una:</p>
+<ol start="5">
+  <li>¿Las escenas esperan a la gente animada de M5, o las adelantamos como escenas quietas (gente de pie, sin animar)? Mientras no respondas, se guardan los claros y las escenas esperan a M5.</li>
 </ol>
 </main>
 <script>
@@ -236,6 +238,67 @@ function dseg(p, a, b) {
   return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
 }
 const within = (h, a, b) => h >= a && h < b;
+// A lake of about `want` m²: 2 or 3 circles, the others 0.5-0.9 of the first, each centred 70-95 % of the two radii
+// from the first so they overlap with a neck. Its outline is traced from the first circle's centre every 5 degrees
+// (the farthest edge of any circle along each ray), and every ray is lifted to the mean of its 9 neighbours when
+// that is longer, which fills the sharp corners where two circles meet. Built around the origin.
+const RAYS = 72;
+function makeLake(r, want, ring) {
+  const n = r() < 0.5 ? 2 : 3, rel = [1];
+  for (let k = 1; k < n; k++) rel.push(0.5 + 0.4 * r());
+  const r0 = Math.sqrt(want / Math.PI / rel.reduce((a, b) => a + b * b, 0) * 1.25), circles = [[0, 0, r0]];
+  for (let k = 1; k < n; k++) {
+    const ri = r0 * rel[k], a = r() * 2 * Math.PI, d = (0.7 + 0.25 * r()) * (r0 + ri);
+    circles.push([Math.cos(a) * d, Math.sin(a) * d, ri]);
+  }
+  const raw = Array.from({length: RAYS}, (_, i) => {
+    const ux = Math.cos(i * 2 * Math.PI / RAYS), uy = Math.sin(i * 2 * Math.PI / RAYS);
+    return Math.max(...circles.map(([x, y, ri]) => { const b = ux * x + uy * y, q = b * b - x * x - y * y + ri * ri; return q >= 0 ? b + Math.sqrt(q) : 0; }));
+  });
+  const rho = raw.map((v, i) => { let m = 0; for (let k = -4; k <= 4; k++) m += raw[(i + k + RAYS) % RAYS]; return Math.max(v, m / 9); });
+  const lake = {x: 0, y: 0, R: Math.max(...rho), circles, rho, ring, bridge: null, pier: null, boats: [], floating: []};
+  // the footbridge: across the neck between the first two circles, if narrower than 1.4 times the smaller radius and 25 m
+  const [c0, c1] = circles, d = Math.hypot(c1[0] - c0[0], c1[1] - c0[1]), ux = (c1[0] - c0[0]) / d, uy = (c1[1] - c0[1]) / d;
+  const a = (d * d + c0[2] ** 2 - c1[2] ** 2) / (2 * d);
+  if (Math.abs(a) < c0[2] && 2 * Math.sqrt(c0[2] ** 2 - a * a) <= Math.min(25, 1.4 * c1[2]) && r() < 0.7) {
+    const m = [c0[0] + ux * a, c0[1] + uy * a], off = ring ? 3.25 : 1, ends = [];
+    for (const side of [1, -1]) { let t = 0; while (t < 60 && inLake(lake, [m[0] - uy * side * t, m[1] + ux * side * t], 0)) t += 0.5; ends.push([m[0] - uy * side * (t + off), m[1] + ux * side * (t + off)]); }
+    if (Math.hypot(ends[0][0] - ends[1][0], ends[0][1] - ends[1][1]) < 40) lake.bridge = ends;
+  }
+  return lake;
+}
+function rhoAt(lk, a) { const f = ((a / (2 * Math.PI)) % 1 + 1) % 1 * RAYS, i = Math.floor(f), t = f - i; return lk.rho[i % RAYS] * (1 - t) + lk.rho[(i + 1) % RAYS] * t; }
+const inLake = (lk, p, m) => Math.hypot(p[0] - lk.x, p[1] - lk.y) < rhoAt(lk, Math.atan2(p[1] - lk.y, p[0] - lk.x)) + m;
+const shore = (lk, a, off) => { const d = rhoAt(lk, a) + off; return [lk.x + Math.cos(a) * d, lk.y + Math.sin(a) * d]; };
+function moveLake(lk, x, y) { lk.x = x; lk.y = y; lk.circles = lk.circles.map(([cx, cy, ri]) => [cx + x, cy + y, ri]); if (lk.bridge) lk.bridge = lk.bridge.map(([bx, by]) => [bx + x, by + y]); }
+function lakeArea(lk) { let n = 0; for (let x = lk.x - lk.R; x < lk.x + lk.R; x += 1) for (let y = lk.y - lk.R; y < lk.y + lk.R; y += 1) if (inLake(lk, [x, y], 0)) n++; return n; }
+// Benches around a lake every `every` metres of its outline, `off` metres out from the water, clear of bridge and pier.
+function lakeBenches(lk, off, every, benches, keep) {
+  let walked = every / 2, prev = shore(lk, 0, off);
+  for (let i = 1; i <= 360; i++) {
+    const a = i * Math.PI / 180, q = shore(lk, a, off);
+    walked += Math.hypot(q[0] - prev[0], q[1] - prev[1]); prev = q;
+    if (walked < every) continue;
+    if ((lk.bridge && dseg(q, ...lk.bridge) < 3) || (lk.pier && dseg(q, lk.pier[0], lk.pier[1]) < 3) || (keep && !keep(q))) continue;
+    walked = 0; benches.push([q, -Math.sin(a), Math.cos(a)]);
+  }
+}
+// The pier and the boats of a lake of 1 000 m² or more.
+function dressLake(r, lk) {
+  if (lakeArea(lk) < 1000) return;
+  for (let k = 0; k < 30 && !lk.pier; k++) {
+    const a = r() * 2 * Math.PI, ux = Math.cos(a), uy = Math.sin(a), from = shore(lk, a, lk.ring ? 3.25 : 0.5), tip = shore(lk, a, -6);
+    if (!inLake(lk, tip, -2) || (lk.bridge && dseg(tip, ...lk.bridge) < 12)) continue;
+    lk.pier = [from, tip, ux, uy];
+    const nb = 2 + Math.floor(r() * 3), R = rhoAt(lk, a);
+    for (let b = 0; b < nb; b++) { const t = R - 1.5 - (b >> 1) * 3.4, side = b % 2 ? 1 : -1; lk.boats.push([lk.x + ux * t - uy * side * 1.9, lk.y + uy * t + ux * side * 1.9, ux, uy]); }
+  }
+  const nf = Math.floor(r() * 3);
+  for (let k = 0; k < 40 && lk.floating.length < nf; k++) {
+    const a = r() * 2 * Math.PI, d = 0.6 * rhoAt(lk, a) * Math.sqrt(r()), q = [lk.x + Math.cos(a) * d, lk.y + Math.sin(a) * d], b = r() * Math.PI;
+    if ((!lk.bridge || dseg(q, ...lk.bridge) > 5) && (!lk.pier || dseg(q, lk.pier[0], lk.pier[1]) > 5)) lk.floating.push([q[0], q[1], Math.cos(b), Math.sin(b)]);
+  }
+}
 
 function draw() {
   svg.innerHTML = "";
@@ -254,7 +317,7 @@ function draw() {
   if (g) el("rect", {x: X(0), y: Y(0), width: L * s, height: W * s, fill: C.walk});
   el("rect", {x: X(g), y: Y(g), width: (L - 2 * g) * s, height: (W - 2 * g) * s, fill: C.grass});
   const free = (p, m) => p[0] > g + m && p[0] < L - g - m && p[1] > g + m && p[1] < W - g - m &&
-    lines.every(([a, b, w]) => dseg(p, a, b) > w / 2 + m) && blocks.every(([x, y, R]) => Math.hypot(p[0] - x, p[1] - y) > R + m);
+    lines.every(([a, b, w]) => dseg(p, a, b) > w / 2 + m) && blocks.every(([x, y, R]) => Math.hypot(p[0] - x, p[1] - y) > R + m) && (!lake || !inLake(lake, p, (lake.ring ? 4.5 : 2) + m));
   const fits = (x, y, hw, hh, m) => [[x, y], [x - hw, y - hh], [x + hw, y - hh], [x - hw, y + hh], [x + hw, y + hh], [x - hw, y], [x + hw, y], [x, y - hh], [x, y + hh]].every(p => free(p, m));
   function place(hw, hh, near, round) {
     for (let k = 0; k < 80; k++) {
@@ -300,15 +363,15 @@ function draw() {
     }
     blocks.push([L / 2, W / 2, rad]);
     if (area >= 20000 && r() < 0.5 + 0.3 * rich) {
-      const R = Math.sqrt(Math.min(3000, Math.max(400, 0.08 * area)) / Math.PI);
-      const at = place(R + 5, R + 5, null, true);
-      if (at) lake = [at[0], at[1], R];
+      let lk, at = null;
+      for (let want = Math.min(3000, Math.max(400, 0.08 * area)), k = 0; k < 4 && !at; k++, want *= 0.7) { lk = makeLake(r, want, true); at = place(lk.R + 5, lk.R + 5, null, true); }
+      if (at) { lake = lk; moveLake(lake, at[0], at[1]); blocks.pop(); }
     }
     const diag = [];
     if (area >= 4000 && !lake) diag.push([[g, g], [L - g, W - g], 2.5], [[L - g, g], [g, W - g], 2.5]);
     for (const [a, b, w] of diag) path(a, b, w);
     const second = [];
-    if (area > 30000) for (let t = 80; t < L - 20; t += 80) if (Math.abs(t - L / 2) > 30 && (!lake || Math.abs(t - lake[0]) > lake[2] + 6)) {
+    if (area > 30000) for (let t = 80; t < L - 20; t += 80) if (Math.abs(t - L / 2) > 30 && (!lake || Math.abs(t - lake.x) > lake.R + 6)) {
       second.push([[t, g], [t, W - g], 3]); path([t, g], [t, W - g], 3);
       el("circle", {cx: X(t), cy: Y(W / 2), r: 5 * s, fill: C.path});
       motifs.push([pick(r, [["fuente", 1], ["busto", 1]]), t, W / 2, 3]); blocks.push([t, W / 2, 5]);
@@ -320,12 +383,7 @@ function draw() {
     else motifs.push([centre, L / 2, W / 2, centre === "glorieta" ? 4 : centre === "fuente" ? Math.min(5, 0.7 * rad) : 0.8]);
     const nb = rad >= 8 ? 8 : 4;
     for (let k = 0; k < nb; k++) { const a = (k + 0.5) * 2 * Math.PI / nb; benches.push([[L / 2 + Math.cos(a) * (rad - 1.2), W / 2 + Math.sin(a) * (rad - 1.2)], -Math.sin(a), Math.cos(a)]); }
-    if (lake) {
-      const [lx, ly, R] = lake;
-      el("circle", {cx: X(lx), cy: Y(ly), r: (R + 3.25) * s, fill: "none", stroke: C.path, "stroke-width": 2.5 * s});
-      const n = Math.max(6, Math.floor(2 * Math.PI * (R + 5.3) / 10));
-      for (let k = 0; k < n; k++) { const a = k * 2 * Math.PI / n; benches.push([[lx + Math.cos(a) * (R + 5.3), ly + Math.sin(a) * (R + 5.3)], -Math.sin(a), Math.cos(a)]); }
-    }
+    if (lake) { dressLake(r, lake); lakeBenches(lake, 5.3, 10, benches); }
     if (area >= 5000 && r() < 0.3 + 0.4 * rich) { const at = place(7.5, 6); if (at) play = at; }
     if (area >= 3000) for (let k = 0; k < Math.round(rich * 4); k++) { const at = place(1.5, 1.5, [L / 2, W / 2, rad + 18]); if (at) tables.push(at); }
     for (const [a, b, w] of [...main, ...diag, ...second]) benchesAlong(a, b, w, 12 / rich);
@@ -347,8 +405,12 @@ function draw() {
     motifs.push(["ranchon", cx, cy, 3]); blocks.push([cx, cy, 4]);
     for (let k = 0; k < 2 + Math.round(rich * 2); k++) { const at = place(1, 0.8, [cx, cy, 12]); if (at) tables.push(at); }
     if (area >= 15000 && r() < 0.6) {
-      const R = Math.sqrt(Math.min(3000, Math.max(400, 0.08 * area)) / Math.PI), at = place(R + 3, R + 3, null, true);
-      if (at) { lake = [at[0], at[1], R]; for (let k = 0; k < 2 + Math.round(rich * 2); k++) { const a = r() * 2 * Math.PI; benches.push([[at[0] + Math.cos(a) * (R + 1.5), at[1] + Math.sin(a) * (R + 1.5)], -Math.sin(a), Math.cos(a)]); } }
+      let lk, at = null;
+      for (let want = Math.min(3000, Math.max(400, 0.08 * area)), k = 0; k < 4 && !at; k++, want *= 0.7) { lk = makeLake(r, want, false); at = place(lk.R + 3, lk.R + 3, null, true); }
+      if (at) {
+        lake = lk; moveLake(lake, at[0], at[1]); blocks.pop(); dressLake(r, lake);
+        const got = []; lakeBenches(lake, 1.5, 14, got); for (let k = 0; k < 2 + Math.round(rich * 2) && got.length; k++) benches.push(got.splice(Math.floor(r() * got.length), 1)[0]);
+      }
     }
     const clumps = [];
     for (let k = 0; k < Math.max(2, area / 4000); k++) clumps.push([L * r(), W * r(), 10 + 15 * r()]);
@@ -359,10 +421,18 @@ function draw() {
   }
 
   // motifs
-  if (lake) {
-    const [lx, ly, R] = lake, lr = rng(st.seed * 13 + area), pts = [];
-    for (let k = 0; k < 16; k++) { const a = k * Math.PI / 8, d = R * (0.8 + 0.2 * lr()); pts.push(`${X(lx + Math.cos(a) * d)},${Y(ly + Math.sin(a) * d)}`); }
-    el("polygon", {points: pts.join(" "), fill: C.water, stroke: C.stone, "stroke-width": px(0.5)});
+  if (lake) {  // drawn as offset circles in layers, which is the union of the circles offset: ring path, lawn, rim, water
+    const d = "M" + lake.rho.map((_, i) => { const q = shore(lake, i * 2 * Math.PI / RAYS, 0); return `${X(q[0]).toFixed(1)},${Y(q[1]).toFixed(1)}`; }).join(" L") + " Z";
+    const layers = lake.ring ? [[4.5, C.path], [2, C.grass], [0.5, C.stone], [0, C.water]] : [[0.5, C.stone], [0, C.water]];
+    for (const [off, col] of layers) el("path", {d, fill: col, stroke: off ? col : "none", "stroke-width": 2 * off * s, "stroke-linejoin": "round"});
+    if (lake.pier) { const [a, b] = lake.pier; el("line", {x1: X(a[0]), y1: Y(a[1]), x2: X(b[0]), y2: Y(b[1]), stroke: "#8a6a44", "stroke-width": 2 * s}); }
+    const boat = ([x, y, ux, uy], col) => el("line", {x1: X(x - ux * 1.5), y1: Y(y - uy * 1.5), x2: X(x + ux * 1.5), y2: Y(y + uy * 1.5), stroke: col, "stroke-width": px(1.2), "stroke-linecap": "round"});
+    const cols = ["#2f6db5", "#c8402f", "#f2f2ee", "#e8b830"];
+    lake.boats.forEach((b, k) => boat(b, cols[k % 4]));
+    lake.floating.forEach((b, k) => boat(b, cols[(k + 1) % 4]));
+    if (lake.bridge) { const [a, b] = lake.bridge;
+      el("line", {x1: X(a[0]), y1: Y(a[1]), x2: X(b[0]), y2: Y(b[1]), stroke: "#5a4026", "stroke-width": 3 * s});
+      el("line", {x1: X(a[0]), y1: Y(a[1]), x2: X(b[0]), y2: Y(b[1]), stroke: "#9c7a4e", "stroke-width": 2.5 * s}); }
   }
   if (play) {
     el("rect", {x: X(play[0] - 7.5), y: Y(play[1] - 6), width: 15 * s, height: 12 * s, fill: C.sand, stroke: C.stone, "stroke-width": px(0.3)});
@@ -383,13 +453,18 @@ function draw() {
   for (const [lx, ly] of lamps) el("circle", {cx: X(lx), cy: Y(ly), r: Math.max(1.5, 0.8 * s), fill: C.lamp});
 
   // claros: free lawn 6 m from trees and 4 m from paths and motifs
-  const claros = [];
+  const claros = [], grid = new Map(), key = (i, j) => i * 100003 + j;
+  for (const [tx, ty] of trees) { const k = key(Math.floor(tx / 6), Math.floor(ty / 6)); if (!grid.has(k)) grid.set(k, []); grid.get(k).push([tx, ty]); }
+  const clearOfTrees = (x, y) => { const i = Math.floor(x / 6), j = Math.floor(y / 6);
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) for (const [tx, ty] of grid.get(key(i + di, j + dj)) || []) if (Math.hypot(tx - x, ty - y) <= 6) return false;
+    return true; };
   for (let x = g + 6; x < L - g - 6; x += 7) for (let y = g + 6; y < W - g - 6; y += 7)
-    if (free([x, y], 4) && trees.every(([tx, ty]) => Math.hypot(tx - x, ty - y) > 6) && (!lake || Math.hypot(x - lake[0], y - lake[1]) > lake[2] + 8)) claros.push([x, y]);
+    if (clearOfTrees(x, y) && free([x, y], 4) && (!lake || !inLake(lake, [x, y], 8))) claros.push([x, y]);
   // scenes: drawn from the park's seed and the date, never the hour; the hour only says whether each is on
   const sr = rng(st.seed * 31 + area + {wk: 1, sat: 2, sun: 3}[st.day] * 1000), h = st.hour, wkend = st.day !== "wk";
   const used = [], scenes = [];
-  const take = need => { const c = claros.filter(p => used.every(u => Math.hypot(u[0] - p[0], u[1] - p[1]) > need + u[2])); if (!c.length) return null; const p = c[Math.floor(sr() * c.length)]; used.push([p[0], p[1], need]); return p; };
+  const order = claros.map(p => [sr(), p]).sort((a, b) => a[0] - b[0]).map(q => q[1]);
+  const take = need => { for (const p of order) if (used.every(u => Math.hypot(u[0] - p[0], u[1] - p[1]) > need + u[2])) { used.push([p[0], p[1], need]); return p; } return null; };
   const dot = (x, y, col, rr) => el("circle", {cx: X(x), cy: Y(y), r: Math.max(rr || 1.1, 0.35 * s), fill: col || C.person, stroke: "#222", "stroke-width": .3});
   const crowd = (x, y, n, spread, col) => { for (let k = 0; k < n; k++) { const a = sr() * 6.283, d = spread * Math.sqrt(sr()); dot(x + Math.cos(a) * d, y + Math.sin(a) * d, col); } };
   const big = c => c === "glorieta" || c === "fuente";
@@ -428,11 +503,12 @@ function draw() {
   }
   if (play && ((!wkend && within(h, 16, 19)) || (wkend && (within(h, 9, 12) || within(h, 16, 19))))) { crowd(play[0], play[1], 6 + Math.floor(sr() * 7), 5, "#ffe08a"); scenes.push("niños jugando"); }
   if (want.quince && (within(h, 8, 11) || within(h, 16, 19))) { dot(L / 2 + 6, W / 2 + 2, "#ff8fc7", 1.8); dot(L / 2 + 9, W / 2 + 3); dot(L / 2 + 7, W / 2 + 5); scenes.push("fotos de quince"); }
+  if (lake && within(h, 10, 18)) { let n = 0; for (const [x, y, ux, uy] of lake.floating) if (sr() < (wkend ? 0.5 : 0.15)) { dot(x - ux * 0.6, y - uy * 0.6); dot(x + ux * 0.6, y + uy * 0.6); n++; } if (n) scenes.push(`paseo en bote ×${n}`); }
   if (within(h, 18, 22)) { let n = 0; for (const [[bx, by]] of benches) if (sr() < 0.08) { dot(bx - 0.4, by); dot(bx + 0.4, by); n++; } if (n) scenes.push(`parejas ×${n}`); }
 
   document.getElementById("areav").textContent = Math.round(area).toLocaleString("es");
   document.getElementById("hourv").textContent = `${st.hour}:00`;
-  const extras = [lake && `laguito ${Math.round(Math.PI * lake[2] ** 2)} m²`, play && "parque infantil", tables.length && `${tables.length} mesas`].filter(Boolean).join(", ") || "—";
+  const extras = [lake && `laguito ${lakeArea(lake)} m² de ${lake.circles.length} círculos${lake.bridge ? ", puente" : ""}${lake.boats.length + lake.floating.length ? `, ${lake.boats.length + lake.floating.length} botes` : ""}`, play && "parque infantil", tables.length && `${tables.length} mesas`].filter(Boolean).join(", ") || "—";
   out.textContent = `tipo: ${kind}\n${Math.round(L)} × ${Math.round(W)} m · riqueza ${rich.toFixed(2)}\npieza central: ${centre}\nmotivos: ${extras}\nbancos: ${benches.length} · árboles: ${trees.length} · faroles: ${lamps.length}\nclaros: ${claros.length}\nescenas (M5): ${scenes.join(", ") || "ninguna a esta hora"}`;
 }
 for (const id of ["zone", "shape", "day"]) document.querySelectorAll(`#${id} button`).forEach(b => b.addEventListener("click", () => {
