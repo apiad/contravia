@@ -175,9 +175,10 @@ def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: st
     engine = mx.Engine("contravia-bench", width=size[0], height=size[1])
     game = Game(engine, city, clock=Clock(at=parse_at(when)), with_traffic=True)
     game.tune = False  # a fixed tau, so runs compare
+    game.realism = 0.0  # every assist on: the autopilot steers like a keyboard
     game.atmosphere.prepare(wait=True)
     frame_ms, waits, wait_start = [], [], None
-    traffic_ms, cars, sky_ms = [], [], []
+    traffic_ms, cars, sky_ms, physics_ms = [], [], [], []
     for leg in json.loads(Path(route).read_text())["legs"]:
         stops = [tuple(to_local(np.array([lat]), np.array([lon]))[0]) for lat, lon, _ in leg["stops"]]
         path = road_path(city, stops)
@@ -196,6 +197,7 @@ def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: st
             engine.render_frame(supersample=1)
             frame_ms.append(game.frame_ms)
             sky_ms.append(game.sky_ms)
+            physics_ms.append(game.physics_ms)
             if game.layer:
                 traffic_ms.append(game.traffic_ms)
                 cars.append(len(game.layer.cars))
@@ -206,6 +208,8 @@ def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: st
                 waits.append(now - wait_start)
                 wait_start = None
     result = {**summary(frame_ms[5:] or frame_ms, waits), "frames": len(frame_ms), **_machine(engine)}
+    ph = np.asarray(physics_ms[5:] or physics_ms or [0.0], float)
+    result["physics_ms"] = {"p50": round(float(np.percentile(ph, 50)), 2), "p95": round(float(np.percentile(ph, 95)), 2)}
     if len(city.names) > 1:  # the island's scenes need the provinces they visit
         result["cuba"] = island_scenes(engine, game, json.loads(SCENES.read_text()))
     game.streamer.close()

@@ -23,7 +23,7 @@ import time
 import numpy as np
 
 from contravia.camera import chase
-from contravia.car import Body, CarState, Controls, settle, spring, step
+from contravia.car import CarState, Controls, Driven, settle
 from contravia.geo import CELL, to_local
 from contravia.hud import Hud
 from contravia.input import Driver
@@ -105,6 +105,8 @@ class Game:
         self.shadow = self._spawn_shadow()
         self.model = kept(engine.state, "player car", "CarParams()", lambda: build_car(CarParams()))
         self.handles = spawn_car(engine, self.model)
+        self.family, self.driven, self.realism, self.locked_assists = "moderno", None, 30.0, ()
+        self.physics_ms = 0.0
         if "car" in engine.state:  # a reload under contravia dev: drive on from where the old code left the car
             self._resume(engine.state.car)
         else:
@@ -290,12 +292,33 @@ class Game:
             self.engine.state.teleport = {"to": [x, z], "error": "no road within 5 km"}
             return
         x, z, yaw = found
-        self.car = settle(CarState(x, z, yaw, 0.0), self.surface)
-        self.body = Body.on(self.car)
+        self._place(settle(CarState(x, z, yaw, 0.0), self.surface))
         self.eye = np.array([x, self.car.y + 3.0, z])
         self.engine.state.teleport = {"to": [x, z], "error": None}
         self._recentre()
         self._follow_province()
+
+    def _place(self, at: CarState, speed: float = 0.0) -> None:
+        """The driven car at rest at `at` (on the level nearest at.y), then rolling at speed if one is given."""
+        if getattr(self, "driven", None) is None:
+            from manifoldx.modeling.assets.car import CarParams
+
+            from contravia.rules import handling
+
+            model = getattr(self, "model", None)
+            params = model.params if model is not None else CarParams()
+            self.driven = Driven(handling.spec_for(params, getattr(self, "family", "moderno")), at, self.surface)
+        else:
+            self.driven.place(at.x, at.z, at.yaw, at.y)
+        if speed:
+            self.driven.launch(speed)
+        self.car = self.driven.state
+
+    def strengths(self):
+        """The assists' strengths from the realism option."""
+        from manifoldx.vehicles import strengths_for
+
+        return strengths_for(self.realism, self.locked_assists)
 
     def _follow_province(self) -> None:
         """When the car is in another province, drive on that province's graph: its traffic starts over there."""
@@ -311,8 +334,7 @@ class Game:
     def _resume(self, car: dict) -> None:
         """Put the car and the camera back where engine.state.car says, at the same speed."""
         x, z, yaw, speed = car["pose"]
-        self.car = settle(CarState(x, z, yaw, speed), self.surface)
-        self.body = Body.on(self.car)
+        self._place(settle(CarState(x, z, yaw, 0.0), self.surface), speed)
         self.eye = np.array(car["eye"], float)
         self._recentre()
 
@@ -339,16 +361,27 @@ class Game:
         self.address = ("", "", "")
         self.mode = "drive"
 
-    def set_vehicle(self, vehicle, palette: dict | None = None) -> None:
+    def set_vehicle(self, vehicle, palette: dict | None = None, family: str | None = None) -> None:
         """Drive (and show) another vehicle from now on: the old one's entities go, the new one's come in its
-        place. A colour change is a new palette, so it comes through here too."""
+        place, standing where the old one stood. A colour change is a new palette, so it comes through here too;
+        a new family or body rebuilds the physics with that vehicle's numbers."""
         from manifoldx.modeling.assets.car import spawn_car
 
         for handles in self.handles.values():
             for h in handles:
                 h.destroy()
+        rebuilt = vehicle is not self.model or (family is not None and family != self.family)
         self.model = vehicle
+        self.family = family or self.family
         self.handles = spawn_car(self.engine, vehicle, palette=palette)
+        if rebuilt and self.driven is not None:
+            self._rebuild()
+
+    def _rebuild(self) -> None:
+        """New physics for the current model and family, standing where the car stands, stopped."""
+        here = self.car
+        self.driven = None
+        self._place(CarState(here.x, here.z, here.yaw, 0.0, y=here.y))
 
     def open_garage(self) -> None:
         """Stand the car, stop the clock and put the camera on a slow turn around it, for the Garaje."""
@@ -478,12 +511,12 @@ class Game:
             if self.layer:
                 walls = np.concatenate([walls.reshape(-1, 2, 2), self.layer.boxes_near(self.car.x, self.car.z)])
             self._before = self.car
-            self.car = step(self.car, c, self._dt, walls, self.surface)
-            self.body = spring(self.body, self.car, self._dt)
+            t0 = time.perf_counter()
+            self.car = self.driven.step(c, self._dt, walls, self.strengths())
+            self.physics_ms = (time.perf_counter() - t0) * 1000
             self.km += math.hypot(self.car.x - self._before.x, self.car.z - self._before.z) / 1000
         # manifoldx turns +x toward -z for a positive yaw; the game turns it toward +z.
-        place_car(self.handles, self.model, at=(self.car.x, self.body.y, self.car.z), yaw=-self.car.yaw,
-                  pitch=self.body.pitch, roll=self.body.roll)
+        place_car(self.handles, self.model, **self.driven.pose())
         half = -self.car.yaw / 2  # the same turn as the car's, about the vertical
         ground = float(self.surface.height(np.array([self.car.x]), np.array([self.car.z]), near=self.car.y)[0])
         self.shadow.transform.pos = (self.car.x, ground + SHADOW_LIFT, self.car.z)
