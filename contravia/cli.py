@@ -71,7 +71,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--time", help='start the clock at "17:30", "Sun 08:00" or "2026-09-12 17:30" (10:00 by default); "now" is the machine\'s clock')
     p.add_argument("--sky", help="JSON file of sky settings to change (see contravia/weather.py, SkyConfig)")
     p.add_argument("--warp", type=float, default=1.0, help="run the clock this many times faster; for tests")
-    p.add_argument("--screen", choices=["main", "free", "options", "pause", "photo", "drive"],
+    p.add_argument("--screen", choices=["main", "free", "options", "pause", "photo", "map", "drive"],
                    help="open on this menu screen, or drive at once; main for a window, drive for --shot")
     p.add_argument("--no-pipeline", dest="pipeline", action="store_false",
                    help="run the systems and the render one after the other instead of overlapping them")

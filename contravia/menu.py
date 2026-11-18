@@ -236,7 +236,7 @@ class MainScreen(ListScreen):
         m = self.menu
         return [("Historia", "Cuentos del almendrón · próximamente", None),
                 ("Modo libre", "Maneja donde quieras, cuando quieras", lambda: m.show("free")),
-                ("Mapa de Cuba", "Explora la isla desde el aire · próximamente", None),
+                ("Mapa de Cuba", "Explora la isla desde el aire", lambda: m.show("map")),
                 ("Opciones", "", lambda: m.show("options")),
                 ("Salir", "", m.quit)]
 
@@ -262,7 +262,7 @@ class PauseScreen(ListScreen):
 
     def items(self):
         m = self.menu
-        return [("Seguir", "", m.resume), ("Mapa", "Próximamente", None), ("Modo foto", "", lambda: m.show("photo")),
+        return [("Seguir", "", m.resume), ("Mapa", "", lambda: m.show("map")), ("Modo foto", "", lambda: m.show("photo")),
                 ("Opciones", "", lambda: m.show("options")), ("Menú principal", "", m.to_menu)]
 
     def background(self, width):
@@ -490,8 +490,67 @@ class PhotoScreen(Screen):
         g.photo = (yaw, pitch, dist)
 
 
+class MapScreen(Screen):
+    """The map: the world from the air (contravia/mapview.py). The wheel or W and S zoom, dragging or the arrows
+    move, Q and E turn, ENTER drives on the road nearest the crosshair, Escape goes back where it came from."""
+
+    PAN_PX = 600.0  # screen pixels a second the arrows move the ground
+    TURN = 1.2  # radians a second for Q and E
+
+    def build(self, width):
+        from manifoldx.gui import Panel
+
+        if self.menu.current_before != "map":  # a resized window rebuilds the map from the map
+            self.back_to = "pause" if self.menu.current_before == "pause" else "main"
+        cross = Panel([], anchor="center", style_overrides={**CLEAR, "width": 22, "height": 22, "border": 3,
+                                                             "border_color": ui.YELLOW})
+        self.note = _text("", ui.BOLD, 15, ui.PAPER)
+        self.panels = [cross, Panel([self.note], anchor="top-left", offset=(44, 40), style_overrides=CLEAR),
+                       _hints(width, [("RUEDA", "Zoom"), ("ARRASTRAR", "Mover"), ("Q E", "Girar"),
+                                      ("ENTER", "Manejar aquí"), ("ESC", "Volver")])]
+        self.menu.game.open_map()
+
+    def key(self, k):
+        g = self.menu.game
+        if k == "back":
+            g.map = None
+            if self.back_to == "pause":
+                self.menu.show("pause")
+            else:
+                self.menu.to_menu()
+        elif k == "enter":
+            error = g.drive_here()
+            if error:
+                self.note.text = "Aquí no hay calle cerca"
+            else:
+                self.menu.show(None)
+
+    def tick(self, dt):
+        from contravia import mapview
+
+        g, inp = self.menu.game, self.menu.engine.input
+        if g.map is None:
+            return
+        cam, vh = g.map, max(self.menu.engine.h, 1)
+        wheel = inp.wheel_delta[1]
+        held = inp.is_pressed("s") - inp.is_pressed("w")
+        if wheel or held:
+            cam = mapview.zoom(cam, 1.0015 ** wheel * (1 + held * dt * 1.5))
+        if inp.is_mouse_pressed(1):
+            dx, dy = inp.mouse_delta
+            cam = mapview.pan(cam, dx, dy, vh)
+        ax = inp.is_pressed("ArrowRight") - inp.is_pressed("ArrowLeft")
+        ay = inp.is_pressed("ArrowDown") - inp.is_pressed("ArrowUp")
+        if ax or ay:  # the arrows move the view, so the ground goes the other way
+            cam = mapview.pan(cam, -ax * self.PAN_PX * dt, -ay * self.PAN_PX * dt, vh)
+        turn = inp.is_pressed("e") - inp.is_pressed("q")
+        if turn:
+            cam = mapview.MapCam(cam.x, cam.z, cam.h, cam.yaw + turn * self.TURN * dt)
+        g.map = cam
+
+
 SCREENS = {"main": MainScreen, "free": FreeScreen, "options": OptionsScreen, "pause": PauseScreen,
-           "photo": PhotoScreen}
+           "photo": PhotoScreen, "map": MapScreen}
 KEY_NAMES = {"ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "w", "s", "a", "d", "Enter", "Escape", "Backspace"}
 
 
@@ -500,7 +559,7 @@ class Menu:
 
     def __init__(self, engine, game, free: FreeDrive, options: Options, screen: str | None = "main"):
         self.engine, self.game, self.free, self.options = engine, game, free, options
-        self.screens, self.current, self._size = {}, None, None
+        self.screens, self.current, self.current_before, self._size = {}, None, None, None
         game.apply_options(options)
         self._first = screen
         if screen:
@@ -522,7 +581,7 @@ class Menu:
         if self.current is not None:
             for p in self.screens[self.current].panels:
                 g.remove(p)
-        self.current = name
+        self.current_before, self.current = self.current, name
         if name is None:
             return
         screen = self.screens.get(name) or SCREENS[name](self)
@@ -534,6 +593,8 @@ class Menu:
                      else ui.fit(p))
         if name == "photo":
             self.game.mode = "photo"
+        elif name == "map":
+            self.game.mode = "map"
         elif name == "pause":
             self.game.mode = "paused"
 
@@ -551,7 +612,7 @@ class Menu:
         inp = self.engine.input
         for k in KEY_NAMES:
             if inp.just_pressed(k):
-                if self.current == "photo" and k in ("w", "s", "a", "d", "ArrowUp", "ArrowDown", "ArrowLeft",
+                if self.current in ("photo", "map") and k in ("w", "s", "a", "d", "ArrowUp", "ArrowDown", "ArrowLeft",
                                                      "ArrowRight"):
                     continue  # the photo mode reads them as held keys
                 if self.current is None and k != "Escape":
