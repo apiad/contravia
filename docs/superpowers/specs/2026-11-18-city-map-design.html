@@ -91,6 +91,7 @@ ol li,ul li{margin:4px 0}
 <tr><td>Siempre la vista 3D del juego, nunca un mapa plano dibujado <span class="tag">maintainer</span></td><td>El mapa es el mismo mundo; el estilo lo da la compresión, no otra capa de dibujo.</td></tr>
 <tr><td>Compresión semántica por nivel del árbol <span class="tag">maintainer</span></td><td>De lejos importa qué es un lugar y cómo se llega, no cuántas cajas tiene.</td></tr>
 <tr><td>Formas mixtas: genéricas por tamaño para todo asentamiento, emblema propio en las 15 capitales de provincia <span class="tag">maintainer</span></td><td>Cubre la isla sin modelar a mano cada pueblo; las capitales se reconocen de un vistazo.</td></tr>
+<tr><td>Desde la etapa ciudad, los landmarks se quedan donde están, agrandados para que se vean, mientras los barrios alrededor se comprimen en formas <span class="tag">maintainer</span></td><td>En el spike del 2026-11-18, a tamaño real el Capitolio y el Habana Libre ya son puntos a 5 km y desaparecen a 15 km.</td></tr>
 <tr><td>Cuatro etapas: calle, barrio, ciudad, isla <span class="tag">maintainer</span></td><td>Tabla de la sección 03.</td></tr>
 <tr><td>Solo en el modo mapa; al manejar el horizonte sigue con los resúmenes fieles de hoy <span class="tag">maintainer</span></td><td>Desde el carro nunca se ven los niveles 6 o más.</td></tr>
 <tr><td>La función de una vía sale de su clase en OSM (<code>highway</code>) y de si une asentamientos, no de su ancho <span class="tag agent">agente</span></td><td>Hoy un resumen guarda las vías más anchas que un mínimo (<code>summary.min_width</code>): una avenida ancha dentro de la ciudad queda y una carretera estrecha entre pueblos se pierde.</td></tr>
@@ -105,7 +106,7 @@ ol li,ul li{margin:4px 0}
 <tbody>
 <tr><td>Calle</td><td>0–2 (200–800 m)</td><td>el mundo completo, como al manejar</td><td>todas</td></tr>
 <tr><td>Barrio</td><td>3–5 (1,6–6,4 km)</td><td>las cajas del resumen de hoy (<code>summary_mesh</code>)</td><td><code>primary</code> y más</td></tr>
-<tr><td>Ciudad</td><td>6–8 (13–51 km)</td><td>cada barrio o pueblo, un grupo de formas genéricas</td><td><code>trunk</code> y <code>primary</code> que unen asentamientos</td></tr>
+<tr><td>Ciudad</td><td>6–8 (13–51 km)</td><td>cada barrio o pueblo, un grupo de formas genéricas; los landmarks en su sitio, agrandados</td><td><code>trunk</code> y <code>primary</code> que unen asentamientos</td></tr>
 <tr><td>Isla</td><td>9+ (100 km o más)</td><td>una forma por ciudad; las 15 capitales con su emblema</td><td>la Autopista, la Carretera Central y las vías entre capitales</td></tr>
 </tbody>
 </table>
