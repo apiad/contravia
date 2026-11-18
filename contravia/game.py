@@ -3,9 +3,9 @@
 The engine draws; manifoldx's QuadStreamer asks a worker process for the quadtree nodes the camera needs,
 single cells near it and coarse summaries out to the 15 km far plane; each frame the car reads the keys, moves
 against the walls near it, and the camera follows. The engine's origin moves to the camera whenever the camera
-is over 2 km from it, so the whole island draws as precisely as the Capitolio. The game is in one of four
-modes (`mode`): "drive", or, under contravia/menu.py's menus, "menu", "paused" and "photo", where the car stands
-and the clock stops. Systems that write positions
+is over 2 km from it, so the whole island draws as precisely as the Capitolio. The game is in one of five
+modes (`mode`): "drive", or, under contravia/menu.py's menus, "menu", "paused", "photo" and "map", where the car
+stands and the clock stops; the map's camera flies over the island (contravia/mapview.py). Systems that write positions
 straight into the engine (the night sky, the traffic cars, the rain, the shadows, the camera) are handed
 positions relative to that origin. The frame's last four systems run in one order: the drive moves the car and
 the camera alone, then the streamer, the traffic and the sky run together as one group of parallel systems.
@@ -112,8 +112,9 @@ class Game:
         self.driver = Driver()
         self.hud = Hud(engine)
         self.camera_override = None  # bench.py sets a function () -> (eye, target) in world metres
-        self.mode = "drive"  # or "menu", "paused", "photo": see contravia/menu.py
+        self.mode = "drive"  # or "menu", "paused", "photo", "map": see contravia/menu.py
         self.photo = None  # the photo mode's camera around the car: (yaw, pitch, distance)
+        self.map = None  # the map's camera, a contravia.mapview.MapCam, while the map shows
         self.km, self.area, self._area_at = 0.0, "", 0.0
         self.address = ("", "", "")
         self.weather_state = None
@@ -319,6 +320,26 @@ class Game:
         self.address = ("", "", "")
         self.mode = "drive"
 
+    def open_map(self) -> None:
+        """Fly the map's camera up over the car, the car and the clock stopped where they are."""
+        from contravia import mapview
+
+        self.mode, self.photo = "map", None
+        self.clock.pause()
+        self.map = self.map or mapview.MapCam(self.car.x, self.car.z, 2500.0, 0.0)
+
+    def drive_here(self) -> str | None:
+        """Leave the map driving on the road nearest the point under its crosshair; the error if there is none."""
+        x, z = self.map.x, self.map.z
+        self.teleport(x, z)
+        error = self.engine.state.teleport.get("error")
+        if error:
+            return error
+        self.map = None
+        self.km, self.area, self.address = 0.0, "", ("", "", "")
+        self.resume()
+        return None
+
     def pause(self) -> None:
         """Stop the car, the traffic and the clock where they are."""
         self.mode = "paused"
@@ -431,6 +452,11 @@ class Game:
         self.shadow.transform.rot = (0.0, float(np.sin(half)), 0.0, float(np.cos(half)))
         if self.camera_override:
             eye, target = self.camera_override()
+            self.eye, target = np.asarray(eye, float), np.asarray(target, float)
+        elif self.mode == "map" and self.map:
+            from contravia import mapview
+
+            eye, target = mapview.pose(self.map)
             self.eye, target = np.asarray(eye, float), np.asarray(target, float)
         elif self.mode == "photo" and self.photo:
             yaw, pitch, dist = self.photo
@@ -552,6 +578,13 @@ class Game:
         self.look = look(sun, moon, now, self.weather.config)
         eye = self.eye - self.o  # these write render-frame positions
         self.atmosphere.apply(self.look, eye)
+        self.engine.camera.far = FAR
+        if self.mode == "map" and self.map:  # from high up the horizon is far: push the far plane and the fog out
+            from contravia import mapview
+
+            far, fog = mapview.far_and_fog(self.map)
+            self.engine.camera.far = max(FAR, far)
+            self.engine.fog_start, self.engine.fog_end = max(self.look.fog[0], fog[0]), max(self.look.fog[1], fog[1])
         self.stars_shown = self.nightsky.update(when, eye, self.look, moon, sun)
         self.weather_state = now.state
         self.rain.update(self._dt, eye, now.rain if self.rain_on else 0.0, tuple(1.4 * v for v in self.look.horizon))
@@ -610,7 +643,7 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
          screen: str | None = None) -> None:
     """Open a window on the main menu, or with `shot`, render offscreen until the city is drawn and save a PNG.
 
-    screen opens a menu screen ("main", "free", "options", "pause", "photo") or "drive" straight away; a window
+    screen opens a menu screen ("main", "free", "options", "pause", "photo", "map") or "drive" straight away; a window
     opens on "main" and a shot on "drive" by default. The flags fill in the free drive's rows, and "drive"
     starts with them as they are.
 
@@ -641,8 +674,8 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     free = FreeDrive.from_flags(at=at, when=when, force=sky_config.force if sky_config else None,
                                 traffic=with_traffic or bool(traffic), warp=warp)
     menu = Menu(engine, game, free, Options.load(), screen=screen if screen in ("main", "free", "options") else None)
-    if screen in ("pause", "photo"):
-        engine.on("startup")(lambda _=None: (menu.pause(), screen == "photo" and menu.show("photo")))
+    if screen in ("pause", "photo", "map"):
+        engine.on("startup")(lambda _=None: (menu.pause(), screen != "pause" and menu.show(screen)))
     if not shot:
         engine.run()
         return

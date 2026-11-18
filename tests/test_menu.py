@@ -94,3 +94,47 @@ def test_a_menu_screen_draws_its_yellow_stripe(city_npz, tmp_path, screen, top):
     box = img[top + 8: top + 60, 90: 380]  # the shot is 1280 x 720, the GUI's own pixels
     yellow = (box[..., 0] > 230) & (box[..., 1] > 190) & (box[..., 1] < 225) & (box[..., 2] < 40)
     assert yellow.mean() > 0.4  # the chosen option's stripe, #ffd400, under its dark letters
+
+
+def test_the_map_opens_from_the_pause_and_the_main_menu_and_drives_at_its_crosshair(city_npz, tmp_path, monkeypatch):
+    import manifoldx as mx
+
+    from contravia import mapview
+    from contravia.game import FAR, Game
+    from contravia.menu import Menu
+    from contravia.world import World
+
+    monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path))
+    engine = mx.Engine("map", width=64, height=48)
+    game = Game(engine, World.load(str(city_npz)), clock=Clock(at=parse_at("Tue 10:00")))
+    menu = Menu(engine, game, FreeDrive.from_flags(when="Tue 10:00"), Options.load())
+    engine.render_frame(supersample=1)
+    menu.press("ArrowDown")  # from Modo libre to Mapa de Cuba
+    menu.press("Enter")
+    assert menu.current == "map" and game.mode == "map" and game.map is not None
+    menu.press("Escape")
+    assert menu.current == "main" and game.mode == "menu" and game.map is None
+
+    menu.press("ArrowUp")  # Modo libre
+    menu.press("Enter")
+    menu.press("Enter")  # Arrancar
+    menu.press("Escape")
+    menu.press("ArrowDown")  # Mapa
+    menu.press("Enter")
+    assert menu.current == "map" and game.clock.paused
+    game.map = mapview.zoom(game.map, 20.0)
+    engine.render_frame(supersample=1)
+    assert engine.camera.far > FAR and game.eye[1] == pytest.approx(game.map.h)
+    menu.press("Escape")
+    assert menu.current == "pause"
+
+    menu.press("Enter")  # the map again: the pause keeps Mapa chosen
+    x, z = game.car.x, game.car.z
+    road = game.walls.random_road(np.random.default_rng(3))[:2]
+    game.map = mapview.MapCam(float(road[0]), float(road[1]), 800.0, 0.0)
+    menu.press("Enter")  # Manejar aquí
+    assert menu.current is None and game.mode == "drive" and not game.clock.paused and game.map is None
+    assert np.hypot(game.car.x - road[0], game.car.z - road[1]) < 30.0
+    assert (game.car.x, game.car.z) != (x, z)
+    game.streamer.close()
+    game.detail.close()
