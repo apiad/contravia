@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Build the single-file game for Linux and Windows (x86-64): the launcher with the free-threaded Python, the
-# runtime wheels, the game's code, assets, poster panels and data/havana.src appended as a zip.
+# runtime wheels, the game's code, assets, poster panels and the 16 province sources appended as a zip.
 #
 #   packaging/build.sh OUT [WORK]
+#
+# The province sources come from CUBA_SRC (default data/cuba-src): one <slug>.src per province, at the version the
+# game reads. They are not in git; make them with `contravia source <cuba-latest.osm.pbf> --dem DIR`.
 #
 # Needs go, uv, curl, zip, git on PATH, and PIP_PYTHON: a free-threaded 3.14 with pip (uv cannot pick
 # cp314t wheels for another platform; pip can, with --abi). WORK (default /tmp/contravia-pack) holds the downloads and the trees.
@@ -15,6 +18,26 @@ PY=3.14.7
 PBS=20260807
 VERSION=${VERSION:-$(git -C "$REPO" rev-parse --short HEAD)}
 mkdir -p "$OUT" "$WORK"
+
+# The province sources: all 16, each one the version this game reads, or no package.
+SRC=$(realpath -m "${CUBA_SRC:-$REPO/data/cuba-src}")
+uv run --project "$REPO" --frozen --quiet python -c '
+import sys
+from pathlib import Path
+from contravia.geo import PROVINCES
+from contravia import source
+bad = []
+for name, slug in PROVINCES:
+    path = Path(sys.argv[1]) / f"{slug}.src"
+    try:
+        source.load(path)
+    except (OSError, ValueError) as e:
+        bad.append(f"  {name}: {e}")
+if bad:
+    sys.exit(f"{sys.argv[1]}: {len(bad)} of {len(PROVINCES)} province sources missing or stale; "
+             "pack them with: contravia source <cuba-latest.osm.pbf> --dem DIR --out " + sys.argv[1] + "\n" + "\n".join(bad))
+print(f"{sys.argv[1]}: {len(PROVINCES)} province sources, version {source.VERSION}")
+' "$SRC"
 
 # The runtime dependencies, as locked, without the project itself; manifoldx comes from git, as one wheel.
 PIP="${PIP_PYTHON:?set PIP_PYTHON to a free-threaded python3.14 with pip} -m pip"
@@ -58,9 +81,9 @@ for target in linux windows; do
 
     # The game.
     rsync -a --exclude __pycache__ "$REPO/contravia" "$REPO/assets" "$tree/app/"
-    mkdir -p "$tree/app/branding/poster" "$tree/app/data"
+    mkdir -p "$tree/app/branding/poster" "$tree/app/data/cuba-src"
     rsync -a "$REPO/branding/poster/panels" "$tree/app/branding/poster/"
-    cp "$REPO/data/havana.src" "$tree/app/data/"
+    cp "$SRC"/*.src "$tree/app/data/cuba-src/"
 
     # The launcher, then the zip, then the zip's length. The launcher writes files only, not links.
     if [ -n "$(find "$tree" -type l)" ]; then echo "links in $tree:" && find "$tree" -type l && exit 1; fi
