@@ -429,6 +429,7 @@ class Game:
         self.tau_range = options["view"].value
         self.streamer.tau = min(max(self.streamer.tau, self.tau_range[0]), self.tau_range[1])
         self.rain_on = options["rain"].value
+        self.realism, self.locked_assists = options["realism"].value, options.locked_assists
         self.hud.configure(options["units"].value, options["minimap"].value)
 
     def _find_area(self, now: float) -> None:
@@ -545,7 +546,8 @@ class Game:
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
         self.hud.show(self.mode == "drive")
         if self.mode == "drive":
-            self.hud.update(self.car, self.o)
+            e = self.driven.spec.engine
+            self.hud.update(self.car, self.o, (e.idle_rpm, e.peak_power_rpm * 1.15))
             self.hud.set_time(self.clock.now(), self.weather_state)
             self._find_area(now)
             self.hud.set_area(self.area, self._dt)
@@ -610,7 +612,8 @@ class Game:
             f"cars {traffic.get('cars', 0)}   flow step {traffic.get('flow_step_ms', 0)} ms",
             f"pos {self.car.x:.0f}, {self.car.z:.0f}   cell {i}, {j}   y {self.car.y:.1f} m",
             f"own cell drawn at L{own['node'][0]}" if own else "own cell: nothing drawn",
-            f"speed {self.car.speed * 3.6:.0f} km/h",
+            f"speed {self.car.speed * 3.6:.0f} km/h   gear {self.car.gear} {self.car.rpm:.0f} rpm   slide "
+            f"{math.degrees(math.atan2(self.car.vy, max(abs(self.car.speed), 0.5))):.0f}°   physics {self.physics_ms:.1f} ms",
         ]
 
     def _car_node(self) -> list:

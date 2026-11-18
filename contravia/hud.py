@@ -5,8 +5,8 @@ scene itself seen from MINIMAP_HEIGHT metres straight above the car, rendered by
 (render_to_texture) every MINIMAP_EVERY frames. Its top is the way the car faces, so the red arrow in its middle
 always points up and the streets turn around it; the N badge rides the rim where north is. Bottom left: the
 name of the municipio when the car enters it, large, fading out after AREA_SHOWN seconds. Bottom right: the
-speed, the gear in yellow and a rev counter in segments. The gearbox is only drawn: the car's physics have no
-gears, so gearbox() picks the gear an automatic would hold at that speed.
+speed, the gear in yellow and a rev counter in segments, from the car's own automatic gearbox, and the four
+assists' lamps, lit while an assist corrects.
 
 F1 shows or hides a panel of numbers in the top left corner for working on the game: frames per second and
 the slowest frame lately, the streamed nodes drawn by level, what is building and uploading, the traffic, and
@@ -30,7 +30,6 @@ STATS_EVERY = 10  # frames between two refreshes of its text
 AREA_SHOWN = 3.0  # seconds the municipio's name stays before it fades
 AREA_FADE = 0.8  # seconds it takes to fade
 ADDRESS_H = 84  # pixels the address takes at the bottom left; the municipio's flash shows above it
-GEARS = (0.0, 18.0, 35.0, 55.0, 80.0, 110.0, 160.0)  # km/h where each gear of the drawn gearbox starts and ends
 REV_SEGMENTS = 10
 DAY_NAMES = ("LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM")
 CLEAR = {"padding": 0, "bg": "#00000000"}
@@ -41,19 +40,22 @@ def bearing(yaw: float) -> float:
     return math.degrees(math.atan2(math.cos(yaw), -math.sin(yaw))) % 360
 
 
-def gearbox(speed: float) -> tuple[str, float]:
-    """The gear an automatic would hold at this speed in m/s and how far up its revs are, 0 to 1: 'R' going
-    backwards, 'N' standing still, then '1' to '6' by the bands in GEARS."""
-    kmh = abs(speed) * 3.6
-    if kmh < 1.0:
+def gearbox(car, idle: float, redline: float) -> tuple[str, float]:
+    """The car's gear as the HUD writes it and how far up its revs are, 0 to 1: 'R' in reverse, 'N' standing
+    still, else the gearbox's own gear; the revs run from idle to redline."""
+    if abs(car.speed) * 3.6 < 1.0 and car.gear >= 0:
         return "N", 0.1
-    if speed < 0:
-        return "R", min(1.0, 0.15 + kmh / 25)
-    for g in range(1, len(GEARS)):
-        lo, hi = GEARS[g - 1], GEARS[g]
-        if kmh < hi or g == len(GEARS) - 1:
-            return str(g), min(1.0, 0.15 + 0.85 * (kmh - lo) / (hi - lo))
-    return str(len(GEARS) - 1), 1.0
+    name = "R" if car.gear < 0 else str(max(car.gear, 1))
+    return name, float(min(1.0, max(0.0, (car.rpm - idle) / max(redline - idle, 1.0))))
+
+
+LAMPS = (("steer", "DIR"), ("traction", "TRC"), ("abs", "ABS"), ("stability", "EST"))  # the assists' lamps
+
+
+def lamps_lit(car) -> list[bool]:
+    """Which assists' lamps are on: those that corrected in the car's last step."""
+    lit = (car.telemetry or {}).get("lit", {})
+    return [bool(lit.get(key, False)) for key, _ in LAMPS]
 
 
 def speed_text(speed: float, units: str = "kmh") -> str:
@@ -150,6 +152,9 @@ class Hud:
         gear = Panel([self.gear_text], style_overrides={"padding": "2 9", "bg": ui.YELLOW})
         self.units_text = Text("KM/H", style_overrides={"font": ui.BOLD, "font_size": 15, "fg": ui.PAPER})
         self.revs = Image(ui.revs(0, REV_SEGMENTS), style_overrides={"width": 150, "height": 10})
+        self.lamp_texts = [Text(label, style_overrides={"font": ui.BOLD, "font_size": 12, "fg": ui.alpha(ui.PAPER, 0.25)})
+                           for _, label in LAMPS]
+        self._lamps = [False] * len(LAMPS)
         self._number_panel = Panel([self.speed_text], anchor="bottom-right", offset=(MARGIN + 46, MARGIN + 34),
                                    style_overrides=CLEAR)
         speed_back = Panel([self.speed_shadow], anchor="bottom-right", offset=(MARGIN + 46 - 3, MARGIN + 34 - 3),
@@ -157,8 +162,10 @@ class Hud:
         gear_panel = Panel([gear], anchor="bottom-right", offset=(MARGIN, MARGIN + 92), style_overrides=CLEAR)
         tail = Panel([self.units_text, self.revs], anchor="bottom-right", offset=(MARGIN, MARGIN),
                      style_overrides={**CLEAR, "gap": 4})
+        lamps = Panel(self.lamp_texts, anchor="bottom-right", offset=(MARGIN + 52, MARGIN + 98),
+                      style_overrides={**CLEAR, "gap": 6, "direction": "h"})
         self.panels = [clock, area_back, area, self.address_back, self.address, speed_back, self._number_panel,
-                       gear_panel, tail]
+                       gear_panel, tail, lamps]
         self.area_panel = area
         self.stats_lines = [Text("", style_overrides={"font": ui.KEYS, "font_size": 16, "fg": "#e8e8e8"})
                             for _ in range(STATS_LINES)]
@@ -259,13 +266,17 @@ class Hud:
         ui.refit(self.address_back)
         ui.refit(self.address)
 
-    def update(self, car, origin: np.ndarray) -> None:
-        """Show the car's speed, gear and revs, turn the north badge, and every MINIMAP_EVERY frames render the
-        minimap above it."""
+    def update(self, car, origin: np.ndarray, rpm_range: tuple[float, float] = (850.0, 6500.0)) -> None:
+        """Show the car's speed, gear and revs between rpm_range's idle and redline, light the assists' lamps,
+        turn the north badge, and every MINIMAP_EVERY frames render the minimap above it."""
         if not self.panels:
             return
         self.speed_text.text = self.speed_shadow.text = speed_text(car.speed, self.units)
-        gear, revs = gearbox(car.speed)
+        for text, was, now in zip(self.lamp_texts, self._lamps, lamps_lit(car), strict=True):
+            if was != now:
+                text.style_overrides = {**text.style_overrides, "fg": ui.YELLOW if now else ui.alpha(ui.PAPER, 0.25)}
+        self._lamps = lamps_lit(car)
+        gear, revs = gearbox(car, *rpm_range)
         if gear != self._gear:
             self._gear = gear
             self.gear_text.text = gear

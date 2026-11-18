@@ -2,7 +2,8 @@ import math
 
 import pytest
 
-from contravia.hud import bearing, gearbox, north_offset, speed_text
+from contravia.car import CarState
+from contravia.hud import LAMPS, bearing, gearbox, lamps_lit, north_offset, speed_text
 
 
 @pytest.mark.parametrize("yaw, deg", [(0.0, 90), (math.pi / 2, 180), (math.pi, 270), (-math.pi / 2, 0)])
@@ -10,12 +11,21 @@ def test_bearing_is_clockwise_from_north_with_z_south(yaw, deg):
     assert bearing(yaw) == pytest.approx(deg)
 
 
-def test_gearbox_climbs_with_speed_and_knows_reverse_and_neutral():
-    assert gearbox(0.0)[0] == "N"
-    assert gearbox(-3.0)[0] == "R"
-    gears = [gearbox(kmh / 3.6)[0] for kmh in (10, 30, 50, 70, 100, 150)]
-    assert gears == ["1", "2", "3", "4", "5", "6"]
-    assert gearbox(20 / 3.6)[1] < gearbox(33 / 3.6)[1]  # the revs climb inside a gear
+def test_gearbox_shows_the_cars_own_gear_and_revs():
+    assert gearbox(CarState(0, 0, 0, 0.0, gear=1, rpm=850), 850, 6900)[0] == "N"  # standing still
+    assert gearbox(CarState(0, 0, 0, -3.0, gear=-1, rpm=2000), 850, 6900)[0] == "R"
+    assert gearbox(CarState(0, 0, 0, 20.0, gear=3, rpm=4000), 850, 6900)[0] == "3"
+    low = gearbox(CarState(0, 0, 0, 20.0, gear=3, rpm=2000), 850, 6900)[1]
+    high = gearbox(CarState(0, 0, 0, 20.0, gear=3, rpm=6000), 850, 6900)[1]
+    assert 0 <= low < high <= 1
+
+
+def test_the_lamps_light_with_the_assists():
+    car = CarState(0, 0, 0, 20.0, telemetry={"lit": {"steer": False, "traction": False, "abs": True,
+                                                       "stability": False}})
+    assert lamps_lit(car) == [False, False, True, False]
+    assert len(LAMPS) == 4
+    assert lamps_lit(CarState(0, 0, 0, 0.0)) == [False] * 4
 
 
 def test_speed_text_in_kmh_and_mph():
