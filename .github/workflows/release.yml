@@ -36,8 +36,11 @@ jobs:
         env:
           VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || github.sha }}
         run: packaging/build.sh out
-      - name: The Linux file builds a province into an empty home
+      - name: The Linux file carries the 16 sources and builds a province into an empty home
         run: |
+          n=$(unzip -l out/contravia 2>/dev/null | grep -c 'app/data/cuba-src/.*\.src$' || true)
+          echo "$n province sources in the package"
+          test "$n" -eq 16
           mkdir -p smoke/src && cp data/cuba-src/cienfuegos.src smoke/src/
           out/contravia build --source "$PWD/smoke/src" --home "$PWD/smoke/home"
           test -f smoke/home/build.json && test -f smoke/home/cuba/cienfuegos.npz && test -f smoke/home/cuba/index.npz
