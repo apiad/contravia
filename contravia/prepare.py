@@ -2,14 +2,14 @@
 
 Reading OSM is slow and needs pyosmium and shapely, so it happens once, ahead of play. The output keeps
 only what the rules need: road centrelines with a width, building footprints with their OSM id, the city
-blocks that OSM left empty (they get filler boxes), and tree points.
+blocks that OSM left empty (they get filler boxes, or become parks: contravia.parks), and tree points.
 """
 
 from dataclasses import dataclass, field
 
 import numpy as np
 
-from contravia import buildingtags
+from contravia import buildingtags, parks
 from contravia.citydata import CityData
 from contravia.geo import HAVANA_BOX, cell_of, to_local
 from contravia.graph import build_graph, road_width
@@ -38,6 +38,12 @@ GREEN = {("leisure", "park"), ("landuse", "forest"), ("landuse", "grass"), ("lan
 NOT_BUILT = GREEN | {("natural", "water"), ("landuse", "reservoir"), ("landuse", "basin"),
                      ("landuse", "farmland"), ("landuse", "farmyard"), ("landuse", "orchard"),
                      ("waterway", "riverbank")}
+NO_PARK = {("landuse", v) for v in ("cemetery", "industrial", "military", "railway", "construction", "commercial",
+                                    "retail", "port", "garages", "brownfield", "landfill", "quarry")} | {
+    ("amenity", v) for v in ("parking", "grave_yard", "school", "hospital", "university", "college")} | {
+    ("leisure", v) for v in ("pitch", "stadium", "sports_centre", "track", "golf_course", "marina")} | {
+    ("aeroway", v) for v in ("aerodrome", "apron", "runway", "taxiway")} | {("military", "barracks")}
+NO_PARK_SHARE = 0.3  # a block this much covered by such land is never made a park
 
 
 @dataclass
@@ -49,6 +55,7 @@ class Raw:
     building_tags: dict = field(default_factory=dict)  # osm_id -> the tags buildingtags.TAGS keeps
     green: list = field(default_factory=list)  # (osm_id, ring) areas that get scattered trees
     not_built: list = field(default_factory=list)  # rings of areas that never get filler
+    no_park: list = field(default_factory=list)  # rings of land that is never made a park (NO_PARK)
     trees: list = field(default_factory=list)  # (lat, lon)
     boundary: list = field(default_factory=list)  # outer rings of the province
     ways: list = field(default_factory=list)  # (way id, highway, node ids, [(lat, lon), ...], tags) per road
@@ -118,6 +125,8 @@ def read_osm(path, boundary: str = "La Habana", box=HAVANA_BOX, keep_ways: bool 
                 raw.green.extend((a.orig_id(), r) for r in rings)
             if _tagged(tags, NOT_BUILT):
                 raw.not_built.extend(rings)
+            if _tagged(tags, NO_PARK):
+                raw.no_park.extend(rings)
             if (tags.get("boundary") == "administrative" and tags.get("admin_level") == "4"
                     and tags.get("name") == boundary and not a.from_way()):
                 raw.boundary.extend(rings)
@@ -245,6 +254,82 @@ def choose_fillers(blocks, cents: np.ndarray, no_build: list, nb_tree) -> tuple[
     return fillers, seeds
 
 
+def _rings_arrays(rings) -> tuple[np.ndarray, np.ndarray]:
+    starts = np.concatenate([[0], np.cumsum([len(r) for r in rings])]).astype(np.int64)
+    verts = np.concatenate(rings).astype(np.float32) if rings else np.zeros((0, 2), np.float32)
+    return verts, starts
+
+
+def find_parks(raw: Raw, faces, rings, cents, graph) -> tuple[list, list, list]:
+    """The faces that become parks: their rings, kinds (contravia.parks) and zones (contravia.walks.zone_of)."""
+    import shapely
+    from shapely.geometry import Polygon
+
+    from contravia.medians import ACROSS, boulevard
+    from contravia.walks import CENTRE, VEDADO, zone_of
+
+    if not faces:
+        return [], [], []
+    faces = np.asarray(faces, dtype=object)
+    built, count = np.zeros(len(faces)), np.zeros(len(faces), int)
+    if len(cents):
+        fi, bi = shapely.STRtree(faces).query(shapely.points(cents), predicate="within")[::-1]
+        np.add.at(count, fi, 1)
+        np.add.at(built, fi, [Polygon(rings[k]).area for k in bi])
+
+    def cover(rings_):
+        polys = [Polygon(_local(r)) for r in rings_ if len(r) >= 4]
+        polys = [p if p.is_valid else p.buffer(0) for p in polys]
+        out = np.zeros(len(faces))
+        if polys:
+            fi, pi = shapely.STRtree(np.asarray(polys, dtype=object)).query(faces, predicate="intersects")
+            np.add.at(out, fi, shapely.area(shapely.intersection(faces[fi], np.asarray(polys, dtype=object)[pi])))
+        return out
+
+    green = cover([r for _, r in raw.green])
+    blocked = cover(raw.no_park) > NO_PARK_SHARE * shapely.area(faces)
+    names = [None] * len(faces)
+    spots = shapely.point_on_surface(faces)
+    for name, ring in raw.municipios:
+        m = Polygon(_local(ring))
+        if not m.is_valid:
+            m = m.buffer(0)
+        inside_m = shapely.contains(m, spots)
+        for k in np.flatnonzero(inside_m):
+            names[k] = name
+    city = np.array([n in CENTRE or n in VEDADO for n in names])
+    prado = _named_between(graph, faces, r"Paseo del Prado|Paseo de Mart[ií]", ACROSS)
+    kinds = parks.classify(faces, built, count, green, city, boulevard(graph, faces), prado)
+    kinds[blocked & ~prado] = parks.NONE
+    keep = np.flatnonzero(kinds != parks.NONE)
+    return ([np.asarray(faces[k].exterior.coords)[:-1] for k in keep], [int(kinds[k]) for k in keep],
+            [zone_of(names[k]) for k in keep])
+
+
+def _named_between(graph, faces, pattern, across) -> np.ndarray:
+    """Which faces lie between the carriageways of the streets whose name matches pattern, like medians.boulevard."""
+    import re
+
+    import shapely
+    from shapely.geometry import LineString
+
+    out = np.zeros(len(faces), bool)
+    if "g_names" not in graph:
+        return out
+    names = [str(n) for n in graph["g_names"]]
+    hit = [k for k, n in enumerate(names) if re.search(pattern, n)]
+    poly, starts = graph["g_poly"].astype(float), graph["g_poly_start"]
+    lines = [LineString(poly[starts[e]:starts[e + 1]]) for e in np.flatnonzero(np.isin(graph["g_name"], hit))
+             if starts[e + 1] - starts[e] >= 2]
+    if not lines:
+        return out
+    near = shapely.union_all(lines).buffer(2.0)
+    ext = shapely.get_exterior_ring(faces)
+    share = shapely.length(shapely.intersection(ext, near)) / np.maximum(shapely.length(ext), 1e-9)
+    wide = 2 * shapely.area(faces) / np.maximum(shapely.length(ext), 1e-9)
+    return (share >= 0.5) & (wide < across)
+
+
 def build_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]:
     """Project, clip to the province and assemble the city data, with its heights, and its report."""
     city, info = base_city(raw, terrain)
@@ -309,8 +394,9 @@ def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]
     cents = cents[keep]
 
     # Blocks: the faces of the road network. Filler goes to small ones with no building and no green.
-    blocks = [b for b in polygonize(unary_union(lines)) if b.area < MAX_BLOCK] if lines else []
-    blocks = [b for b in blocks if province is None or province.contains(b.representative_point())]
+    faces = [b for b in polygonize(unary_union(lines)) if b.area <= parks.PARK_MAX] if lines else []
+    faces = [b for b in faces if province is None or province.contains(b.representative_point())]
+    blocks = [b for b in faces if b.area < MAX_BLOCK]
     no_build = [Polygon(_local(r)) for r in raw.not_built if len(r) >= 4]
     no_build = [p if p.is_valid else p.buffer(0) for p in no_build]
     fillers, seeds = choose_fillers(blocks, cents, no_build, shapely.STRtree(no_build))
@@ -333,19 +419,39 @@ def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]
     trees = np.vstack(trees) if trees else np.zeros((0, 2))
     trees = trees[inside(trees) & ~on_road(trees, roads)]
 
+    graph = build_graph(raw.ways, raw.controls, raw.restrictions, raw.municipios, rings,
+                        lambda lat, lon: to_local(lat, lon), WIDTHS, inside,
+                        places=(raw.places, raw.place_points, raw.consejos))
+
+    # Parks: blocks with few or no buildings (contravia.parks). They get no filler, and their own trees.
+    from contravia.streets import pmap
+
+    park_rings, kinds, park_zone = find_parks(raw, faces, rings, cents, graph)
+    park_seeds = [parks.seed_of(Polygon(r)) for r in park_rings]
+    if park_rings:
+        gone = set(park_seeds)
+        keep = [k for k, sd in enumerate(seeds) if sd not in gone]
+        fillers, seeds = [fillers[k] for k in keep], [seeds[k] for k in keep]
+        polys = [Polygon(r) for r in park_rings]
+        trees = trees[~shapely.contains_xy(shapely.union_all(polys), trees[:, 0], trees[:, 1])] if len(trees) else trees
+        laid = pmap(lambda k: parks.layout(park_rings[k], kinds[k], park_seeds[k]).trees, range(len(park_rings)), chunk=8)
+        trees = np.vstack([trees] + [t for t in laid if len(t)])
+        trees = trees[~on_road(trees, roads)]
+
     if terrain is not None and terrain.heights.size > 4:  # the relief past the Malecón's wall goes under the sea
         from contravia.landmarks import malecon
 
         malecon.carve(terrain, roads)
     city = CityData.from_features(roads, rings, np.array(ids, np.int64), fillers, np.array(seeds, np.int64),
                                   trees, terrain)
-    graph = build_graph(raw.ways, raw.controls, raw.restrictions, raw.municipios, rings,
-                        lambda lat, lon: to_local(lat, lon), WIDTHS, inside,
-                        places=(raw.places, raw.place_points, raw.consejos))
     city.a.update(graph)
+    pv, ps = _rings_arrays(park_rings)
+    city.a.update(park_verts=pv, park_starts=ps, park_kind=np.asarray(kinds, np.uint8).reshape(-1),
+                  park_zone=np.asarray(park_zone, np.uint8).reshape(-1), park_seed=np.asarray(park_seeds, np.int64))
     city.a.update(buildingtags.encode(city, raw.building_tags, raw.municipios))
     info = {"roads": len(raw.roads), "segments": roads, "buildings": len(rings), "buildings_skipped": skipped,
             "blocks": len(blocks), "filler_blocks": len(fillers), "trees": len(trees), "centres": cents,
+            "parks": {parks.KINDS[k]: int(np.sum(np.asarray(kinds) == k)) for k in range(1, len(parks.KINDS))},
             "edges": len(graph.get("g_from", ())), "junctions": len(graph.get("g_junction", ())),
             "turns": len(graph.get("g_turn_in", ()))}
     return city, info

@@ -20,7 +20,7 @@ STEPS = (("map", "Leer el mapa", 1.0), ("buildings", "Edificios", 14.0), ("stree
          ("walks", "Aceras", 25.0))
 DONE_LABEL = "Listo"
 CITY = "havana.npz"
-FORMAT = 5  # the built city's format: a city of another format is built again (2: street names and barrios, 3: widths from lanes, 4: medians, 5: no OSM tree points)
+FORMAT = 6  # the built city's format: a city of another format is built again (2: street names and barrios, 3: widths from lanes, 4: medians, 5: no OSM tree points, 6: parks)
 
 
 def home() -> Path:

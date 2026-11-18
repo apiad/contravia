@@ -23,10 +23,12 @@ def test_long_segments_are_split_to_50_m():
     assert np.hypot(r[:, 2] - r[:, 0], r[:, 3] - r[:, 1]).max() <= 50.0 + 1e-3
 
 
-def test_filler_goes_only_to_empty_blocks_outside_parks():
-    _, rep = city()
+def test_empty_hectare_blocks_outside_the_city_become_parks_not_filler():
+    cd, rep = city()
     assert rep["blocks"] >= 4
-    assert rep["filler_blocks"] == rep["blocks"] - 2   # minus the built block and the park block
+    # the fixture's four 1 ha blocks lie in no city municipio and are almost empty: each is a wild park (contravia.parks)
+    assert rep["parks"]["organic"] == 4 and rep["filler_blocks"] == 0
+    assert len(cd.a["park_kind"]) == 4 and len(cd.a["park_starts"]) == 5
 
 
 def test_degenerate_building_is_skipped_and_counted():

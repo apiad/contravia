@@ -10,10 +10,14 @@ def test_respawn_and_teleport_land_on_roads(city):
         assert np.hypot(pts[:, 0] - x, pts[:, 1] - z).min() < 25.0
 
 
-def test_walls_near_include_filler_footprints(city):
-    w = Walls(city)
-    built = sum(len(r) for c in city.cells() for r in city.cell(*c).buildings)
-    assert len(w.near(100.0, 100.0)) > built
+def test_walls_near_include_filler_footprints():
+    from contravia.citydata import CityData
+
+    roads = [[0.0, 0.0, 120.0, 0.0, 6.0], [120.0, 0.0, 120.0, 120.0, 6.0], [120.0, 120.0, 0.0, 120.0, 6.0],
+             [0.0, 120.0, 0.0, 0.0, 6.0]]
+    block = np.array([[0.0, 0.0], [120.0, 0.0], [120.0, 120.0], [0.0, 120.0]])  # an empty block with filler
+    city = CityData.from_features(roads, [], [], [block], [7], np.zeros((0, 2)))
+    assert len(Walls(city).near(60.0, 60.0)) > 0
 
 
 def test_a_building_across_a_road_is_neither_hit_nor_counted():
