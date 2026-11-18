@@ -180,7 +180,8 @@ def build_graph(ways, controls, restrictions, municipios, rings, to_local, width
         mids = np.array([r[2][len(r[2]) // 2] for r in rows])
         keep &= inside(mids)
 
-    # Keep the part a car can enter and leave: strongly connected with the junction nearest the origin.
+    # Keep the part a car can enter and leave: the largest strongly connected part, tried from junctions spread
+    # over the province (the one nearest the Capitolio can be a stub at a province's border).
     J = len(junction_node)
     jxz = np.array(junction_xz)
     succ, pred = [[] for _ in range(J)], [[] for _ in range(J)]
@@ -193,8 +194,21 @@ def build_graph(ways, controls, restrictions, municipios, rings, to_local, width
         if keep[k]:
             used[r[0]] = used[r[1]] = True
     candidates = np.flatnonzero(used)
-    start = candidates[np.argmin(np.hypot(*jxz[candidates].T))]
-    core = _reach(start, succ) & _reach(start, pred)
+    if not len(candidates):
+        return {}
+    core = np.zeros(J, bool)
+    centre = np.median(jxz[candidates], axis=0)
+    by_centre = candidates[np.argsort(np.hypot(*(jxz[candidates] - centre).T))]
+    tries = [candidates[np.argmin(np.hypot(*jxz[candidates].T))]]
+    tries += by_centre[:: max(1, len(by_centre) // 24)].tolist()
+    for start in tries:
+        if core[start]:
+            continue
+        part = _reach(start, succ) & _reach(start, pred)
+        if part.sum() > core.sum():
+            core = part
+        if core.sum() > len(candidates) / 2:
+            break
     keep &= np.array([core[r[0]] and core[r[1]] for r in rows])
     rows = [r for k, r in enumerate(rows) if keep[k]]
     lens = lens[keep]

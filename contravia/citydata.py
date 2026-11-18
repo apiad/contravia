@@ -41,6 +41,42 @@ class Cell:
     park_paint: np.ndarray | None = None  # (P,) their contravia.structures paint
     park_walls: np.ndarray | None = None  # (W, 6) the motifs' walls, as struct_walls rows
 
+    @classmethod
+    def join(cls, parts: list[Cell]) -> Cell:
+        """One cell from the features of several (a cell on a province border): lists and arrays end to end,
+        and each part's municipio indexes moved past the names before it."""
+        from dataclasses import fields
+
+        from contravia.buildingtags import HEIGHT, LEVELS, MUNI
+
+        out = cls()
+        names: list = []
+        attrs = []
+        tagged = next((p.building_attrs for p in parts if p.building_attrs is not None), None)
+        for p in parts:
+            if p.building_attrs is not None:
+                a = np.array(p.building_attrs, copy=True)
+                a[:, MUNI] = np.where(a[:, MUNI] >= 0, a[:, MUNI] + len(names), -1)
+                attrs.append(a)
+            elif tagged is not None:  # data without tags beside data with them: rows that say nothing
+                a = np.zeros((len(p.buildings), tagged.shape[1]), tagged.dtype)
+                a[:, [LEVELS, HEIGHT]], a[:, MUNI] = np.nan, -1
+                attrs.append(a)
+            names.extend(p.muni_names)
+        for fl in fields(cls):
+            if fl.name in ("building_attrs", "muni_names"):
+                continue
+            vals = [getattr(p, fl.name) for p in parts]
+            if isinstance(vals[0], list):
+                setattr(out, fl.name, [v for vs in vals for v in vs])
+            elif all(v is None for v in vals):
+                setattr(out, fl.name, None)
+            else:
+                setattr(out, fl.name, np.concatenate([v for v in vals if v is not None]))
+        out.building_attrs = np.concatenate(attrs) if attrs else None
+        out.muni_names = tuple(names)
+        return out
+
 
 def _rings_to_arrays(rings):
     starts = np.zeros(len(rings) + 1, np.int64)

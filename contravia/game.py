@@ -289,6 +289,18 @@ class Game:
         self.eye = np.array([x, self.car.y + 3.0, z])
         self.engine.state.teleport = {"to": [x, z], "error": None}
         self._recentre()
+        self._follow_province()
+
+    def _follow_province(self) -> None:
+        """When the car is in another province, drive on that province's graph: its traffic starts over there."""
+        focus = getattr(self.city, "focus", None)
+        if focus is None or not focus(self.car.x, self.car.z):
+            return
+        self.engine.state.province = self.city.focused
+        if self.layer:
+            self.runner.stop()
+            self.fleet.draw(np.zeros((0, 3)), np.zeros(0), np.zeros(0), np.zeros(0, np.int64))
+            self._start_traffic(self.traffic_config, True)
 
     def _resume(self, car: dict) -> None:
         """Put the car and the camera back where engine.state.car says, at the same speed."""
@@ -367,6 +379,7 @@ class Game:
         if now - self._area_at < 0.5:
             return
         self._area_at = now
+        self._follow_province()
         a = self.city.graph.a
         if "g_muni" not in a or not len(self.city.graph):
             return
