@@ -273,7 +273,7 @@ pre{font-family:var(--font-mono);font-size:12px;line-height:1.55;background:var(
 <h2 id="delivers"><span class="n">01</span>What this delivers</h2>
 <div class="trio">
   <div class="card"><h4>Salón</h4><p>Every vehicle the fleet builds, by family: cars, buses, trucks, services and cycles, plus your own designs. The selected one turns on a garage floor; drag to turn it yourself. A data card gives its era, its size and where it drives in the city.</p></div>
-  <div class="card"><h4>Taller</h4><p>One vehicle's parameters as rows: shape, front and rear, wheels, paint. Every slider stops at the edges of its era's range, and a slider whose limit depends on another (the wheelbase on the length) shows the part it cannot reach. The vehicle rebuilds on the turntable as you move it.</p></div>
+  <div class="card"><h4>Taller</h4><p>One vehicle's parameters as rows: shape, front and rear, wheels, paint. Every slider stops at the edges of its family's range over all eras, and a slider whose limit depends on another (the wheelbase on the length) shows the part it cannot reach. The vehicle rebuilds on the turntable as you move it.</p></div>
   <div class="card"><h4>Drive it</h4><p>Enter on any vehicle, in either screen, opens free drive in that vehicle. Free drive gets a Vehículo row that opens the Garaje to choose, and the pause menu gets Cambiar vehículo.</p></div>
 </div>
 <div class="stats">
@@ -289,22 +289,23 @@ pre{font-family:var(--font-mono);font-size:12px;line-height:1.55;background:var(
 <tr><td>where</td><td>A fourth main-menu mode, Garaje, after Mapa de Cuba</td><td class="why">Like the map, it explores the game's content outside the story.</td><td class="who">maintainer</td></tr>
 <tr><td>what it shows</td><td>Every vehicle the fleet builds, and the player's designs</td><td class="why">One catalogue of the whole fleet.</td><td class="who">maintainer</td></tr>
 <tr><td>what changes</td><td>Shape, colours and livery, through the builders' parameters</td><td class="why">The builders already take these parameters; the Garaje is a front end to them.</td><td class="who">maintainer</td></tr>
-<tr><td>limits</td><td>Each slider spans its parameter's range for the vehicle's era, the same range the fleet generator draws traffic from</td><td class="why">A design then looks like it belongs in the street, and every position of every slider builds.</td><td class="who">maintainer</td></tr>
+<tr><td>limits</td><td>Everything mixes: each slider spans its parameter's range over all the family's eras, from the table the fleet generator draws traffic from, and every style option and colour of every era is open</td><td class="why">A finned modern hatchback is fun, and every position of every slider still builds.</td><td class="who">maintainer</td></tr>
+<tr><td>eras in the Taller</td><td>The era chips pick the starting preset and what Al azar draws from; they do not limit anything</td><td class="why">The eras still give a quick start and a traffic-like random car.</td><td class="who">agent</td></tr>
+<tr><td>names</td><td>Allegorical names with no trademark: almendrón, polaco, ruso, huevito, moderno</td><td class="why">The game names what people in Havana call the cars, never a maker or a model.</td><td class="who">maintainer</td></tr>
 <tr><td>drive any</td><td>Enter on any vehicle opens free drive in it</td><td class="why">The point of designing one is to drive it.</td><td class="who">maintainer</td></tr>
 <tr><td>one table of ranges</td><td><code>contravia/rules/fleet.py</code> exposes <code>ranges(family, era)</code>; the generator and the Garaje both read it</td><td class="why">A range changed once changes both, and a test can sweep the same table.</td><td class="who">agent</td></tr>
 <tr><td>two screens</td><td>Salón to browse, Taller to design, the Taller opened from a vehicle in the Salón</td><td class="why">Browsing wants the vehicle big; designing wants a column of rows beside it.</td><td class="who">agent</td></tr>
-<tr><td>colours</td><td>Swatches from the era's colour list; with Mezclar épocas, every era's list. No free colour picker</td><td class="why">Keeps the faded palette that makes the street read as Havana.</td><td class="who q">agent · open</td></tr>
+<tr><td>colours</td><td>Swatches from every era's colour list, no free colour picker</td><td class="why">Keeps the faded palette that makes the street read as Havana.</td><td class="who">maintainer · agent</td></tr>
 <tr><td>livery</td><td>Presets (franja, dos tonos, taxi, policía, bomberos, guagua) with a second colour, not free painting</td><td class="why">The builders take paint areas; a painter belongs with the workshop (#72), if ever.</td><td class="who">agent</td></tr>
-<tr><td>mixing eras</td><td>A Mezclar épocas switch widens every range to the union of the family's eras and opens every style option</td><td class="why">A finned modern hatchback is fun and still builds; off by default.</td><td class="who q">agent · open</td></tr>
 <tr><td>saved designs</td><td>A JSON file per design in the user's config folder, beside the options</td><td class="why">Same place and format as the options; a person or an agent can read one.</td><td class="who">agent</td></tr>
-<tr><td>designs in traffic</td><td>A per-design switch, off by default, puts it among the traffic of its era</td><td class="why">Seeing your car pass you in Centro Habana is the reward for designing it.</td><td class="who q">agent · open</td></tr>
+<tr><td>designs in traffic</td><td>Never: a design is driven only by the player, the city's traffic comes from the generator alone</td><td class="why">The city stays the same city for the same inputs.</td><td class="who">maintainer</td></tr>
 </tbody>
 </table>
 
 <h2 id="fits"><span class="n">03</span>How it fits</h2>
 <p>The Garaje adds no geometry. It reads the ranges table, builds through the same manifoldx builders as the traffic, and hands a parameter set to free drive.</p>
 <figure>
-<svg viewBox="0 0 760 250" width="100%" role="img" aria-label="Data flow: fleet.py ranges feed the Salón and Taller; the Taller writes a design JSON; designs and presets go through the manifoldx builders to a Vehicle used by the turntable, free drive and traffic." style="font-family:var(--font-mono);font-size:12px">
+<svg viewBox="0 0 760 250" width="100%" role="img" aria-label="Data flow: fleet.py ranges feed the Salón and Taller; the Taller writes a design JSON; designs and presets go through the manifoldx builders to a Vehicle used by the turntable and free drive; traffic builds only the generator's presets." style="font-family:var(--font-mono);font-size:12px">
   <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#8a867b"/></marker></defs>
   <g fill="#191814" stroke="#2a2721">
     <rect x="10" y="20" width="170" height="56" rx="8"/><rect x="10" y="150" width="170" height="56" rx="8"/>
@@ -324,11 +325,9 @@ pre{font-family:var(--font-mono);font-size:12px;line-height:1.55;background:var(
     <path d="M180 48H248"/><path d="M180 60L250 160"/><path d="M330 76V148"/><path d="M250 186H182"/>
     <path d="M410 48L480 100"/><path d="M410 178L480 128"/>
     <path d="M600 104L650 44"/><path d="M600 113H648"/><path d="M600 122L650 182"/>
-    <path d="M95 150V78" stroke-dasharray="4 4"/>
   </g>
-  <text x="102" y="122" fill="#6f6b62">designs with "en el tráfico"</text>
 </svg>
-<figcaption>Solid arrows run while the player is in the Garaje; the dashed one is read when a city starts, for designs marked to drive in traffic.</figcaption>
+<figcaption>Traffic shares the builders but never reads the saved designs.</figcaption>
 </figure>
 
 <h2 id="menu-s"><span class="n">04</span>The main menu entry</h2>
@@ -367,7 +366,7 @@ pre{font-family:var(--font-mono);font-size:12px;line-height:1.55;background:var(
 <table class="tbl">
 <thead><tr><th>tab</th><th>vehicles</th><th>source</th></tr></thead>
 <tbody>
-<tr><td>Carros</td><td>almendrón, Lada, Moskvich, and every modern preset</td><td class="why"><code>car.py</code>, eras of the fleet generator</td></tr>
+<tr><td>Carros</td><td>almendrón, ruso, moscovita, the modern presets; polaco and huevito when they exist</td><td class="why"><code>car.py</code>, eras of the fleet generator</td></tr>
 <tr><td>Guaguas</td><td>metroguagua; the articulated bus when it exists</td><td class="why"><code>bus.py</code> (#283)</td></tr>
 <tr><td>Camiones</td><td>1980s truck, box truck, tanker, dump truck</td><td class="why"><code>truck.py</code> (#284)</td></tr>
 <tr><td>Servicios</td><td>police car, fire truck; ambulance and taxis later</td><td class="why">liveries and lightbars over the families above</td></tr>
@@ -377,9 +376,9 @@ pre{font-family:var(--font-mono);font-size:12px;line-height:1.55;background:var(
 </table>
 
 <h2 id="taller-s"><span class="n">06</span>The Taller: design</h2>
-<p>The Taller opens on the vehicle chosen in the Salón, as a copy: nothing the player does changes the preset. On the left, tabs group the parameters (Forma, Frente y cola, Ruedas, Pintura) and each parameter is a row: a slider with its value and its range's ends, or a set of options. On the right the vehicle turns, with camera buttons for side, front, three-quarter and rear. At the top, the era chips choose which ranges apply, and the Mezclar épocas switch widens them.</p>
+<p>The Taller opens on the vehicle chosen in the Salón, as a copy: nothing the player does changes the preset. On the left, tabs group the parameters (Forma, Frente y cola, Ruedas, Pintura) and each parameter is a row: a slider with its value and its range's ends, or a set of options. On the right the vehicle turns, with camera buttons for side, front, three-quarter and rear. At the top, the era chips reset the vehicle to that era's preset; they limit nothing.</p>
 <p>Under the rows: <b>Al azar</b> draws a full set of parameters from the current ranges, as the traffic would; <b>Deshacer</b> steps back; <b>Guardar</b> saves to Mis diseños; <b>Manejar</b> drives it now without saving.</p>
-<p><span class="try">try it</span>Change the era, move the sliders, pick colours and a livery, then save. The game shows the 3D vehicle turning; this mockup draws the side view from the same numbers.</p>
+<p><span class="try">try it</span>Start from an era, move the sliders, pick colours and a livery, then save. The game shows the 3D vehicle turning; this mockup draws the side view from the same numbers.</p>
 <div class="gs" id="taller">
   <div class="ttl"><span class="sign"></span><span class="h">Garaje</span><span class="word" id="tName">· Mi almendrón</span>
     <div class="eras" id="eras"></div></div>
@@ -392,36 +391,34 @@ pre{font-family:var(--font-mono);font-size:12px;line-height:1.55;background:var(
   <div class="hints"><span><span class="key">Q E</span>Grupo</span><span><span class="key">↑↓</span>Fila</span><span><span class="key">←→</span>Cambiar</span><span><span class="key">R</span>Al azar</span><span><span class="key">Z</span>Deshacer</span><span><span class="key">G</span>Guardar</span><span><span class="key">ENTER</span>Manejar</span><span><span class="key">ESC</span>Salón</span></div>
   <div class="gtoast" id="tallerToast"></div>
 </div>
-<p class="note">Sample ranges: the length, height and wheelbase rows take the era table of the vehicles spec (section 07); the wheel and fin ranges and the option lists are this page's placeholders for <code>ranges()</code>.</p>
+<p class="note">Sample ranges: the length, height and wheelbase rows span the era table of the vehicles spec (section 07) over its three eras; the wheel and fin ranges and the option lists are this page's placeholders for <code>ranges()</code>.</p>
 
 <h3 id="ranges">Allowed ranges</h3>
 <p>Every slider has two kinds of limit, and the row shows both.</p>
 <ul>
-<li><b>The era's range.</b> Its ends, printed under the slider, come from <code>ranges(family, era)</code>, the table the fleet generator draws from. With Mezclar épocas on, the ends become the lowest and highest over the family's eras.</li>
+<li><b>The family's range.</b> Its ends, printed under the slider, are the lowest and highest over the family's eras in <code>ranges(family, era)</code>, the table the fleet generator draws from. Every era's style options are open too.</li>
 <li><b>Constraints between parameters.</b> The generator already fixes each draw so it builds: the wheelbase fits inside the length, the heights stay in order (sill, belt, cowl, roof), the wheels fit their arches. In the Taller the same rules narrow a slider live: the slider stops at the narrowed end and the row says why in orange (try a short modern car and a long wheelbase). Moving the length back frees it.</li>
-<li><b>Options that do not exist in an era</b> are hidden; a numeric parameter that does not apply (fins on a modern car without Mezclar épocas) is dimmed with its reason.</li>
+<li><b>A parameter a family does not have</b> (fins on a bus) is not shown.</li>
 </ul>
-<p>So <code>ranges()</code> returns, per parameter: its group and label in Spanish, its unit, min, max and step, and for options the list allowed in the era. The constraints live in one function, <code>fix(params)</code>, which the generator already needs; the Taller calls it to get the narrowed ends.</p>
+<p>So <code>ranges()</code> returns, per family and era and parameter: its group and label in Spanish, its unit, min, max and step, and for options the list allowed in the era. The constraints live in one function, <code>fix(params)</code>, which the generator already needs; the Taller calls it to get the narrowed ends.</p>
 
 <h3 id="paint">Colours and livery</h3>
-<p>The Pintura tab has the body colour, a second colour (roof and livery), the two-tone roof switch and the livery preset. A service preset brings its own colours (Policía sets white over blue), which the player can then change. The swatches are the era's colour list from the fleet generator, already faded the way the traffic paints. A colour costs no build time: as the vehicles spec decided, colourways recolour one built mesh.</p>
+<p>The Pintura tab has the body colour, a second colour (roof and livery), the two-tone roof switch and the livery preset. A service preset brings its own colours (Policía sets white over blue), which the player can then change. The swatches are every era's colour list from the fleet generator, already faded the way the traffic paints. A colour costs no build time: as the vehicles spec decided, colourways recolour one built mesh.</p>
 
 <h3 id="rebuild">Rebuilding on every change</h3>
 <p>A shape change rebuilds the vehicle through its builder at the detail the traffic uses, then merges it. The time this takes per family is not measured yet; step 1 of delivery measures it. If a rebuild takes more than about 100 ms, the turntable keeps the last mesh while a slider is held and rebuilds when it is released, so the slider never stutters. Builds are cached by their parameters through <code>contravia/kept.py</code>, so undo and going back to a preset cost nothing.</p>
 
 <h2 id="designs"><span class="n">07</span>Saved designs</h2>
-<p>Guardar writes one file per design to <code>&lt;config&gt;/garaje/&lt;slug&gt;.json</code>, in the folder the options already use (<code>$CONTRAVIA_CONFIG</code> in tests). The name defaults to <i>Mi</i> plus the base vehicle's name and a number, and can be edited in the title. Mis diseños in the Salón lists them, newest first; on a design the card adds Renombrar, Duplicar, Borrar and the En el tráfico switch.</p>
+<p>Guardar writes one file per design to <code>&lt;config&gt;/garaje/&lt;slug&gt;.json</code>, in the folder the options already use (<code>$CONTRAVIA_CONFIG</code> in tests). The name defaults to <i>Mi</i> plus the base vehicle's name and a number, and can be edited in the title. Mis diseños in the Salón lists them, newest first; on a design the card adds Renombrar, Duplicar and Borrar. Designs never drive in the city's traffic.</p>
 <pre>{
   "name": "Mi almendrón 2",
   "family": "car",
   "base": "almendron",
-  "era": "1950s",
-  "mix_eras": false,
+  "base_era": "1950s",
   "params": {"length": 5.2, "height": 1.52, "wheelbase": 3.0, "fin_height": 0.18,
              "wheel_radius": 0.38, "headlamp": "round_pod", "bumper": "chrome_bar",
              "wheel": "hubcap", "whitewall": 0.05},
   "paint": {"body": "#5ec8c0", "second": "#efe6cf", "roof_paint": true, "livery": "franja"},
-  "in_traffic": false,
   "saved": "2026-11-18T12:00:00"
 }</pre>
 <p>A design keeps only the parameters the player could change; the rest come from the base preset when it is built. A file whose values fall outside today's ranges (a range was tightened after it was saved) is clamped with <code>fix()</code> on load, and the Salón marks it <i>ajustado</i>.</p>
@@ -455,13 +452,13 @@ pre{font-family:var(--font-mono);font-size:12px;line-height:1.55;background:var(
   <div class="step"><span class="n">1</span><div><h4>ranges() and fix() in rules/fleet.py</h4><p>Per family and era: group, label, unit, min, max, step, options. The generator moves onto them. Measure a rebuild per family at traffic detail and write the numbers in the PR.</p></div></div>
   <div class="step"><span class="n">2</span><div><h4>The Salón and the menu entry</h4><p><code>contravia/garage.py</code>: tabs, strip, turntable on a floor, the card, Manejar into free drive. <code>--screen garage --shot</code> saves it.</p></div></div>
   <div class="step"><span class="n">3</span><div><h4>The Taller</h4><p>Rows built from <code>ranges()</code>, live narrowing from <code>fix()</code>, rebuild with the cache, undo, Al azar, the camera buttons.</p></div></div>
-  <div class="step"><span class="n">4</span><div><h4>Saved designs</h4><p>JSON in the config folder, Mis diseños, rename, duplicate, delete, clamp on load, En el tráfico.</p></div></div>
+  <div class="step"><span class="n">4</span><div><h4>Saved designs</h4><p>JSON in the config folder, Mis diseños, rename, duplicate, delete, clamp on load.</p></div></div>
   <div class="step"><span class="n">5</span><div><h4>Free drive and pause</h4><p>The Vehículo row, Cambiar vehículo in pause, the swap in place. Then the two screens go into <code>docs/ux/contravia-ux.html</code> as approved UX.</p></div></div>
 </div>
 
 <h2 id="testing"><span class="n">11</span>Testing</h2>
 <ul class="checks">
-<li>Every parameter at its min and its max, for every family and era, builds a vehicle whose wheels sit in their arches and whose heights are in order (a sweep over <code>ranges()</code>).</li>
+<li>Every parameter at its min and its max over the family's eras, for every family, builds a vehicle whose wheels sit in their arches and whose heights are in order (a sweep over <code>ranges()</code>).</li>
 <li>A thousand random draws inside the ranges, passed through <code>fix()</code>, all build; <code>fix()</code> of a valid set returns it unchanged.</li>
 <li>A saved design loads into the same parameters and builds the same mesh; a design out of range is clamped and marked.</li>
 <li>The Salón and the Taller render to PNG with <code>--screen garage --shot</code> and <code>--screen garage-design --shot</code>, and the shots are looked at in review.</li>
@@ -474,14 +471,13 @@ pre{font-family:var(--font-mono);font-size:12px;line-height:1.55;background:var(
 <li>The workshop of the story (#72): money, parts that change the handling, damage repair. It can reuse the Taller's rows later.</li>
 <li>Free painting, decals drawn by hand, or a free colour picker.</li>
 <li>Sharing designs online.</li>
+<li>Designs in the city's traffic.</li>
 <li>Riding cycles before the people spec gives them a rider.</li>
 </ul>
 <h3>Open questions</h3>
 <ul>
-<li><b>Colours:</b> only the era's swatches, or a free picker behind Mezclar épocas?</li>
-<li><b>Mezclar épocas:</b> keep it, or make the era a hard frame?</li>
-<li><b>Your designs in traffic:</b> worth it in this mode, and at what share of the era's cars?</li>
-<li><b>Names in the UI:</b> Lada and Moskvich are trademarks. Do the cards use them, as people in Havana do, or neutral names (the 80s sedan, el polaco)?</li>
+<li><b>The Moskvich's name:</b> the mockup calls it <i>moscovita</i>; which of the names in use should it take?</li>
+<li><b>Polaco and huevito</b> have no preset yet: they join the Carros tab when the fleet generator gets them.</li>
 <li><b>Unlocking:</b> everything open from the start, or does the story unlock vehicles here as you get them?</li>
 </ul>
 </main>
@@ -491,8 +487,8 @@ pre{font-family:var(--font-mono);font-size:12px;line-height:1.55;background:var(
 // Sample catalogue for the mockups. Sizes, seats and variant counts are placeholders; frames are the real review renders.
 const VEH=[
  {id:"almendron",fam:"Carros",name:"Almendrón",era:"Años 50",dims:[5.1,1.95,1.52],seats:6,variants:48,where:"Rutas de almendrones, todo el día"},
- {id:"lada",fam:"Carros",name:"Lada",era:"Años 70-80",dims:[4.07,1.61,1.44],seats:5,variants:64,where:"Toda la ciudad"},
- {id:"moskvich",fam:"Carros",name:"Moskvich",era:"Años 70-80",dims:[4.2,1.55,1.48],seats:5,variants:64,where:"Toda la ciudad"},
+ {id:"lada",fam:"Carros",name:"Ruso",era:"Años 70-80",dims:[4.07,1.61,1.44],seats:5,variants:64,where:"Toda la ciudad"},
+ {id:"moskvich",fam:"Carros",name:"Moscovita",era:"Años 70-80",dims:[4.2,1.55,1.48],seats:5,variants:64,where:"Toda la ciudad"},
  {id:"metroguagua",fam:"Guaguas",name:"Metroguagua",era:"Moderno",dims:[12,2.55,3.1],seats:80,variants:6,where:"Sus rutas y paradas reales"},
  {id:"cargo",fam:"Camiones",name:"Camión de los 80",era:"Años 70-80",dims:[7.4,2.4,2.6],seats:2,variants:12,where:"Avenidas y puerto"},
  {id:"box",fam:"Camiones",name:"Camión de caja",era:"Moderno",dims:[6.8,2.3,3.0],seats:2,variants:12,where:"Centro, de noche"},
@@ -530,15 +526,14 @@ const ERAS={
 };
 const SECOND=["#efe6cf","#eeeeea","#232427","#2f5fa8","#c22c2c","#ffd400"];
 const LIVERIES=["Ninguna","Franja","Taxi","Policía"];
-function rangesOf(era,mix){
-  if(!mix)return ERAS[era];
+function rangesOf(){
   const all=Object.values(ERAS),u=k=>{const rs=all.map(e=>e[k]).filter(Boolean);return[Math.min(...rs.map(r=>r[0])),Math.max(...rs.map(r=>r[1]))]};
   const un=k=>[...new Set(all.flatMap(e=>e[k]))];
   return{length:u("length"),height:u("height"),wheelbase:u("wheelbase"),fin:u("fin"),wheel:u("wheel"),head:un("head"),bumper:un("bumper"),shape:un("shape"),colors:un("colors")};
 }
 // fix(): the constraints between parameters. Wheelbase leaves at least 0.6 m of overhang at each end.
 const wbMax=s=>+(s.length-1.2).toFixed(2);
-function fix(s){const R=rangesOf(s.era,s.mix),c=(v,r)=>Math.min(r[1],Math.max(r[0],v));
+function fix(s){const R=rangesOf(),c=(v,r)=>Math.min(r[1],Math.max(r[0],v));
   for(const k of["length","height","wheel"])s[k]=+c(s[k],R[k]).toFixed(2);
   s.wheelbase=+Math.min(c(s.wheelbase,R.wheelbase),wbMax(s)).toFixed(2);
   s.fin=R.fin?+c(s.fin,R.fin).toFixed(2):0;
@@ -595,13 +590,12 @@ const GROUPS={
  "Ruedas":[["wheel","Radio de rueda","m"],["whitewall","Banda blanca"]],
  "Pintura":[["color","Color"],["roof","Techo de dos tonos"],["second","Segundo color"],["livery","Diseño"]],
 };
-const NAME_BY_ERA={"Años 50":"almendrón","Años 70-80":"Lada","Moderno":"moderno"};
+const NAME_BY_ERA={"Años 50":"almendrón","Años 70-80":"ruso","Moderno":"moderno"};
 function push(){T.hist.push(JSON.stringify(T.s));if(T.hist.length>50)T.hist.shift();T.saved=false}
 function opts(key,list,cur){return `<div class="opts">${list.map(o=>`<button data-k="${key}" data-v="${o}" class="${String(o)===String(cur)?"on":""}">${o===true?"Sí":o===false?"No":o}</button>`).join("")}</div>`}
 function renderTaller(){
-  const s=T.s,R=rangesOf(s.era,s.mix);
-  $("eras").innerHTML=Object.keys(ERAS).map(e=>`<button class="chip ${e===s.era?"on":""}" data-era="${e}">${e}</button>`).join("")+
-    `<label class="mix"><input type="checkbox" id="mix" ${s.mix?"checked":""}>Mezclar épocas</label>`;
+  const s=T.s,R=rangesOf();
+  $("eras").innerHTML=`<span class="chip" style="cursor:default">Partir de</span>`+Object.keys(ERAS).map(e=>`<button class="chip ${e===s.era?"on":""}" data-era="${e}">${e}</button>`).join("");
   $("grpTabs").innerHTML=Object.keys(GROUPS).map(g=>`<button class="${g===T.grp?"on":""}" data-g="${g}">${g}</button>`).join("");
   $("rowList").innerHTML=GROUPS[T.grp].map(([k,lab,unit])=>{
     if(unit){const r=R[k];
@@ -616,7 +610,7 @@ function renderTaller(){
     return `<div class="trow"><span class="lb">${lab}</span><span class="v"></span>${opts(k,list,s[k])}</div>`;
   }).join("");
   $("side").innerHTML=sideSVG(s);
-  $("tSub").textContent=`${num(s.length)} × ${num(s.height)} m · batalla ${num(s.wheelbase)} m${s.mix?" · épocas mezcladas":""}`;
+  $("tSub").textContent=`${num(s.length)} × ${num(s.height)} m · batalla ${num(s.wheelbase)} m`;
   $("savedLine").textContent=T.saved?"Guardado en Mis diseños":"Sin guardar";
 }
 $("taller").addEventListener("input",e=>{const k=e.target.dataset.k;if(!k||e.target.type!=="range")return;
@@ -624,19 +618,18 @@ $("taller").addEventListener("input",e=>{const k=e.target.dataset.k;if(!k||e.tar
   T.s[k]=+e.target.value;fix(T.s);
   const row=e.target.closest(".trow");row.querySelector(".v").textContent=num(T.s[k])+" m";
   // the wheelbase's live limit depends on the length: re-render the rows only when the length moves
-  $("side").innerHTML=sideSVG(T.s);$("tSub").textContent=`${num(T.s.length)} × ${num(T.s.height)} m · batalla ${num(T.s.wheelbase)} m${T.s.mix?" · épocas mezcladas":""}`;
+  $("side").innerHTML=sideSVG(T.s);$("tSub").textContent=`${num(T.s.length)} × ${num(T.s.height)} m · batalla ${num(T.s.wheelbase)} m`;
 });
 $("taller").addEventListener("change",e=>{
-  if(e.target.id==="mix"){push();T.s.mix=e.target.checked;fix(T.s);renderTaller();return}
   if(e.target.type==="range"){e.target._pushed=false;renderTaller()}});
 $("taller").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
-  if(b.dataset.era){push();T.s.era=b.dataset.era;T.s.mix=false;T.s=fix(Object.assign(preset(b.dataset.era),{color:T.s.color,second:T.s.second,livery:T.s.livery}));
+  if(b.dataset.era){push();T.s.era=b.dataset.era;T.s=fix(Object.assign(preset(b.dataset.era),{color:T.s.color,second:T.s.second,livery:T.s.livery}));
     $("tName").textContent="· Mi "+NAME_BY_ERA[T.s.era];renderTaller();return}
   if(b.dataset.g){T.grp=b.dataset.g;renderTaller();return}
   if(b.dataset.k){push();const v=b.dataset.v;T.s[b.dataset.k]=v==="true"?true:v==="false"?false:v;
     if(b.dataset.k==="livery"&&v==="Policía"){T.s.second="#2f5fa8";T.s.color="#eeeeea";T.s.roof=false}
     fix(T.s);renderTaller();return}
-  if(b.id==="bRand"){push();const R=rangesOf(T.s.era,T.s.mix),u=r=>r[0]+Math.random()*(r[1]-r[0]),p=a=>a[Math.floor(Math.random()*a.length)];
+  if(b.id==="bRand"){push();const R=rangesOf(),u=r=>r[0]+Math.random()*(r[1]-r[0]),p=a=>a[Math.floor(Math.random()*a.length)];
     Object.assign(T.s,{length:u(R.length),height:u(R.height),wheelbase:u(R.wheelbase),fin:R.fin?u(R.fin):0,wheel:u(R.wheel),head:p(R.head),bumper:p(R.bumper),shape:p(R.shape),color:p(R.colors),second:p(SECOND),roof:Math.random()<.5,whitewall:Math.random()<.5});
     fix(T.s);renderTaller();return}
   if(b.id==="bUndo"){const h=T.hist.pop();if(h){T.s=JSON.parse(h);renderTaller()}else toast("tallerToast","Nada que deshacer");return}
@@ -658,8 +651,8 @@ function renderSalon(){
   $("strip").innerHTML=list.map(v=>{const id=v.id||v.name;return `<button class="th ${id===S.sel?"sel":""}" data-v="${id}">${mine?designSVG(v):`<div class="spr v-${v.id}" style="background-position:${3/11*100}% 0"></div>`}<span>${v.name}</span></button>`}).join("");
   const v=list.find(x=>(x.id||x.name)===S.sel);
   if(mine){$("stageSpr").outerHTML=`<div id="stageSpr" style="height:100%;width:100%;display:flex">${designSVG(v)}</div>`;
-    $("ficha").innerHTML=`<div class="a">${v.name}</div><div class="b">Diseño propio · ${v.s.era}</div>
-    <div class="facts"><div>Largo<b>${num(v.s.length)} m</b></div><div>Alto<b>${num(v.s.height)} m</b></div><div>Batalla<b>${num(v.s.wheelbase)} m</b></div><div>En el tráfico<b>No</b></div></div>
+    $("ficha").innerHTML=`<div class="a">${v.name}</div><div class="b">Diseño propio</div>
+    <div class="facts"><div>Largo<b>${num(v.s.length)} m</b></div><div>Alto<b>${num(v.s.height)} m</b></div><div>Batalla<b>${num(v.s.wheelbase)} m</b></div><div>Partió de<b>${v.s.era}</b></div></div>
     <div class="acts"><button class="btn" data-a="drive">Manejar</button><button class="btn ghost" data-a="design">Diseñar</button></div>`;$("deg").textContent="";return}
   $("stageSpr").outerHTML=`<div class="spr v-${v.id}" id="stageSpr"></div>`;setFrame($("stageSpr"),S.frame);
   $("ficha").innerHTML=`<div class="a">${v.name}</div><div class="b">${v.fam} · ${v.era}</div>
