@@ -51,6 +51,7 @@ td.v{font-family:var(--font-mono);color:var(--strong);white-space:nowrap}
 .ctl label{color:var(--muted)}
 .ctl input[type=range]{width:100%}
 .out{font:12px var(--font-mono);color:var(--muted);background:var(--surface);border:1px solid var(--rule);border-radius:var(--r);padding:8px 10px;white-space:pre-wrap}
+.fut{font:11px var(--font-mono);color:var(--muted);border:1px dashed var(--rule);border-radius:4px;padding:1px 6px;margin-left:6px}
 .cap{font-size:13px;color:var(--muted);margin-top:6px}
 ol li,ul li{margin:4px 0}
 @media (max-width:640px){
@@ -69,7 +70,7 @@ ol li,ul li{margin:4px 0}
 <body>
 <div class="chrome"><span class="tab">Parques y paseos</span><span class="pill">spec · borrador</span><span class="pill opt">2026-11-18</span><span class="pill opt">contravia #41</span></div>
 <main>
-<p class="lede">Una manzana grande sin edificios, o con muy pocos, se vuelve parque: acera alrededor, césped, árboles y caminos por dentro. En la ciudad el parque tiene caminos rectos que se cruzan en una plaza. Fuera de la ciudad es orgánico, con grupos de árboles y caminos curvos. Una manzana larga y estrecha entre dos calzadas sale como paseo, y así salen el Prado, Paseo y 5ta Avenida.</p>
+<p class="lede">Una manzana grande sin edificios, o con muy pocos, se vuelve parque: acera alrededor, césped, árboles y caminos por dentro. En la ciudad el parque tiene caminos rectos que se cruzan en una plaza. Fuera de la ciudad es orgánico, con grupos de árboles y caminos curvos. Una manzana larga y estrecha entre dos calzadas sale como paseo, y así salen el Prado, Paseo y 5ta Avenida. Cada parque se llena de motivos según su tamaño: glorieta, fuente o busto en la plaza, bancos, mesas de dominó, parque infantil y, en los más grandes, un laguito con bancos alrededor. Más adelante, con la gente de M5, los parques tendrán vida según el día y la hora: dominó por la tarde, pícnic el domingo, un cumpleaños o una boda el fin de semana.</p>
 
 <h2><span class="n">01</span>Qué hay en los datos</h2>
 <div class="stats">
@@ -97,10 +98,13 @@ ol li,ul li{margin:4px 0}
     <div><label>Zona</label><div class="row" id="zone"><button data-v="city" class="on">ciudad</button><button data-v="out">fuera</button></div></div>
     <div><label>Forma</label><div class="row" id="shape"><button data-v="sq" class="on">manzana</button><button data-v="long">larga (paseo)</button><button data-v="big">grande</button></div></div>
     <div><label for="area">Área: <span id="areav"></span> m²</label><input id="area" type="range" min="1500" max="60000" step="500" value="8000"></div>
+    <div><button id="seed">otra semilla</button></div>
+    <div><label>Día <span class="fut">vida · M5</span></label><div class="row" id="day"><button data-v="wk">lun–vie</button><button data-v="sat" class="on">sábado</button><button data-v="sun">domingo</button></div></div>
+    <div><label for="hour">Hora: <span id="hourv"></span></label><input id="hour" type="range" min="6" max="22" step="1" value="16"></div>
     <div class="out" id="out"></div>
   </div>
 </div>
-<p class="cap">Maqueta con las medidas de la sección 04, vista desde arriba. Gris: calle y acera. Verde: césped. Arena: camino. Círculos: árboles. Puntos amarillos: faroles. Las medidas son reales; la forma de la manzana es un rectángulo de ejemplo.</p>
+<p class="cap">Maqueta con las medidas de la sección 04, vista desde arriba. Gris: calle y acera. Verde: césped. Arena: camino. Círculos verdes: árboles. Puntos amarillos: faroles. Rayas marrones: bancos. Octógono rojo: glorieta. Azul: fuente y laguito. Puntos claros: gente de las escenas de la sección 06, que llegan con M5. «Otra semilla» saca otra manzana del mismo tamaño, con otra riqueza. Las medidas son reales; la forma de la manzana es un rectángulo de ejemplo.</p>
 
 <h2><span class="n">03</span>Qué manzana es parque</h2>
 <ol>
@@ -123,92 +127,211 @@ ol li,ul li{margin:4px 0}
   </tbody>
 </table>
 
-<h2><span class="n">05</span>Decisiones</h2>
+<h2><span class="n">05</span>Motivos</h2>
+<p>Cada parque tiene cuatro clases de sitio. La plaza del centro recibe la pieza central. Los cuadrantes entre caminos reciben los motivos grandes (laguito, parque infantil, ranchón). El borde de los caminos recibe los bancos. Los claros, el césped libre a 6 m o más de cualquier árbol y a 4 m de cualquier camino o motivo, quedan vacíos para la gente de la sección 06.</p>
+<p>Cada parque saca de su semilla una riqueza entre 0,3 y 1. Con ella cambian la separación de los bancos (12 m ÷ riqueza), el número de mesas de dominó (riqueza × 4, redondeado) y la probabilidad de los motivos opcionales. Así un parque sale lleno y el de al lado casi pelado, como pasa en la ciudad.</p>
+<table>
+  <thead><tr><th>Motivo</th><th>Medidas</th><th>Dónde</th></tr></thead>
+  <tbody>
+    <tr><td>Glorieta</td><td class="v">octágono de 8 m<br>techo a 4 m, cúpula a 6 m</td><td>Plaza central. Piso de piedra elevado 0,6 m con 3 escalones, 8 columnas, baranda de hierro de 0,9 m entre ellas salvo en las dos entradas, techo de tejas rojas.</td></tr>
+    <tr><td>Fuente</td><td class="v">taza de 6 a 10 m<br>borde de 0,5 m</td><td>Plaza central, cruces secundarios de los parques grandes y extremos de un paseo ancho. Columna de 2 m en el centro con un plato. La taza mide el 70 % de la plaza, sin pasar de 10 m.</td></tr>
+    <tr><td>Busto</td><td class="v">pedestal 1,2 × 1,2 × 1,6 m</td><td>Plaza de un parque pequeño y cruces secundarios. Un busto genérico sobre un pedestal blanco, con 4 bancos mirándolo.</td></tr>
+    <tr><td>Laguito</td><td class="v">400 – 3&nbsp;000 m²<br>8 % del parque</td><td>Un cuadrante de un parque grande. Contorno orgánico, borde de piedra de 0,5 m, agua 0,4 m por debajo del borde. Camino de 2,5 m alrededor, a 2 m del agua, y un banco cada 10 m mirando al agua. Ningún árbol a menos de 4 m del camino. Un parque de ciudad con laguito no lleva diagonales.</td></tr>
+    <tr><td>Banco</td><td class="v">1,8 × 0,5 m<br>asiento a 0,45 m</td><td>A lo largo de los caminos, alternando el lado, 0,8 m fuera del borde y mirando al camino. 8 bancos alrededor de la plaza (4 si la plaza mide menos de 8 m de radio).</td></tr>
+    <tr><td>Mesa de dominó</td><td class="v">0,9 × 0,9 × 0,75 m<br>4 banquetas</td><td>Hormigón, a menos de 25 m de la plaza, en césped libre.</td></tr>
+    <tr><td>Parque infantil</td><td class="v">15 × 12 m de arena</td><td>Un cuadrante. Columpios, tobogán y cachumbambé, con un borde bajo de hormigón.</td></tr>
+    <tr><td>Ranchón</td><td class="v">techo de guano 6 × 4 m<br>sobre 4 postes</td><td>Parque orgánico, donde se juntan sus caminos curvos, con 2 a 4 mesas de pícnic alrededor (2 + riqueza × 2).</td></tr>
+  </tbody>
+</table>
+<p>Todo motivo que pasa de 0,4 m choca, como el muro de Boyeros: glorieta, fuente, busto, ranchón, juegos, bancos, mesas y el borde del laguito. El carro no entra al agua. El césped, los caminos y la arena se pisan.</p>
+<table>
+  <thead><tr><th>Parque</th><th>Pieza central</th><th>Motivos opcionales</th></tr></thead>
+  <tbody>
+    <tr><td>Ciudad, 1&nbsp;500 – 3&nbsp;000 m²</td><td>busto 50 %, fuente 30 %, solo el farol 20 %</td><td>Bancos.</td></tr>
+    <tr><td>Ciudad, 3&nbsp;000 – 15&nbsp;000 m²</td><td>glorieta 45 %, fuente 35 %, busto 20 %</td><td>Mesas de dominó. Parque infantil desde 5&nbsp;000 m², con probabilidad 0,3 + 0,4 × riqueza.</td></tr>
+    <tr><td>Ciudad, más de 15&nbsp;000 m²</td><td>glorieta 60 %, fuente 40 %</td><td>Lo anterior. Laguito desde 20&nbsp;000 m², con probabilidad 0,5 + 0,3 × riqueza. Desde 30&nbsp;000 m², una fuente o un busto en cada cruce secundario.</td></tr>
+    <tr><td>Paseo</td><td>fuente en cada extremo si el paseo central mide 10 m o más</td><td>Bancos a los dos lados del paseo central, cada 15 m ÷ riqueza.</td></tr>
+    <tr><td>Orgánico</td><td>ranchón con mesas de pícnic</td><td>Laguito desde 15&nbsp;000 m², con probabilidad 0,6, sin camino alrededor y con 2 a 4 bancos en la orilla.</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="n">06</span>Vida en el parque <span class="fut">con M5</span></h2>
+<p>Esto no se construye ahora: necesita gente animada, que llega con M5 (a pie, #81). Ahora solo se guardan los claros de cada parque en los datos de la ciudad (centro y radio), y los bancos y mesas ya quedan como sitios donde sentarse. M5 solo tendrá que leerlos. Cambia el día y la hora en la maqueta para ver las escenas.</p>
+<table>
+  <thead><tr><th>Escena</th><th>Cuándo</th><th>Qué es</th><th>Dónde y cuánto</th></tr></thead>
+  <tbody>
+    <tr><td>Círculo de abuelos</td><td class="v">lun – sáb<br>7:00 – 9:00</td><td>12 mayores haciendo ejercicio en círculo.</td><td>Un claro de 6 m o la plaza, en el 50 % de los parques de ciudad.</td></tr>
+    <tr><td>Dominó</td><td class="v">todos los días<br>15:00 – 21:00</td><td>4 jugadores y 2 mirones por mesa.</td><td>Cada mesa de dominó, ocupada con probabilidad 0,6.</td></tr>
+    <tr><td>Niños jugando</td><td class="v">lun – vie 16:00 – 19:00<br>sáb – dom 9:00 – 12:00 y 16:00 – 19:00</td><td>6 a 12 niños y algunos padres en los bancos.</td><td>Cada parque infantil.</td></tr>
+    <tr><td>Pícnic</td><td class="v">sáb – dom<br>10:00 – 17:00</td><td>Una manta, una cesta y 2 a 6 personas.</td><td>En los claros: el 15 % el sábado y el 25 % el domingo, a lo sumo uno por cada 2&nbsp;500 m². Fuera de la ciudad, 1,5 veces más.</td></tr>
+    <tr><td>Cumpleaños</td><td class="v">sáb – dom<br>14:00 – 18:00</td><td>Mesa con el cake, globos colgados de un árbol, piñata, 10 niños y 6 adultos.</td><td>Un claro de 8 m en un parque de 3&nbsp;000 m² o más: 35 % en la ciudad, 25 % fuera. Uno por parque.</td></tr>
+    <tr><td>Boda</td><td class="v">sáb 10:00 – 18:00<br>dom, menos</td><td>Arco de flores, dos bloques de sillas con un pasillo, los novios y 30 a 60 invitados.</td><td>Un claro de 10 m, o la glorieta, en un parque de 15&nbsp;000 m² o más: 40 % el sábado y 15 % el domingo.</td></tr>
+    <tr><td>Fotos de quince</td><td class="v">todos los días<br>8:00 – 11:00 y 16:00 – 19:00</td><td>La quinceañera de vestido largo, el fotógrafo y la madre.</td><td>Junto a la glorieta o la fuente, en el 20 % de los parques que la tienen.</td></tr>
+    <tr><td>Parejas</td><td class="v">18:00 – 22:00</td><td>Dos personas sentadas.</td><td>Cada banco, con probabilidad 0,08.</td></tr>
+  </tbody>
+</table>
+<p>Las escenas salen de la semilla del parque y de la fecha del juego, sin la hora: el mismo parque el mismo sábado tiene la misma boda aunque te vayas y vuelvas, y la hora solo dice si ya empezó o ya acabó. Una escena aparece o se va solo cuando el parque no está en pantalla o queda a más de 150 m, para que nadie salga de la nada delante del carro.</p>
+
+<h2><span class="n">07</span>Decisiones</h2>
 <table>
   <thead><tr><th>Decisión</th><th>Por qué</th></tr></thead>
   <tbody>
     <tr><td>Manzana de cierto tamaño sin edificios o con pocos → parque, con acera, césped, árboles y caminos <span class="tag">maintainer</span></td><td>Lo pediste; da plazas, parques y paseos sin dibujarlos a mano.</td></tr>
     <tr><td>En la ciudad, caminos pavimentados en cruz; fuera, orgánico <span class="tag">maintainer</span></td><td>Lo pediste; así son los parques del centro y los de las afueras.</td></tr>
+    <tr><td>Glorieta, fuente, laguito con bancos, y escenas de pícnic, cumpleaños y boda el fin de semana <span class="tag">maintainer</span></td><td>Lo pediste; llenan el parque y lo hacen distinto según el día.</td></tr>
+    <tr><td>Riqueza por parque, de 0,3 a 1 <span class="tag agent">agente</span></td><td>Que unos parques salgan llenos y otros casi pelados, sin una regla aparte para cada motivo.</td></tr>
+    <tr><td>Todo motivo de más de 0,4 m choca; el carro no entra al laguito <span class="tag agent">agente</span></td><td>La misma regla que el muro de Boyeros; no hace falta física de agua.</td></tr>
+    <tr><td>Las escenas dependen de la fecha y no de la hora, y cambian fuera de la vista <span class="tag agent">agente</span></td><td>Una boda no desaparece porque des la vuelta a la manzana.</td></tr>
+    <tr><td>Los claros se guardan ahora; las escenas esperan a M5 <span class="tag agent">agente</span></td><td>Las escenas necesitan gente animada; con los claros guardados, M5 no tiene que volver a construir la ciudad.</td></tr>
     <tr><td>Fuera de la ciudad, una manzana vacía de menos de 1 ha sigue con casas de relleno <span class="tag agent">agente</span></td><td>Pasado el centro, OSM casi no tiene edificios; sin esto media provincia sería parque.</td></tr>
     <tr><td>El tipo paseo sale de la forma, no del nombre <span class="tag agent">agente</span></td><td>Cubre cualquier bulevar; los separadores estrechos con nombre (Carlos III, Boyeros) siguen en <code>contravia/medians.py</code>.</td></tr>
     <tr><td>Todo se calcula al construir la ciudad, con semilla por manzana <span class="tag agent">agente</span></td><td>El mismo parque sale igual siempre, y el juego no calcula nada al manejar.</td></tr>
   </tbody>
 </table>
 
-<h2><span class="n">06</span>Cómo lo haría</h2>
+<h2><span class="n">08</span>Cómo lo haría</h2>
 <ol>
   <li><code>contravia/parks.py</code> clasifica las manzanas en <code>prepare.base_city</code>, antes de <code>choose_fillers</code>: tipo por manzana, y las manzanas parque salen de los rellenos.</li>
   <li>Los árboles del parque se suman a <code>trees</code> de la ciudad, así se dibujan como los demás.</li>
   <li>Las aceras, caminos y plazas salen como triángulos de <code>walks</code>, con su pintura (pavimento, camino de tierra). El carro puede subirse a ellos, como hoy a las aceras.</li>
   <li>Los faroles reusan el farol de <code>medians</code> (9 m), en la capa de estructuras.</li>
+  <li><code>contravia/parks.py</code> coloca los motivos con la semilla de la manzana, y <code>contravia/props.py</code> construye sus mallas (glorieta, fuente, busto, banco, mesa, juegos, ranchón) como <code>medians._lamp</code>. Sus contornos se suman a las paredes que el carro choca.</li>
+  <li>El laguito es agua plana con el material del mar, dentro de su borde de piedra.</li>
+  <li>Los claros se guardan por parque (centro y radio) en un arreglo nuevo de la ciudad, para M5.</li>
   <li>El formato de la ciudad sube a 5, así que una ciudad ya construida se reconstruye.</li>
-  <li>Pruebas: una manzana vacía de ciudad sale con cruz y plaza; una larga sale paseo; una pequeña fuera sigue con relleno; la misma manzana da siempre el mismo parque.</li>
+  <li>Pruebas: una manzana vacía de ciudad sale con cruz y plaza; una larga sale paseo; una pequeña fuera sigue con relleno; la misma manzana da siempre el mismo parque; un parque de 3&nbsp;000 m² o más tiene su pieza central en la plaza; el laguito solo sale desde 20&nbsp;000 m² (15&nbsp;000 fuera) y ningún camino lo cruza; ningún motivo ni árbol queda sobre un camino.</li>
 </ol>
 
-<h2><span class="n">07</span>Fuera de esto</h2>
+<h2><span class="n">09</span>Fuera de esto</h2>
 <ul>
-  <li>Bancos, fuentes, estatuas y glorietas en la plaza.</li>
+  <li>Estatuas y monumentos con nombre: son landmarks hechos a mano.</li>
+  <li>Agua animada en fuentes y laguito, si manifoldx no la trae.</li>
+  <li>Feriados cubanos en el calendario del juego.</li>
   <li>Especies de árbol (palmas en el Prado y 5ta): hoy hay un solo árbol.</li>
-  <li>Peatones en los parques (M5, a pie).</li>
+  <li>La gente y sus escenas (sección 06): llegan con M5, a pie.</li>
 </ul>
 
-<h2><span class="n">08</span>Preguntas</h2>
+<h2><span class="n">10</span>Preguntas</h2>
 <ol>
   <li>¿Te sirven los umbrales: 1&nbsp;500 m², 3 edificios o menos y menos del 5 % construido?</li>
   <li>¿El Prado lo quieres todo pavimentado, como es en la realidad, en vez de paseo con césped a los lados?</li>
   <li>¿Fuera de la ciudad mantenemos las casas de relleno en las manzanas vacías de menos de 1 ha?</li>
+  <li>¿Te sirven las probabilidades de los motivos y de las escenas? Pruébalas en la maqueta con «otra semilla», el día y la hora.</li>
+  <li>¿Las escenas esperan a la gente animada de M5, o las adelantamos como escenas quietas (gente de pie, sin animar) en cuanto estén los parques?</li>
 </ol>
 </main>
 <script>
 const svg = document.getElementById("park"), out = document.getElementById("out");
-const st = {zone: "city", shape: "sq", area: 8000};
+const st = {zone: "city", shape: "sq", area: 8000, seed: 1, day: "sat", hour: 16};
 const NS = "http://www.w3.org/2000/svg";
+const C = {street: "#2c2c33", walk: "#8d8a80", grass: "#4f7a3a", path: "#c9b48a", dirt: "#a8916a", water: "#3f7fa6",
+  stone: "#d8cfbd", roof: "#a8432f", bench: "#6b4423", sand: "#d9c690", thatch: "#b08a4a", tree: "#2e5a26",
+  lamp: "#ffd400", person: "#f3e2cc", blanket: "#c0504d", chair: "#ffffff"};
 function el(tag, attrs) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); svg.appendChild(e); return e; }
-function rng(seed) { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647; }
+function rng(seed) { let s = Math.abs(Math.round(seed)) % 2147483646 + 1; return () => (s = (s * 16807) % 2147483647) / 2147483647; }
+function pick(r, table) { let t = r() * table.reduce((a, b) => a + b[1], 0); for (const [v, w] of table) if ((t -= w) <= 0) return v; return table[table.length - 1][0]; }
+function dseg(p, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], l = dx * dx + dy * dy;
+  const t = l ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l)) : 0;
+  return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
+}
+const within = (h, a, b) => h >= a && h < b;
+
 function draw() {
   svg.innerHTML = "";
   const ratio = st.shape === "long" ? 6 : st.shape === "big" ? 1.5 : 1.3;
   const area = st.shape === "big" ? Math.max(st.area, 30000) : st.area;
-  let L = Math.sqrt(area * ratio), W = area / L;
+  const L = Math.sqrt(area * ratio), W = area / L;
   const s = Math.min(360 / L, 260 / W), x0 = 200 - L * s / 2, y0 = 150 - W * s / 2;
-  const X = m => x0 + m * s, Y = m => y0 + m * s;
-  el("rect", {x: x0 - 8 * s, y: y0 - 8 * s, width: (L + 16) * s, height: (W + 16) * s, fill: "#2c2c33"});
+  const X = m => x0 + m * s, Y = m => y0 + m * s, px = m => Math.max(0.6, m * s);
   const city = st.zone === "city", paseo = st.shape === "long" && W <= 45;
-  const lines = [];
-  let kind;
-  if (city || paseo) el("rect", {x: X(0), y: Y(0), width: L * s, height: W * s, fill: "#8d8a80"});
+  const r = rng(area * 7 + st.seed * 7919 + (city ? 1 : 2));
+  const rich = 0.3 + 0.7 * r();
   const g = city || paseo ? 3 : 0;
-  el("rect", {x: X(g), y: Y(g), width: (L - 2 * g) * s, height: (W - 2 * g) * s, fill: "#4f7a3a"});
-  const r = rng(Math.round(area) + (city ? 1 : 2));
-  const trees = [], lamps = [];
+  const lines = [], blocks = [], trees = [], lamps = [], benches = [], motifs = [], tables = [];
+  let kind, centre = "ninguna", lake = null, play = null;
+  el("rect", {x: X(-8), y: Y(-8), width: (L + 16) * s, height: (W + 16) * s, fill: C.street});
+  if (g) el("rect", {x: X(0), y: Y(0), width: L * s, height: W * s, fill: C.walk});
+  el("rect", {x: X(g), y: Y(g), width: (L - 2 * g) * s, height: (W - 2 * g) * s, fill: C.grass});
+  const free = (p, m) => p[0] > g + m && p[0] < L - g - m && p[1] > g + m && p[1] < W - g - m &&
+    lines.every(([a, b, w]) => dseg(p, a, b) > w / 2 + m) && blocks.every(([x, y, R]) => Math.hypot(p[0] - x, p[1] - y) > R + m);
+  const fits = (x, y, hw, hh, m) => [[x, y], [x - hw, y - hh], [x + hw, y - hh], [x - hw, y + hh], [x + hw, y + hh], [x - hw, y], [x + hw, y], [x, y - hh], [x, y + hh]].every(p => free(p, m));
+  function place(hw, hh, near, round) {
+    for (let k = 0; k < 80; k++) {
+      const x = near ? near[0] + (r() - 0.5) * 2 * near[2] : g + hw + r() * (L - 2 * g - 2 * hw);
+      const y = near ? near[1] + (r() - 0.5) * 2 * near[2] : g + hh + r() * (W - 2 * g - 2 * hh);
+      if (round ? free([x, y], hw) : fits(x, y, hw, hh, 1.5)) { blocks.push([x, y, Math.hypot(hw, hh)]); return [x, y]; }
+    }
+    return null;
+  }
+  const path = (a, b, w, col) => { el("line", {x1: X(a[0]), y1: Y(a[1]), x2: X(b[0]), y2: Y(b[1]), stroke: col || C.path, "stroke-width": w * s}); lines.push([a, b, w]); };
+  function benchesAlong(a, b, w, every) {
+    const d = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / d, uy = (b[1] - a[1]) / d;
+    let side = 1;
+    for (let t = every / 2; t < d; t += every, side = -side) {
+      const q = [a[0] + ux * t - uy * side * (w / 2 + 0.8), a[1] + uy * t + ux * side * (w / 2 + 0.8)];
+      if (free(q, 0.3)) benches.push([q, ux, uy]);
+    }
+  }
+  function treesAlong(a, b, w) {
+    const d = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / d, uy = (b[1] - a[1]) / d;
+    for (let t = 4; t < d - 4; t += 8) { const q = [a[0] + ux * t - uy * (w / 2 + 2.5), a[1] + uy * t + ux * (w / 2 + 2.5)]; if (free(q, 1)) trees.push(q); }
+  }
+
   if (paseo) {
     kind = "paseo";
     const pw = Math.min(20, Math.max(4, 0.5 * W));
-    el("rect", {x: X(0), y: Y((W - pw) / 2), width: L * s, height: pw * s, fill: "#c9b48a"});
+    el("rect", {x: X(0), y: Y((W - pw) / 2), width: L * s, height: pw * s, fill: C.path});
+    const fount = pw >= 10;
+    if (fount) { for (const fx of [10, L - 10]) motifs.push(["fuente", fx, W / 2, Math.min(5, pw / 2 - 1)]); centre = "fuente en cada extremo"; }
     for (let t = 4; t < L; t += 8) { trees.push([t, (W - pw) / 4]); trees.push([t, W - (W - pw) / 4]); }
-    for (let t = 12; t < L; t += 25) lamps.push([t, W / 2]);
+    for (let t = 12; t < L; t += 25) if (!fount || (t > 18 && t < L - 18)) lamps.push([t, W / 2]);
+    const ev = 15 / rich;
+    for (let t = 18; t < L - 18; t += ev) { benches.push([[t, (W - pw) / 2 + 0.6], 1, 0]); benches.push([[t + ev / 2, (W + pw) / 2 - 0.6], 1, 0]); }
+    lines.push([[0, W / 2], [L, W / 2], pw]);
   } else if (city) {
     kind = area > 30000 ? "parque grande de ciudad" : "parque de ciudad";
-    const path = (a, b, w) => { el("line", {x1: X(a[0]), y1: Y(a[1]), x2: X(b[0]), y2: Y(b[1]), stroke: "#c9b48a", "stroke-width": w * s}); lines.push([a, b, w]); };
-    path([g, W / 2], [L - g, W / 2], 3); path([L / 2, g], [L / 2, W - g], 3);
-    if (area >= 4000) { path([g, g], [L - g, W - g], 2.5); path([L - g, g], [g, W - g], 2.5); }
-    if (area > 30000) {
-      el("rect", {x: X(15), y: Y(15), width: (L - 30) * s, height: (W - 30) * s, fill: "none", stroke: "#c9b48a", "stroke-width": 3 * s});
-      for (let t = 80; t < L - 20; t += 80) if (Math.abs(t - L / 2) > 30) path([t, g], [t, W - g], 3);
-    }
     const rad = Math.min(15, Math.max(6, 0.1 * Math.min(L, W)));
-    el("circle", {cx: X(L / 2), cy: Y(W / 2), r: rad * s, fill: "#c9b48a"});
-    lamps.push([L / 2, W / 2]);
-    for (const [a, b, w] of lines) {
-      const d = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / d, uy = (b[1] - a[1]) / d;
-      for (let t = rad + 4; t < d - 4; t += 8) {
-        const px = a[0] + ux * t, py = a[1] + uy * t;
-        if (Math.hypot(px - L / 2, py - W / 2) < rad + 3) continue;
-        trees.push([px - uy * (w / 2 + 2), py + ux * (w / 2 + 2)]);
-      }
+    const main = [[[g, W / 2], [L - g, W / 2], 3], [[L / 2, g], [L / 2, W - g], 3]];
+    for (const [a, b, w] of main) path(a, b, w);
+    if (area > 30000) {
+      el("rect", {x: X(15), y: Y(15), width: (L - 30) * s, height: (W - 30) * s, fill: "none", stroke: C.path, "stroke-width": 3 * s});
+      lines.push([[15, 15], [L - 15, 15], 3], [[L - 15, 15], [L - 15, W - 15], 3], [[L - 15, W - 15], [15, W - 15], 3], [[15, W - 15], [15, 15], 3]);
     }
-    for (let k = 0; k < area / 150 * 0.25; k++) trees.push([g + 4 + r() * (L - 2 * g - 8), g + 4 + r() * (W - 2 * g - 8)]);
-    for (let t = 0; t < 2 * (L + W); t += 25) { const p = t < L ? [t, 1.5] : t < L + W ? [L - 1.5, t - L] : t < 2 * L + W ? [2 * L + W - t, W - 1.5] : [1.5, 2 * (L + W) - t]; lamps.push(p); }
+    blocks.push([L / 2, W / 2, rad]);
+    if (area >= 20000 && r() < 0.5 + 0.3 * rich) {
+      const R = Math.sqrt(Math.min(3000, Math.max(400, 0.08 * area)) / Math.PI);
+      const at = place(R + 5, R + 5, null, true);
+      if (at) lake = [at[0], at[1], R];
+    }
+    const diag = [];
+    if (area >= 4000 && !lake) diag.push([[g, g], [L - g, W - g], 2.5], [[L - g, g], [g, W - g], 2.5]);
+    for (const [a, b, w] of diag) path(a, b, w);
+    const second = [];
+    if (area > 30000) for (let t = 80; t < L - 20; t += 80) if (Math.abs(t - L / 2) > 30 && (!lake || Math.abs(t - lake[0]) > lake[2] + 6)) {
+      second.push([[t, g], [t, W - g], 3]); path([t, g], [t, W - g], 3);
+      el("circle", {cx: X(t), cy: Y(W / 2), r: 5 * s, fill: C.path});
+      motifs.push([pick(r, [["fuente", 1], ["busto", 1]]), t, W / 2, 3]); blocks.push([t, W / 2, 5]);
+    }
+    el("circle", {cx: X(L / 2), cy: Y(W / 2), r: rad * s, fill: C.path});
+    centre = area < 3000 ? pick(r, [["busto", 50], ["fuente", 30], ["farol", 20]])
+      : area < 15000 ? pick(r, [["glorieta", 45], ["fuente", 35], ["busto", 20]]) : pick(r, [["glorieta", 60], ["fuente", 40]]);
+    if (centre === "farol") lamps.push([L / 2, W / 2]);
+    else motifs.push([centre, L / 2, W / 2, centre === "glorieta" ? 4 : centre === "fuente" ? Math.min(5, 0.7 * rad) : 0.8]);
+    const nb = rad >= 8 ? 8 : 4;
+    for (let k = 0; k < nb; k++) { const a = (k + 0.5) * 2 * Math.PI / nb; benches.push([[L / 2 + Math.cos(a) * (rad - 1.2), W / 2 + Math.sin(a) * (rad - 1.2)], -Math.sin(a), Math.cos(a)]); }
+    if (lake) {
+      const [lx, ly, R] = lake;
+      el("circle", {cx: X(lx), cy: Y(ly), r: (R + 3.25) * s, fill: "none", stroke: C.path, "stroke-width": 2.5 * s});
+      const n = Math.max(6, Math.floor(2 * Math.PI * (R + 5.3) / 10));
+      for (let k = 0; k < n; k++) { const a = k * 2 * Math.PI / n; benches.push([[lx + Math.cos(a) * (R + 5.3), ly + Math.sin(a) * (R + 5.3)], -Math.sin(a), Math.cos(a)]); }
+    }
+    if (area >= 5000 && r() < 0.3 + 0.4 * rich) { const at = place(7.5, 6); if (at) play = at; }
+    if (area >= 3000) for (let k = 0; k < Math.round(rich * 4); k++) { const at = place(1.5, 1.5, [L / 2, W / 2, rad + 18]); if (at) tables.push(at); }
+    for (const [a, b, w] of [...main, ...diag, ...second]) benchesAlong(a, b, w, 12 / rich);
+    for (const [a, b, w] of [...main, ...diag, ...second]) treesAlong(a, b, w);
+    for (let k = 0; k < area / 600; k++) { const q = [g + 4 + r() * (L - 2 * g - 8), g + 4 + r() * (W - 2 * g - 8)]; if (free(q, 2)) trees.push(q); }
+    for (let t = 0; t < 2 * (L + W); t += 25) lamps.push(t < L ? [t, 1.5] : t < L + W ? [L - 1.5, t - L] : t < 2 * L + W ? [2 * L + W - t, W - 1.5] : [1.5, 2 * (L + W) - t]);
   } else {
     kind = "parque orgánico";
     const n = Math.min(3, 1 + Math.floor(area / 15000));
@@ -216,25 +339,109 @@ function draw() {
     const ends = [[0, W * r()], [L, W * r()], [L * r(), 0]];
     for (let k = 0; k < n; k++) {
       const [ex, ey] = ends[k], mx = (ex + cx) / 2 + (r() - 0.5) * 30, my = (ey + cy) / 2 + (r() - 0.5) * 30;
-      el("path", {d: `M${X(ex)},${Y(ey)} Q${X(mx)},${Y(my)} ${X(cx)},${Y(cy)}`, fill: "none", stroke: "#a8916a", "stroke-width": 2 * s});
+      el("path", {d: `M${X(ex)},${Y(ey)} Q${X(mx)},${Y(my)} ${X(cx)},${Y(cy)}`, fill: "none", stroke: C.dirt, "stroke-width": 2 * s});
+      let prev = [ex, ey];
+      for (let i = 1; i <= 10; i++) { const t = i / 10, q = [(1 - t) ** 2 * ex + 2 * t * (1 - t) * mx + t * t * cx, (1 - t) ** 2 * ey + 2 * t * (1 - t) * my + t * t * cy]; lines.push([prev, q, 2]); prev = q; }
+    }
+    centre = "ranchón con mesas de pícnic";
+    motifs.push(["ranchon", cx, cy, 3]); blocks.push([cx, cy, 4]);
+    for (let k = 0; k < 2 + Math.round(rich * 2); k++) { const at = place(1, 0.8, [cx, cy, 12]); if (at) tables.push(at); }
+    if (area >= 15000 && r() < 0.6) {
+      const R = Math.sqrt(Math.min(3000, Math.max(400, 0.08 * area)) / Math.PI), at = place(R + 3, R + 3, null, true);
+      if (at) { lake = [at[0], at[1], R]; for (let k = 0; k < 2 + Math.round(rich * 2); k++) { const a = r() * 2 * Math.PI; benches.push([[at[0] + Math.cos(a) * (R + 1.5), at[1] + Math.sin(a) * (R + 1.5)], -Math.sin(a), Math.cos(a)]); } }
     }
     const clumps = [];
     for (let k = 0; k < Math.max(2, area / 4000); k++) clumps.push([L * r(), W * r(), 10 + 15 * r()]);
-    for (const [cx2, cy2, cr] of clumps) for (let k = 0; k < cr * cr * Math.PI / 40; k++) {
-      const a = r() * 6.283, d = cr * Math.sqrt(r()), px = cx2 + Math.cos(a) * d, py = cy2 + Math.sin(a) * d;
-      if (px > 2 && px < L - 2 && py > 2 && py < W - 2) trees.push([px, py]);
+    for (const [x2, y2, cr] of clumps) for (let k = 0; k < cr * cr * Math.PI / 40; k++) {
+      const a = r() * 6.283, d = cr * Math.sqrt(r()), q = [x2 + Math.cos(a) * d, y2 + Math.sin(a) * d];
+      if (free(q, 1.5)) trees.push(q);
     }
   }
-  for (const [tx, ty] of trees) el("circle", {cx: X(tx), cy: Y(ty), r: Math.max(1.6, 2.2 * s), fill: "#2e5a26", stroke: "#1f3f1a", "stroke-width": .5});
-  for (const [lx, ly] of lamps) el("circle", {cx: X(lx), cy: Y(ly), r: Math.max(1.5, 0.8 * s), fill: "#ffd400"});
+
+  // motifs
+  if (lake) {
+    const [lx, ly, R] = lake, lr = rng(st.seed * 13 + area), pts = [];
+    for (let k = 0; k < 16; k++) { const a = k * Math.PI / 8, d = R * (0.8 + 0.2 * lr()); pts.push(`${X(lx + Math.cos(a) * d)},${Y(ly + Math.sin(a) * d)}`); }
+    el("polygon", {points: pts.join(" "), fill: C.water, stroke: C.stone, "stroke-width": px(0.5)});
+  }
+  if (play) {
+    el("rect", {x: X(play[0] - 7.5), y: Y(play[1] - 6), width: 15 * s, height: 12 * s, fill: C.sand, stroke: C.stone, "stroke-width": px(0.3)});
+    el("line", {x1: X(play[0] - 5), y1: Y(play[1] - 3), x2: X(play[0] - 1), y2: Y(play[1] - 3), stroke: C.bench, "stroke-width": px(0.4)});
+    el("rect", {x: X(play[0] + 2), y: Y(play[1] - 4), width: px(1.2), height: 6 * s, fill: "#c55a3a"});
+    el("line", {x1: X(play[0] - 5), y1: Y(play[1] + 3), x2: X(play[0] + 1), y2: Y(play[1] + 3), stroke: "#3a6fa8", "stroke-width": px(0.5)});
+  }
+  const oct = (x, y, R) => Array.from({length: 8}, (_, k) => `${X(x + R * Math.cos(k * Math.PI / 4 + Math.PI / 8))},${Y(y + R * Math.sin(k * Math.PI / 4 + Math.PI / 8))}`).join(" ");
+  for (const [m, x, y, R] of motifs) {
+    if (m === "glorieta") { el("polygon", {points: oct(x, y, R + 1), fill: C.stone}); el("polygon", {points: oct(x, y, R), fill: C.roof, stroke: "#6e2a1e", "stroke-width": px(0.2)}); el("circle", {cx: X(x), cy: Y(y), r: px(0.6), fill: "#6e2a1e"}); }
+    if (m === "fuente") { el("circle", {cx: X(x), cy: Y(y), r: (R + 0.5) * s, fill: C.stone}); el("circle", {cx: X(x), cy: Y(y), r: R * s, fill: C.water}); el("circle", {cx: X(x), cy: Y(y), r: Math.max(1, 0.25 * R * s), fill: C.stone}); }
+    if (m === "busto") { el("rect", {x: X(x - 0.7), y: Y(y - 0.7), width: px(1.4), height: px(1.4), fill: "#f4f1ea"}); el("circle", {cx: X(x), cy: Y(y), r: px(0.4), fill: "#555"}); }
+    if (m === "ranchon") { el("rect", {x: X(x - 3), y: Y(y - 2), width: 6 * s, height: 4 * s, fill: C.thatch, stroke: "#7a5a2a", "stroke-width": px(0.2)}); el("line", {x1: X(x - 3), y1: Y(y), x2: X(x + 3), y2: Y(y), stroke: "#7a5a2a", "stroke-width": px(0.2)}); }
+  }
+  for (const [tx, ty] of tables) el("rect", {x: X(tx) - px(0.45), y: Y(ty) - px(0.45), width: px(0.9) * 1.6, height: px(0.9) * 1.6, fill: C.stone});
+  for (const [[bx, by], ux, uy] of benches) el("line", {x1: X(bx - ux * 0.9), y1: Y(by - uy * 0.9), x2: X(bx + ux * 0.9), y2: Y(by + uy * 0.9), stroke: C.bench, "stroke-width": px(0.5) * 1.4});
+  for (const [tx, ty] of trees) el("circle", {cx: X(tx), cy: Y(ty), r: Math.max(1.6, 2.2 * s), fill: C.tree, stroke: "#1f3f1a", "stroke-width": .5});
+  for (const [lx, ly] of lamps) el("circle", {cx: X(lx), cy: Y(ly), r: Math.max(1.5, 0.8 * s), fill: C.lamp});
+
+  // claros: free lawn 6 m from trees and 4 m from paths and motifs
+  const claros = [];
+  for (let x = g + 6; x < L - g - 6; x += 7) for (let y = g + 6; y < W - g - 6; y += 7)
+    if (free([x, y], 4) && trees.every(([tx, ty]) => Math.hypot(tx - x, ty - y) > 6) && (!lake || Math.hypot(x - lake[0], y - lake[1]) > lake[2] + 8)) claros.push([x, y]);
+  // scenes: drawn from the park's seed and the date, never the hour; the hour only says whether each is on
+  const sr = rng(st.seed * 31 + area + {wk: 1, sat: 2, sun: 3}[st.day] * 1000), h = st.hour, wkend = st.day !== "wk";
+  const used = [], scenes = [];
+  const take = need => { const c = claros.filter(p => used.every(u => Math.hypot(u[0] - p[0], u[1] - p[1]) > need + u[2])); if (!c.length) return null; const p = c[Math.floor(sr() * c.length)]; used.push([p[0], p[1], need]); return p; };
+  const dot = (x, y, col, rr) => el("circle", {cx: X(x), cy: Y(y), r: Math.max(rr || 1.1, 0.35 * s), fill: col || C.person, stroke: "#222", "stroke-width": .3});
+  const crowd = (x, y, n, spread, col) => { for (let k = 0; k < n; k++) { const a = sr() * 6.283, d = spread * Math.sqrt(sr()); dot(x + Math.cos(a) * d, y + Math.sin(a) * d, col); } };
+  const big = c => c === "glorieta" || c === "fuente";
+  // fixed order of draws so moving the hour never reshuffles which scenes happen
+  const want = {
+    abuelos: city && !paseo && sr() < 0.5, wedding: area >= 15000 && !paseo && sr() < (st.day === "sat" ? 0.4 : st.day === "sun" ? 0.15 : 0),
+    birthday: area >= 3000 && !paseo && sr() < (city ? 0.35 : 0.25), quince: big(centre) && sr() < 0.2,
+    picnics: Math.min(Math.floor(area / 2500), Math.round(claros.length * (st.day === "sat" ? 0.15 : st.day === "sun" ? 0.25 : 0) * (city ? 1 : 1.5))),
+  };
+  if (want.wedding && within(h, 10, 18)) {
+    const p = take(10) || (centre === "glorieta" ? [L / 2, W / 2 + 10] : null);
+    if (p) { el("path", {d: `M${X(p[0] - 2)},${Y(p[1] - 6)} Q${X(p[0])},${Y(p[1] - 9)} ${X(p[0] + 2)},${Y(p[1] - 6)}`, fill: "none", stroke: "#f6a6c8", "stroke-width": px(0.6)});
+      dot(p[0] - 0.6, p[1] - 6, "#ffffff", 1.4); dot(p[0] + 0.6, p[1] - 6, "#333", 1.4);
+      for (let row = 0; row < 5; row++) for (let c = 0; c < 4; c++) for (const side of [-1, 1]) dot(p[0] + side * (1.5 + c * 1.2), p[1] - 3 + row * 1.6, sr() < 0.85 ? C.person : C.chair);
+      scenes.push("boda"); }
+  }
+  if (want.birthday && wkend && within(h, 14, 18)) {
+    const p = take(8);
+    if (p) { el("rect", {x: X(p[0] - 1.2), y: Y(p[1] - 0.6), width: 2.4 * s, height: 1.2 * s, fill: C.chair});
+      for (const col of ["#ff4d6d", "#ffd23f", "#3bceac", "#4d9de0", "#ff4d6d"]) el("circle", {cx: X(p[0] - 4 + sr() * 2), cy: Y(p[1] - 4 + sr() * 2), r: Math.max(1.4, 0.5 * s), fill: col});
+      crowd(p[0], p[1] + 1, 10, 4, "#ffe08a"); crowd(p[0], p[1], 6, 6); scenes.push("cumpleaños"); }
+  }
+  if (want.abuelos && st.day !== "sun" && within(h, 7, 9)) {
+    const p = take(6);
+    if (p) { for (let k = 0; k < 12; k++) dot(p[0] + 4 * Math.cos(k * Math.PI / 6), p[1] + 4 * Math.sin(k * Math.PI / 6)); scenes.push("círculo de abuelos"); }
+  }
+  if (wkend && within(h, 10, 17)) {
+    let n = 0;
+    for (let k = 0; k < want.picnics; k++) { const p = take(4); if (!p) break; el("rect", {x: X(p[0] - 1.5), y: Y(p[1] - 1), width: 3 * s, height: 2 * s, fill: C.blanket}); crowd(p[0], p[1], 2 + Math.floor(sr() * 5), 2.5); n++; }
+    if (n) scenes.push(`pícnic ×${n}`);
+  }
+  if (within(h, 15, 21) && tables.length) {
+    let n = 0;
+    for (const [tx, ty] of tables) if (sr() < 0.6) { for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) dot(tx + dx * 1.1, ty + dy * 1.1); n++; }
+    if (n) scenes.push(city ? `dominó ×${n}` : `mesas ocupadas ×${n}`);
+  }
+  if (play && ((!wkend && within(h, 16, 19)) || (wkend && (within(h, 9, 12) || within(h, 16, 19))))) { crowd(play[0], play[1], 6 + Math.floor(sr() * 7), 5, "#ffe08a"); scenes.push("niños jugando"); }
+  if (want.quince && (within(h, 8, 11) || within(h, 16, 19))) { dot(L / 2 + 6, W / 2 + 2, "#ff8fc7", 1.8); dot(L / 2 + 9, W / 2 + 3); dot(L / 2 + 7, W / 2 + 5); scenes.push("fotos de quince"); }
+  if (within(h, 18, 22)) { let n = 0; for (const [[bx, by]] of benches) if (sr() < 0.08) { dot(bx - 0.4, by); dot(bx + 0.4, by); n++; } if (n) scenes.push(`parejas ×${n}`); }
+
   document.getElementById("areav").textContent = Math.round(area).toLocaleString("es");
-  out.textContent = `tipo: ${kind}\n${Math.round(L)} × ${Math.round(W)} m\nárboles: ${trees.length}\nfaroles: ${lamps.length}`;
+  document.getElementById("hourv").textContent = `${st.hour}:00`;
+  const extras = [lake && `laguito ${Math.round(Math.PI * lake[2] ** 2)} m²`, play && "parque infantil", tables.length && `${tables.length} mesas`].filter(Boolean).join(", ") || "—";
+  out.textContent = `tipo: ${kind}\n${Math.round(L)} × ${Math.round(W)} m · riqueza ${rich.toFixed(2)}\npieza central: ${centre}\nmotivos: ${extras}\nbancos: ${benches.length} · árboles: ${trees.length} · faroles: ${lamps.length}\nclaros: ${claros.length}\nescenas (M5): ${scenes.join(", ") || "ninguna a esta hora"}`;
 }
-for (const id of ["zone", "shape"]) document.querySelectorAll(`#${id} button`).forEach(b => b.addEventListener("click", () => {
+for (const id of ["zone", "shape", "day"]) document.querySelectorAll(`#${id} button`).forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll(`#${id} button`).forEach(x => x.classList.toggle("on", x === b));
   st[id] = b.dataset.v; draw();
 }));
 document.getElementById("area").addEventListener("input", e => { st.area = +e.target.value; draw(); });
+document.getElementById("hour").addEventListener("input", e => { st.hour = +e.target.value; draw(); });
+document.getElementById("seed").addEventListener("click", () => { st.seed++; draw(); });
 draw();
 </script>
 </body>
