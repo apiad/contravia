@@ -573,10 +573,10 @@ def province_boxes(pbf) -> dict:
     return {k: (s - BOX_MARGIN, w - BOX_MARGIN, n + BOX_MARGIN, e + BOX_MARGIN) for k, (s, w, n, e) in boxes.items()}
 
 
-def main(pbf, out, dem=None, provinces=None) -> dict:
+def main(pbf, out, dem=None, provinces=None, resume: bool = False) -> dict:
     """Build each province (all of contravia.geo.PROVINCES by default) into out/<slug>.npz: read its part of the
-    extract and, from the GLO-30 tiles in dem (downloaded there if missing), its cleaned relief. Returns the
-    reports by province."""
+    extract and, from the GLO-30 tiles in dem (downloaded there if missing), its cleaned relief. With resume, a
+    province whose file is there is left as it is. Returns the reports by province."""
     import json
     import time
 
@@ -590,6 +590,8 @@ def main(pbf, out, dem=None, provinces=None) -> dict:
             continue
         if name not in boxes:
             raise ValueError(f"{pbf}: no province named {name!r} (admin_level 4)")
+        if resume and (Path(out) / f"{slug}.npz").exists():
+            continue
         t0 = time.perf_counter()
         terrain = read_terrain(dem, boxes[name], stride=TERRAIN_STRIDE.get(name, 3)) if dem else None
         city, report = build_city(read_osm(pbf, boundary=name, box=boxes[name]), terrain)

@@ -159,16 +159,24 @@ def fetch_tile(folder, lat: int, lon: int) -> Path | None:
     if none.exists():
         return None
     Path(folder).mkdir(parents=True, exist_ok=True)
-    try:
-        with urllib.request.urlopen(GLO30_URL.format(name=name.removesuffix(".tif")), timeout=120) as r:
-            part = path.with_suffix(".part")
-            part.write_bytes(r.read())
-            part.rename(path)
-    except urllib.error.HTTPError as e:
-        if e.code not in (403, 404):
-            raise
-        none.touch()
-        return None
+    import time
+
+    for attempt in range(5):  # the bucket is slow from some networks: a read that times out is tried again
+        try:
+            with urllib.request.urlopen(GLO30_URL.format(name=name.removesuffix(".tif")), timeout=300) as r:
+                part = path.with_suffix(".part")
+                part.write_bytes(r.read())
+                part.rename(path)
+            return path
+        except urllib.error.HTTPError as e:
+            if e.code not in (403, 404):
+                raise
+            none.touch()
+            return None
+        except (TimeoutError, urllib.error.URLError, ConnectionError):
+            if attempt == 4:
+                raise
+            time.sleep(10 * (attempt + 1))
     return path
 
 
