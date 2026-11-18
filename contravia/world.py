@@ -89,6 +89,7 @@ class World:
         self._open: OrderedDict = OrderedDict()
         self._summaries: dict = {}
         self._focus = 0
+        self._grids_open: dict = {}
         self.open_max = OPEN
         if core is not None:  # one province, in memory
             self.names, self.paths = ["La Habana"], [None]
@@ -153,7 +154,18 @@ class World:
         return data
 
     def _terrain(self, k: int):
-        return self.province(k).terrain
+        """Province k's relief grid, kept for good once read: only its three arrays come off the disk, so a view
+        over many provinces never opens their data."""
+        if k not in self._grids_open:
+            if k in self._open or self.paths[k] is None:
+                self._grids_open[k] = self.province(k).terrain
+            else:
+                from contravia.terrain import Terrain
+
+                with np.load(self.paths[k]) as f:
+                    self._grids_open[k] = (Terrain(f["heights"], f["heights_origin"], f["heights_step"])
+                                           if "heights" in f.files else Terrain.flat())
+        return self._grids_open[k]
 
     def _regions_over(self, x, z) -> list[int]:
         """The provinces whose relief grid reaches the points' bounding box."""
