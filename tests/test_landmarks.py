@@ -96,3 +96,26 @@ def test_landmarks_stand_on_the_terrain():
     assert np.isclose(cap[:, 1].min(), seat(rings[0], t), atol=1e-3)
     paving = p[np.all(np.isclose(lm.mesh.colors, plaza.PAVE), axis=1)]
     assert len(paving) and np.allclose(paving[:, 1], t.height(paving[:, 0], paving[:, 2]) + plaza.PAVING_LIFT, atol=1e-3)
+
+
+def test_the_malecon_wall_stands_a_sidewalk_past_the_road_edge():
+    from contravia.landmarks import malecon
+
+    # a 21 m wide coast road along z = -702 at x around -1000, where LINE runs flat
+    road = np.array([[-1100.0, -702.0, -900.0, -702.0, 21.0]])
+    edge, wall, out = malecon.shore(road)
+    k = int(np.argmin(np.abs(edge[:, 0] + 1000)))
+    assert np.isclose(edge[k, 1], -702 - 10.5, atol=0.5)        # the road's sea edge: half its width north
+    assert np.isclose(wall[k, 1], edge[k, 1] - malecon.SIDEWALK, atol=0.5)
+    assert out[k, 1] < -0.99                                    # seaward is north
+
+
+def test_the_relief_past_the_malecon_goes_under_the_sea_but_not_under_the_road():
+    from contravia.landmarks import malecon
+    from contravia.terrain import Terrain
+
+    t = Terrain(np.full((60, 40), 3.0), (-1200.0, -1200.0), (10.0, 10.0), fade=0)
+    road = np.array([[-1100.0, -702.0, -900.0, -702.0, 21.0]])
+    malecon.carve(t, road)
+    assert t.height(-1000.0, -702.0) == 3.0                     # under the road
+    assert t.height(-1000.0, -702.0 - 10.5 - malecon.CARVE - 15) == malecon.SEABED

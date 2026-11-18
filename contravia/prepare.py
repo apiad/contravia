@@ -12,7 +12,7 @@ import numpy as np
 from contravia import buildingtags
 from contravia.citydata import CityData
 from contravia.geo import HAVANA_BOX, cell_of, to_local
-from contravia.graph import build_graph
+from contravia.graph import build_graph, road_width
 from contravia.terrain import Terrain, clean, read_tiles
 
 # Road width in metres by OSM highway class; anything not listed is not drivable and is dropped.
@@ -271,7 +271,11 @@ def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]
     # Roads: split, then keep the segments whose midpoint is in the province.
     road_xz = _locals(pts for _, pts in raw.roads)
     lines = [LineString(line) for line in road_xz]
-    roads = _split_all(road_xz, [WIDTHS[hw] for hw, _ in raw.roads]) if road_xz else np.zeros((0, 5))
+    if len(raw.ways) == len(raw.roads):  # read with the ways: as wide as their lanes, like the drawn streets
+        widths = [road_width(hw, tags, WIDTHS) for _, hw, _, _, tags in raw.ways]
+    else:
+        widths = [WIDTHS[hw] for hw, _ in raw.roads]
+    roads = _split_all(road_xz, widths) if road_xz else np.zeros((0, 5))
     roads = roads[inside((roads[:, 0:2] + roads[:, 2:4]) / 2)]
 
     # Buildings: skip rings shapely calls invalid or with fewer than three distinct points.
@@ -312,6 +316,10 @@ def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]
     trees = np.vstack(trees) if trees else np.zeros((0, 2))
     trees = trees[inside(trees)]
 
+    if terrain is not None and terrain.heights.size > 4:  # the relief past the Malecón's wall goes under the sea
+        from contravia.landmarks import malecon
+
+        malecon.carve(terrain, roads)
     city = CityData.from_features(roads, rings, np.array(ids, np.int64), fillers, np.array(seeds, np.int64),
                                   trees, terrain)
     graph = build_graph(raw.ways, raw.controls, raw.restrictions, raw.municipios, rings,
