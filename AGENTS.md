@@ -9,12 +9,13 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   builds each of the 16 provinces (`contravia.geo.PROVINCES`, La Habana first) into `data/cuba/<slug>.npz` with the same
   pipeline (`--province` for one, `--resume` to go on); `contravia/world.py` joins them lazily, with `index.npz` and
   `summary/` written on first load. `contravia play` drives; `contravia bench` drives a fixed route and appends its
-  numbers to `bench/history.jsonl`. The whole island takes about 25 minutes and 16 GB of memory on the GPU machine.
+  numbers to `bench/history.jsonl`. The whole island takes about 25 minutes on the GPU machine.
 - `contravia prepare ... --dem DIR` adds the ground's heights from the Copernicus GLO-30 tiles, downloaded into DIR
   from `https://copernicus-dem-30m.s3.amazonaws.com/<name>/<name>.tif` as needed and sampled through the island's
   projection (`terrain.read_terrain`): 30 m in La Habana, 90 m elsewhere. Without it the island is flat.
-- `contravia source` packs one `data/cuba-src/<slug>.src` per province, which the game ships; the first run
-  (`contravia/firstrun.py`, `contravia build`) builds the island from them into the player's home.
+- `contravia source <pbf> --dem DIR` packs one `data/cuba-src/<slug>.src` per province, which the game ships; the first
+  run (`contravia/firstrun.py`, `contravia build`) builds the island from them into the player's home, each province in
+  its own process and several at once: about 19 minutes and 6 GB with three at once on the GPU machine.
 - Trees in parks, woods and meadows are not stored: each green area is kept as triangles per cell and its trees grow
   when the cell opens (`rules.trees.in_green`), the same every time.
 - `contravia dev` takes the options of `contravia play` and runs it under manifoldx's hot reload: a saved file in
@@ -60,8 +61,17 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   pedals (`contravia/input.py`). `contravia play --traffic my.json` changes demand settings
   (`contravia/rules/traffic.py`, only the keys the file names). While playing, `manifoldx emit traffic_config population=3000000` changes settings and
   `manifoldx emit close x=... z=... minutes=40` closes a street; `engine.state.traffic` reports the numbers.
+- The Garaje (`contravia/menu.py`, drawn as `docs/superpowers/specs/2026-11-18-garaje-design.html` proposes) browses
+  every vehicle of `contravia/rules/fleet.py` turning in the street, edits a copy's knobs inside their ranges
+  (`contravia/rules/designs.py`: the union over the fleet's eras of that one table, clipped to manifoldx's
+  `Params.ranges()` and narrowed live by its `validate()`), saves designs as
+  JSON in the config folder's `garaje/` (`contravia/garage.py`) and drives any car, bus or truck from the main menu,
+  the free drive's Vehículo row or the pause. A vehicle builds on a worker thread; names are never trademarks.
+  `--screen garage|design --shot` saves either screen.
 - `contravia flowmap out.png --time "Tue 08:00" [--traffic my.json]` draws the flow layer over the province without a
   window; `contravia bench --time ...` adds traffic numbers to the run.
+- `contravia fleet-sheet OUTDIR [--kind car]` renders one review PNG per kind: a row per variant of `contravia/rules/fleet.py`
+  (the ten kinds' families, eras, ranges and colourways) in four views, offscreen; `variant(kind, family, k)` is seeded.
 - `bench/pipelined.py` drives the bench route's first leg offscreen and measures a frame serial against pipelined,
   where the engine draws this frame while the next frame's systems run on a worker; `--check` drives the same leg
   under `MANIFOLDX_PIPELINE=check` to catch a system that writes what the render reads.
