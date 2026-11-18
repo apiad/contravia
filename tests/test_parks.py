@@ -126,3 +126,12 @@ def test_claros_are_open_lawn():
     for c in park.claros[:20]:
         assert shapely.distance(trees, Point(c)).min() > parks.CLARO_TREES - 1e-6
     assert box(*Polygon(_rect(200, 150)).bounds).contains(shapely.multipoints(park.claros))
+
+
+def test_a_block_that_splits_when_shrunk_still_lays_out():
+    dumbbell = shapely.union_all([box(0, 0, 60, 60), box(58, 28, 82, 31), box(80, 0, 140, 60)])  # a 3 m neck
+    ring = np.asarray(dumbbell.exterior.coords)[:-1]
+    for kind in (parks.CITY, parks.ORGANIC, parks.PASEO, parks.PRADO):
+        for seed in range(6):
+            park = parks.layout(ring, kind, seed)
+            assert len(park.trees) or kind == parks.PRADO

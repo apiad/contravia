@@ -326,7 +326,7 @@ def _city(rng, poly, area, rich, park: Park):
     plaza = Point(centre).buffer(rad, 24)
     lines = [((x0, centre[1]), (x1, centre[1]), PATH_W), ((centre[0], y0), (centre[0], y1), PATH_W)]
     if area > BIG:
-        ring_line = lawn.buffer(-(RING_IN - KERB_W)).exterior
+        ring_line = lawn.buffer(-(RING_IN - KERB_W)).boundary  # one ring per piece, when the lawn splits
         if not ring_line.is_empty:
             g.take(ring_line.buffer(PATH_W / 2))
             park.paved.append(ring_line.buffer(PATH_W / 2).intersection(lawn))
@@ -408,8 +408,7 @@ def _city(rng, poly, area, rich, park: Park):
     park.trees = np.vstack(trees) if trees else np.zeros((0, 2))
     bench = np.vstack([b for b in benches if len(b)]) if any(len(b) for b in benches) else np.zeros((0, 3))
     park.benches = bench
-    edge = poly.buffer(-KERB_W / 2).exterior
-    if not edge.is_empty:
+    for edge in shapely.get_parts(poly.buffer(-KERB_W / 2).boundary):  # every piece's outline, holes too
         d = np.arange(0, edge.length, LAMP_EVERY)
         pts = np.array([edge.interpolate(t).coords[0] for t in d]).reshape(-1, 2)
         park.lamps = np.vstack([park.lamps, np.column_stack([pts, np.zeros(len(pts))])])
@@ -424,12 +423,14 @@ def _paseo(rng, poly, area, rich, park: Park, prado: bool):
     W = y1 - y0
     if prado:
         park.kerb = poly
-        rows = (y0 + 2.5, y1 - 2.5)
+        edge = min(2.5, W / 4)  # a narrow stretch of the Prado keeps its two rows of trees, closer in
+        rows = (y0 + edge, y1 - edge)
         trees = [np.column_stack([np.arange(x0 + 4, x1 - 4, TREE_EVERY), np.full(len(np.arange(x0 + 4, x1 - 4, TREE_EVERY)), y)]) for y in rows]
         park.trees = np.vstack(trees)
         bx = np.arange(x0 + 6, x1 - 6, 6.0 / rich)
-        park.benches = np.vstack([np.column_stack([bx, np.full(len(bx), y0 + 4.5), np.full(len(bx), np.pi / 2)]),
-                                  np.column_stack([bx, np.full(len(bx), y1 - 4.5), np.full(len(bx), -np.pi / 2)])])
+        seat = min(4.5, W / 2 - 1.0)
+        park.benches = np.vstack([np.column_stack([bx, np.full(len(bx), y0 + seat), np.full(len(bx), np.pi / 2)]),
+                                  np.column_stack([bx, np.full(len(bx), y1 - seat), np.full(len(bx), -np.pi / 2)])])
         lx = np.arange(x0 + LAMP_EVERY / 2, x1, LAMP_EVERY)
         park.lamps = np.vstack([np.column_stack([lx, np.full(len(lx), y), np.zeros(len(lx))]) for y in (y0 + 1.0, y1 - 1.0)])
         park.claros = np.zeros((0, 2))
@@ -542,7 +543,8 @@ def layout(ring, kind: int, seed: int) -> Park:
     """The park of the block `ring` ((K, 2) world metres) of the given kind, seeded: always the same park."""
     poly = Polygon(np.asarray(ring, float))
     if not poly.is_valid:
-        poly = poly.buffer(0)
+        parts = shapely.get_parts(poly.buffer(0))
+        poly = parts[np.argmax(shapely.area(parts))] if len(parts) else Polygon()
     park = Park(kind)
     if kind == NONE or poly.is_empty:
         return park
@@ -585,6 +587,16 @@ def _to_world(park: Park, c, u, v) -> Park:
 
 
 _LAID: dict = {}  # (ring bytes, kind, seed) -> Park: prepare, walks and the motifs lay out the same parks once
+FAILED: list = []  # (seed, error) of the parks whose layout raised: they are left bare, and the build reports them
+
+
+def _safe_layout(ring, kind, seed) -> Park:
+    """layout(), but a block whose geometry defeats it is left as plain ground instead of stopping the build."""
+    try:
+        return layout(ring, kind, seed)
+    except Exception as e:  # noqa: BLE001 - one odd block among thousands must not stop the city's build
+        FAILED.append((seed, repr(e)))
+        return Park(NONE)
 
 
 def laid(a) -> list[tuple[Park, int]]:
@@ -597,7 +609,7 @@ def laid(a) -> list[tuple[Park, int]]:
     rings = [verts[starts[k]:starts[k + 1]] for k in range(len(starts) - 1)]
     keys = [(r.tobytes(), int(kd), int(sd)) for r, kd, sd in zip(rings, a["park_kind"], a["park_seed"], strict=True)]
     todo = [k for k, key in enumerate(keys) if key not in _LAID]
-    for k, park in zip(todo, pmap(lambda k: layout(rings[k], keys[k][1], keys[k][2]), todo, chunk=8), strict=True):
+    for k, park in zip(todo, pmap(lambda k: _safe_layout(rings[k], keys[k][1], keys[k][2]), todo, chunk=8), strict=True):
         _LAID[keys[k]] = park
     return [(_LAID[key], int(z)) for key, z in zip(keys, a["park_zone"], strict=True)]
 
@@ -666,4 +678,4 @@ def add_to(city) -> dict:
     city.add_kind("park_tris", tris, keys)
     city.add_kind("park_paint", paint, keys)
     city.add_kind("park_walls", walls, wkeys)
-    return {"parks_built": len(parks_), "park_triangles": len(tris), "park_walls": len(walls), **count}
+    return {"parks_built": len(parks_), "park_layout_errors": len(FAILED), "park_triangles": len(tris), "park_walls": len(walls), **count}

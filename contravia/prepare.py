@@ -260,8 +260,9 @@ def _rings_arrays(rings) -> tuple[np.ndarray, np.ndarray]:
     return verts, starts
 
 
-def find_parks(raw: Raw, faces, rings, cents, graph) -> tuple[list, list, list]:
-    """The faces that become parks: their rings, kinds (contravia.parks) and zones (contravia.walks.zone_of)."""
+def find_parks(raw: Raw, faces, rings, cents, graph, roads) -> tuple[list, list, list, list]:
+    """The faces that become parks: the rings of their land (the face, whose edges are the roads' centrelines,
+    less the roads' strips), their kinds (contravia.parks), zones (contravia.walks.zone_of) and the faces' seeds."""
     import shapely
     from shapely.geometry import Polygon
 
@@ -269,8 +270,9 @@ def find_parks(raw: Raw, faces, rings, cents, graph) -> tuple[list, list, list]:
     from contravia.walks import CENTRE, VEDADO, zone_of
 
     if not faces:
-        return [], [], []
+        return [], [], [], []
     faces = np.asarray(faces, dtype=object)
+    lands = _lands(faces, roads)
     built, count = np.zeros(len(faces)), np.zeros(len(faces), int)
     if len(cents):
         fi, bi = shapely.STRtree(faces).query(shapely.points(cents), predicate="within")[::-1]
@@ -299,11 +301,36 @@ def find_parks(raw: Raw, faces, rings, cents, graph) -> tuple[list, list, list]:
             names[k] = name
     city = np.array([n in CENTRE or n in VEDADO for n in names])
     prado = _named_between(graph, faces, r"Paseo del Prado|Paseo de Mart[ií]", ACROSS)
-    kinds = parks.classify(faces, built, count, green, city, boulevard(graph, faces), prado)
+    kinds = parks.classify(lands, built, count, green, city, boulevard(graph, faces), prado)
     kinds[blocked & ~prado] = parks.NONE
     keep = np.flatnonzero(kinds != parks.NONE)
-    return ([np.asarray(faces[k].exterior.coords)[:-1] for k in keep], [int(kinds[k]) for k in keep],
-            [zone_of(names[k]) for k in keep])
+    return ([np.asarray(lands[k].exterior.coords)[:-1] for k in keep], [int(kinds[k]) for k in keep],
+            [zone_of(names[k]) for k in keep], [_block_seed(faces[k].centroid) for k in keep])
+
+
+def _lands(faces, roads) -> np.ndarray:
+    """Each face less the strips of the roads round it, as wide as they are: its largest polygon (or the face, for
+    one too small to be a park, which classify drops anyway)."""
+    import shapely
+
+    out = faces.copy()
+    if not len(roads):
+        return out
+    strips = shapely.buffer(shapely.linestrings(np.asarray(roads[:, :4], float).reshape(-1, 2, 2)),
+                            np.asarray(roads[:, 4], float) / 2, cap_style="round", quad_segs=2)
+    tree = shapely.STRtree(strips)
+    big = np.flatnonzero(shapely.area(faces) >= parks.MIN_AREA)
+    fi, si = tree.query(faces[big], predicate="intersects")
+    order = np.argsort(fi, kind="stable")
+    fi, si = fi[order], si[order]
+    cut, first = np.unique(fi, return_index=True)
+    for f, group in zip(cut, np.split(si, first[1:]), strict=True):
+        land = shapely.difference(faces[big[f]], shapely.union_all(strips[group]))
+        parts = shapely.get_parts(land)
+        parts = parts[shapely.get_type_id(parts) == 3]
+        if len(parts):
+            out[big[f]] = parts[np.argmax(shapely.area(parts))]
+    return out
 
 
 def _named_between(graph, faces, pattern, across) -> np.ndarray:
@@ -424,10 +451,10 @@ def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]
                         places=(raw.places, raw.place_points, raw.consejos))
 
     # Parks: blocks with few or no buildings (contravia.parks). They get no filler, and their own trees.
-    park_rings, kinds, park_zone = find_parks(raw, faces, rings, cents, graph)
+    park_rings, kinds, park_zone, face_seeds = find_parks(raw, faces, rings, cents, graph, roads)
     park_seeds = [parks.seed_of(Polygon(r)) for r in park_rings]
     if park_rings:
-        gone = set(park_seeds)
+        gone = set(face_seeds)
         keep = [k for k, sd in enumerate(seeds) if sd not in gone]
         fillers, seeds = [fillers[k] for k in keep], [seeds[k] for k in keep]
         polys = [Polygon(r) for r in park_rings]
@@ -454,6 +481,7 @@ def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]
             kinds = [k for k, h in zip(kinds, hit, strict=True) if not h]
             park_zone = [z for z, h in zip(park_zone, hit, strict=True) if not h]
             park_seeds = [s for s, h in zip(park_seeds, hit, strict=True) if not h]
+            face_seeds = [s for s, h in zip(face_seeds, hit, strict=True) if not h]
     pv, ps = _rings_arrays(park_rings)
     city.a.update(park_verts=pv, park_starts=ps, park_kind=np.asarray(kinds, np.uint8).reshape(-1),
                   park_zone=np.asarray(park_zone, np.uint8).reshape(-1), park_seed=np.asarray(park_seeds, np.int64))

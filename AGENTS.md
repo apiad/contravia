@@ -34,6 +34,11 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   (12 % in the old centre) rises 15 cm kerb to kerb; elsewhere each building gets a 1.5 m platform and a path to
   its street. The cells draw them with manifoldx's pavement patterns and the wheels stand on them. `contravia walks`
   rebuilds them in an existing data file in about 4 minutes.
+- `contravia prepare` turns blocks with few or no buildings into parks (`contravia/parks.py`, spec
+  `docs/superpowers/specs/2026-11-18-parks-design.html`): city parks with paths, plaza and centrepiece, paseos, the paved
+  Prado and wild parks outside the city, some with a lake. `contravia/props.py` builds their motifs as `park_tris`, the
+  car hits `park_walls`, and `contravia walks` rebuilds them with the pavements. Land OSM tags as a cemetery, industry,
+  a school or a sports ground never becomes a park.
 - `contravia play` opens on the main menu (`contravia/menu.py`, drawn as `docs/ux/contravia-ux.html` shows): Story and the
   Cuba map are "próximamente", Free drive sets place, time, day, weather, traffic and clock speed
   (`contravia/settings.py`), Esc pauses, and the options are kept in the user's config folder

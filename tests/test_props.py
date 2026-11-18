@@ -74,7 +74,11 @@ def test_a_lake_holds_its_water_under_its_rim():
     assert (np.hypot(*mid.T) > 10).all()  # the wall is the rim's outside: the car never reaches the water
 
 
-def test_the_prepared_city_draws_its_parks_motifs_and_the_car_hits_them(city):
+def test_the_prepared_city_draws_its_parks_motifs_and_the_car_hits_them(monkeypatch):
+    from contravia.prepare import build_city, read_osm
+
+    monkeypatch.setattr(parks, "OUT_MIN", 5_000.0)  # the fixture's empty blocks become wild parks
+    city, _ = build_city(read_osm("tests/fixtures/mini.osm"))
     assert "park_tris" in city.a and len(city.a["park_tris"])
     assert "park_walls" in city.a and len(city.a["park_walls"])
     laid = parks.laid(city.a)
@@ -82,4 +86,4 @@ def test_the_prepared_city_draws_its_parks_motifs_and_the_car_hits_them(city):
     assert table is not None
     walls = Walls(city).near(table[1], table[2])
     segs = shapely.linestrings(np.asarray(walls, float).reshape(-1, 2, 2))
-    assert (shapely.distance(segs, Point(table[1], table[2])) < 3.0).any()
+    assert (shapely.distance(segs, Point(table[1], table[2])) < 3.5).any()  # a ranchón's posts stand 3.2 m out

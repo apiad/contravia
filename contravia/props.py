@@ -182,7 +182,7 @@ def domino(p: Props, c, heading, y):
 
 def playground(p: Props, c, heading, y):
     """A 15 x 12 m sand pit with a low kerb: swings, a slide and a cachumbambé (seesaw)."""
-    p.flat(_rect(c, 7.5, 6.0, heading), y + 0.03, SAND)
+    p.flat(_rect(c, 7.5, 6.0, heading), y + 0.12, SAND)  # over the ground mesh, which runs between its 10 m vertices
     for du, dv, hx, hz in ((0, -6, 7.6, 0.1), (0, 6, 7.6, 0.1), (-7.5, 0, 0.1, 6.0), (7.5, 0, 0.1, 6.0)):
         p.box(_at(c, heading, du, dv), hx, hz, y, y + 0.15, heading, STONE, hit=False)
     a, b = _at(c, heading, -5.5, -3), _at(c, heading, -1.5, -3)  # swings
