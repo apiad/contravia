@@ -41,7 +41,7 @@ class Terrain:
         self.fade = float(fade)
 
     @classmethod
-    def flat(cls) -> "Terrain":
+    def flat(cls) -> Terrain:
         """Height 0 everywhere: the terrain of data prepared without heights."""
         south, west, north, east = HAVANA_BOX
         nw, se = to_local(np.array([north, south]), np.array([west, east]))
@@ -140,3 +140,89 @@ def read_tiles(folder, box=HAVANA_BOX) -> Terrain:
     c0, c1 = math.floor((west - left) * per_lon), math.ceil((east - left) * per_lon) + 1
     origin = to_local(np.array([top - r0 / per_lat]), np.array([left + c0 / per_lon]))[0]
     return Terrain(grid[r0:r1, c0:c1], origin, (_M_PER_DEG_LON / per_lon, _M_PER_DEG_LAT / per_lat))
+
+
+GLO30_URL = "https://copernicus-dem-30m.s3.amazonaws.com/{name}/{name}.tif"
+TILE_SAMPLES = 3600  # a GLO-30 tile's rows and columns per degree below 50 degrees of latitude
+
+
+def fetch_tile(folder, lat: int, lon: int) -> Path | None:
+    """The GLO-30 tile for (lat, lon) in folder, downloaded first if missing; None where there is only sea (the
+    bucket has no tile there, remembered with an empty .none file so it is not asked again)."""
+    import urllib.error
+    import urllib.request
+
+    name = _tile_name(lat, lon)
+    path, none = Path(folder) / name, Path(folder) / (name + ".none")
+    if path.exists():
+        return path
+    if none.exists():
+        return None
+    Path(folder).mkdir(parents=True, exist_ok=True)
+    try:
+        with urllib.request.urlopen(GLO30_URL.format(name=name.removesuffix(".tif")), timeout=120) as r:
+            part = path.with_suffix(".part")
+            part.write_bytes(r.read())
+            part.rename(path)
+    except urllib.error.HTTPError as e:
+        if e.code not in (403, 404):
+            raise
+        none.touch()
+        return None
+    return path
+
+
+def read_terrain(folder, box, step: float = 30.0, stride: int = 1, fetch: bool = True) -> Terrain:
+    """The cleaned ground over box (south, west, north, east) on a regular grid of local metres.
+
+    Each sample is placed through the island's projection and read from the GLO-30 tile under it, so the grid
+    stays true far from the Capitolio, where meridians turn by degrees against the local axes. The heights are
+    cleaned (clean) at `step` metres, then every `stride`-th sample is kept: a coarser grid for big provinces.
+    Missing tiles are downloaded into folder when fetch is True; sea without a tile reads 0.
+    """
+    import tifffile
+
+    from contravia.geo import to_latlon
+
+    south, west, north, east = box
+    t = np.linspace(0.0, 1.0, 33)
+    edge_lat = np.concatenate([np.full_like(t, south), np.full_like(t, north), south + t * (north - south),
+                               south + t * (north - south)])
+    edge_lon = np.concatenate([west + t * (east - west), west + t * (east - west), np.full_like(t, west),
+                               np.full_like(t, east)])
+    xz = to_local(edge_lat, edge_lon)
+    x0, z0 = math.floor(xz[:, 0].min() / step) * step, math.floor(xz[:, 1].min() / step) * step
+    cols = math.ceil((xz[:, 0].max() - x0) / step) + 1
+    rows = math.ceil((xz[:, 1].max() - z0) / step) + 1
+    tiles: dict = {}
+
+    def tile(lat: int, lon: int):
+        if (lat, lon) not in tiles:
+            path = fetch_tile(folder, lat, lon) if fetch else Path(folder) / _tile_name(lat, lon)
+            tiles[(lat, lon)] = tifffile.imread(path).astype(np.float32) if path and path.exists() else None
+        return tiles[(lat, lon)]
+
+    out = np.zeros((rows, cols), np.float32)
+    xs = x0 + np.arange(cols) * step
+    for r in range(0, rows, 256):  # a band of rows at a time: the lat/lon of every sample at once is gigabytes
+        zs = z0 + np.arange(r, min(rows, r + 256)) * step
+        gx, gz = np.meshgrid(xs, zs)
+        ll = to_latlon(np.stack([gx.ravel(), gz.ravel()], axis=1))
+        lat, lon = ll[:, 0], ll[:, 1]
+        band = np.zeros(len(lat), np.float32)
+        tl, tn = np.floor(lat).astype(int), np.floor(lon).astype(int)
+        for la, lo in set(zip(tl.tolist(), tn.tolist(), strict=True)):
+            grid = tile(la, lo)
+            if grid is None:
+                continue
+            k = (tl == la) & (tn == lo)
+            n = grid.shape[0]
+            fr = np.clip((la + 1 - lat[k]) * n - 0.5, 0, n - 1.001)
+            fc = np.clip((lon[k] - lo) * grid.shape[1] - 0.5, 0, grid.shape[1] - 1.001)
+            r0, c0 = fr.astype(int), fc.astype(int)
+            ar, ac = fr - r0, fc - c0
+            band[k] = ((grid[r0, c0] * (1 - ac) + grid[r0, c0 + 1] * ac) * (1 - ar)
+                       + (grid[r0 + 1, c0] * (1 - ac) + grid[r0 + 1, c0 + 1] * ac) * ar)
+        out[r: r + len(zs)] = band.reshape(len(zs), cols)
+    ground = clean(out)[::stride, ::stride]
+    return Terrain(ground, (x0, z0), (step * stride, step * stride))

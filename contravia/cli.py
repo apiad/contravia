@@ -33,10 +33,11 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="contravia", description="Drive a procedural, real-size Havana.")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("prepare", help="turn a Cuba OSM extract into data/havana.npz")
+    p = sub.add_parser("prepare", help="build each province of a Cuba OSM extract into data/cuba/<province>.npz")
     p.add_argument("pbf")
-    p.add_argument("--out", default="data/havana.npz")
-    p.add_argument("--dem", help="folder with the Copernicus GLO-30 tiles; without it the city is flat")
+    p.add_argument("--out", default="data/cuba")
+    p.add_argument("--dem", help="folder for the Copernicus GLO-30 tiles, downloaded there if missing; without it the island is flat")
+    p.add_argument("--province", action="append", help="build only this province (name or slug); repeatable")
 
     p = sub.add_parser("source", help="pack a Cuba OSM extract and the GLO-30 tiles into the compact source the game ships")
     p.add_argument("pbf")
@@ -125,7 +126,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "prepare":
         from contravia.prepare import main as prepare
 
-        prepare(args.pbf, args.out, dem=args.dem)
+        prepare(args.pbf, args.out, dem=args.dem, provinces=args.province)
     elif args.command == "source":
         from contravia.source import main as source
 

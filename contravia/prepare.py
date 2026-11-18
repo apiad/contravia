@@ -6,6 +6,7 @@ blocks that OSM left empty (they get filler boxes, or become parks: contravia.pa
 """
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 
@@ -13,7 +14,7 @@ from contravia import buildingtags, parks
 from contravia.citydata import CityData
 from contravia.geo import HAVANA_BOX, cell_of, to_local
 from contravia.graph import build_graph, road_width
-from contravia.terrain import Terrain, clean, read_tiles
+from contravia.terrain import Terrain
 
 # Road width in metres by OSM highway class; anything not listed is not drivable and is dropped.
 WIDTHS = {
@@ -516,18 +517,55 @@ def report(city: CityData, info: dict, street_report: dict) -> dict:
     }
 
 
-def main(pbf, out, dem=None) -> dict:
-    """Read the extract and, from the GLO-30 tiles in dem, the cleaned heights; write the file and the report."""
+BOX_MARGIN = 0.03  # degrees around a province's outline that its reading and its relief cover
+TERRAIN_STRIDE = {"La Habana": 1}  # every how many 30 m samples a province's relief keeps; 3 (90 m) elsewhere
+
+
+def province_boxes(pbf) -> dict:
+    """{name: (south, west, north, east)} of every province's outline (admin_level 4) in the extract, with
+    BOX_MARGIN around it; one quick pass over the file."""
+    import osmium
+
+    boxes: dict = {}
+
+    class Handler(osmium.SimpleHandler):
+        def area(self, a):
+            t = a.tags
+            if t.get("boundary") != "administrative" or t.get("admin_level") != "4" or a.from_way():
+                return
+            pts = [(n.lat, n.lon) for ring in a.outer_rings() for n in ring]
+            if pts:
+                lat, lon = zip(*pts, strict=True)
+                s, w, n, e = boxes.get(t.get("name"), (90.0, 180.0, -90.0, -180.0))
+                boxes[t.get("name")] = (min(s, min(lat)), min(w, min(lon)), max(n, max(lat)), max(e, max(lon)))
+
+    Handler().apply_file(str(pbf), locations=True)
+    return {k: (s - BOX_MARGIN, w - BOX_MARGIN, n + BOX_MARGIN, e + BOX_MARGIN) for k, (s, w, n, e) in boxes.items()}
+
+
+def main(pbf, out, dem=None, provinces=None) -> dict:
+    """Build each province (all of contravia.geo.PROVINCES by default) into out/<slug>.npz: read its part of the
+    extract and, from the GLO-30 tiles in dem (downloaded there if missing), its cleaned relief. Returns the
+    reports by province."""
     import json
     import time
 
-    t0 = time.perf_counter()
-    terrain = None
-    if dem:
-        raw = read_tiles(dem, HAVANA_BOX)
-        terrain = Terrain(clean(raw.heights), raw.origin, raw.step)
-    city, report = build_city(read_osm(pbf), terrain)
-    city.save(out)
-    report["seconds"] = round(time.perf_counter() - t0, 1)
-    print(json.dumps(report, indent=2))
-    return report
+    from contravia.geo import PROVINCES
+    from contravia.terrain import read_terrain
+
+    boxes = province_boxes(pbf)
+    reports = {}
+    for name, slug in PROVINCES:
+        if provinces and name not in provinces and slug not in provinces:
+            continue
+        if name not in boxes:
+            raise ValueError(f"{pbf}: no province named {name!r} (admin_level 4)")
+        t0 = time.perf_counter()
+        terrain = read_terrain(dem, boxes[name], stride=TERRAIN_STRIDE.get(name, 3)) if dem else None
+        city, report = build_city(read_osm(pbf, boundary=name, box=boxes[name]), terrain)
+        Path(out).mkdir(parents=True, exist_ok=True)
+        city.save(Path(out) / f"{slug}.npz")
+        report["seconds"] = round(time.perf_counter() - t0, 1)
+        reports[name] = report
+        print(name, json.dumps(report), flush=True)
+    return reports

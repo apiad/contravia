@@ -14,6 +14,14 @@ ORIGIN = (23.13528, -82.35972)  # the Capitolio, as (lat, lon)
 CELL = 200.0  # the side of a streamed cell, in metres
 HAVANA_BOX = (22.90, -82.60, 23.25, -82.00)  # (south, west, north, east) degrees around the province
 CUBA_BOX = (19.6, -85.1, 23.4, -73.9)  # (south, west, north, east) degrees around the island
+# The island's provinces as OSM names them (boundary=administrative, admin_level=4), with the slug of each one's
+# file; the game builds them in this order, La Habana first.
+PROVINCES = (("La Habana", "la-habana"), ("Artemisa", "artemisa"), ("Mayabeque", "mayabeque"),
+             ("Pinar del Río", "pinar-del-rio"), ("Matanzas", "matanzas"), ("Cienfuegos", "cienfuegos"),
+             ("Villa Clara", "villa-clara"), ("Sancti Spíritus", "sancti-spiritus"),
+             ("Ciego de Ávila", "ciego-de-avila"), ("Camagüey", "camaguey"), ("Las Tunas", "las-tunas"),
+             ("Holguín", "holguin"), ("Granma", "granma"), ("Santiago de Cuba", "santiago-de-cuba"),
+             ("Guantánamo", "guantanamo"), ("Isla de la Juventud", "isla-de-la-juventud"))
 
 _A = 6_378_137.0  # WGS84 semi-major axis, metres
 _E = np.sqrt(2 / 298.257223563 - (1 / 298.257223563) ** 2)  # WGS84 eccentricity
