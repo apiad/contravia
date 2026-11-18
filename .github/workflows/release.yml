@@ -1,5 +1,6 @@
 # The single-file game for Linux and Windows. A pushed tag vX.Y.Z builds both files and publishes them as
-# that tag's release; a manual run builds them as workflow artifacts only, to try the packaging.
+# that tag's release; a manual run builds them as workflow artifacts only, to try the packaging. The province
+# sources the game ships are not in git: they come from the release sources-v<contravia.source.VERSION>.
 name: release
 
 on:
@@ -24,10 +25,22 @@ jobs:
         run: |
           uv python install 3.14t
           echo "PIP_PYTHON=$(uv python find 3.14t)" >> "$GITHUB_ENV"
+      - name: The province sources, from the release of their version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=$(sed -n 's/^VERSION = \([0-9]*\).*/\1/p' contravia/source.py)
+          gh release download "sources-v$v" --pattern cuba-src.tar.zst --output - | tar --zstd -x -C data
+          ls data/cuba-src | wc -l
       - name: Build the files
         env:
           VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || github.sha }}
         run: packaging/build.sh out
+      - name: The Linux file builds a province into an empty home
+        run: |
+          mkdir -p smoke/src && cp data/cuba-src/cienfuegos.src smoke/src/
+          out/contravia build --source "$PWD/smoke/src" --home "$PWD/smoke/home"
+          test -f smoke/home/build.json && test -f smoke/home/cuba/cienfuegos.npz && test -f smoke/home/cuba/index.npz
       - name: Publish the release
         if: startsWith(github.ref, 'refs/tags/')
         env:
