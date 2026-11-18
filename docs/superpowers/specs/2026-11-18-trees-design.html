@@ -75,23 +75,27 @@ ol li,ul li{margin:4px 0}
 </style>
 </head>
 <body>
-<div class="chrome"><span class="tab">Árboles</span><span class="pill">spec · borrador</span><span class="pill opt">2026-11-18</span><span class="pill opt">contravia #74</span></div>
+<div class="chrome"><span class="tab">Árboles</span><span class="pill">spec · aprobada</span><span class="pill opt">2026-11-18</span><span class="pill opt">contravia #74</span></div>
 <main>
-<p class="lede">Hoy todo árbol de La Habana es el mismo: un tronco de caja marrón bajo un cono verde de seis caras. Esta spec lo cambia por seis especies cubanas, elegidas por zona, cada una con su silueta, su giro, su tamaño y su tono. Siguen fundidas en la malla de la celda, así que no se añade ninguna llamada de dibujo.</p>
+<p class="lede">Hoy todo árbol de La Habana es el mismo: un tronco de caja marrón bajo un cono verde de seis caras. Esta spec lo cambia por seis especies cubanas, elegidas por zona, cada una con su silueta, su giro, su tamaño y el color de su mes: flor roja en verano, hojas naranja a fin de año, ramas peladas en la seca. Todo se genera al abrir la celda y nada se guarda. Los troncos chocan con el carro. Siguen fundidos en la malla de la celda, así que no se añade ninguna llamada de dibujo.</p>
 
 <h2><span class="n">01</span>Qué hay hoy</h2>
 <div class="stats">
-  <div class="stat"><b>1&nbsp;213&nbsp;355</b><span>árboles de OSM y de áreas verdes en el <code>havana.npz</code> actual</span></div>
+  <div class="stat"><b>1&nbsp;213&nbsp;355</b><span>árboles de OSM y de áreas verdes guardados en el <code>havana.npz</code> de main</span></div>
   <div class="stat"><b>616</b><span>árboles en la celda más poblada (p95: 281)</span></div>
   <div class="stat"><b>14</b><span>triángulos por árbol: 8 del tronco y 6 del cono</span></div>
   <div class="stat"><b>1</b><span>forma para todos; solo los silvestres cambian tamaño y tono</span></div>
 </div>
 <p>Los árboles salen de cuatro sitios: los puntos <code>natural=tree</code> de OSM, los repartidos en áreas verdes (uno cada 150 m²), los de los parques (<code>parks.py</code>) y los silvestres de <code>trees.wild</code> en la tierra sin datos. Todos pasan por <code>trees.trees()</code>, que copia una plantilla a cada punto. Lejos, los resúmenes del quadtree los cuentan como verde por cuadro. Los árboles no chocan con el carro.</p>
+<p>En la rama <code>whole-cuba</code>, la de la isla entera, los árboles de las áreas verdes ya no se guardan: se guardan las áreas, cortadas por celda, y la celda siembra uno cada 150 m² al abrirse, con el id de OSM del área como semilla. En Artemisa eran 11,8 millones de árboles y 95 de sus 136 MB. Esta spec sigue esa regla para todo lo demás: especie, tamaño, giro, color y tronco se calculan de la posición al abrir la celda.</p>
 
 <h2><span class="n">02</span>Decisiones</h2>
 <table>
   <thead><tr><th>Decisión</th><th>Por qué</th></tr></thead>
   <tbody>
+    <tr><td>Nada se guarda: todo se genera al abrir la celda<span class="tag">maintainer</span></td><td>Igual que la siembra de <code>whole-cuba</code>. El <code>npz</code> no crece, y el juego puede cambiar especies, colores o densidad sin reconstruir la ciudad.</td></tr>
+    <tr><td>Los troncos chocan con el carro<span class="tag">maintainer</span></td><td>Un árbol que se atraviesa no se siente sólido. Los muros ya se calculan al abrir cada celda (<code>walls.py</code>), así que el tronco entra ahí sin guardar nada (sección 06).</td></tr>
+    <tr><td>El color sigue el mes del juego<span class="tag">maintainer</span></td><td>Flor roja del flamboyán en verano, hojas naranja y rojas a fin de año, ceibas peladas en la seca (sección 05).</td></tr>
     <tr><td>Seis especies, mallas procedurales hechas en código<span class="tag agent">agente</span></td><td>Seis siluetas distintas bastan para que una calle de Vedado no se parezca a una playa. Hechas en código como los motivos de los parques, con <code>MeshBuilder</code>, sin pasar por el modelo de imágenes.</td></tr>
     <tr><td>La especie sale de la zona y de una semilla por posición<span class="tag agent">agente</span></td><td>El mismo árbol sale siempre igual, y no hace falta guardar nada nuevo en el <code>npz</code>: ni FORMAT ni la fuente cambian.</td></tr>
     <tr><td>Cada copia gira, escala y cambia de tono<span class="tag agent">agente</span></td><td>Una fila de laureles iguales y alineados se nota a la primera. Giro libre, escala entre 0,8 y 1,25, tono entre 0,85 y 1,15.</td></tr>
@@ -124,75 +128,103 @@ ol li,ul li{margin:4px 0}
 </table>
 <p>Los municipios de la ciudad son los que ya agrupa <code>walks</code>. Una fila de paseo usa una sola especie en toda la fila, sacada de la semilla del parque. El Prado es siempre laurel.</p>
 
-<h2><span class="n">05</span>Cómo se ve <span class="try">try it</span></h2>
+<h2><span class="n">05</span>Las estaciones</h2>
+<p>La Habana no tiene otoño de verdad. Tiene una estación seca, de noviembre a abril, en la que algunos árboles cambian de color o pierden hojas, y un verano lluvioso en el que florece el flamboyán. La tabla da el color de la copa por mes. Los meses son aproximados y se ajustan mirando las vistas.</p>
+<table>
+  <thead><tr><th>Especie</th><th>Ciclo</th></tr></thead>
+  <tbody>
+    <tr><td>Flamboyán</td><td class="v">may–ago flor rojo naranja · sep verde<br>oct–ene hojas amarillo naranja · feb–abr copa rala y pálida</td></tr>
+    <tr><td>Almendro</td><td class="v">dic–feb hojas naranja y rojas, un 50 % de la copa<br>resto verde, con un 10 % de hojas rojas</td></tr>
+    <tr><td>Ceiba</td><td class="v">ene–mar pelada: solo ramas · resto verde oscuro</td></tr>
+    <tr><td>Laurel, palma real, cocotero</td><td class="v">siempre verdes · mar–abr un 10 % más amarillos</td></tr>
+  </tbody>
+</table>
+<p>Cada árbol saca de su semilla un desfase de hasta dos semanas, así que en el cambio de mes no cambian todos a la vez. Una copa rala tiene menos bultos y una ceiba pelada no tiene copa, así que en la seca se dibujan menos triángulos. El color se fija al abrir la celda: si el mes cambia mientras se juega, se nota en las celdas que se abren después.</p>
+
+<h2><span class="n">06</span>Choque</h2>
+<p>El dibujo de la celda y sus muros usan una sola función, <code>trees.cell_trees(i, j)</code>, que devuelve la posición, la especie, la escala, el giro y el color de cada árbol. Así el carro choca exactamente con lo que se ve. <code>Walls._build</code> añade por tronco un cuadrado de 4 segmentos del radio de la especie.</p>
+<table>
+  <thead><tr><th>Especie</th><th>Radio del tronco que choca</th></tr></thead>
+  <tbody>
+    <tr><td>Palma real, cocotero</td><td class="v">0,25 m, en la base aunque el tronco se curve</td></tr>
+    <tr><td>Almendro, flamboyán</td><td class="v">0,3 m</td></tr>
+    <tr><td>Laurel</td><td class="v">0,5 m</td></tr>
+    <tr><td>Ceiba</td><td class="v">1,5 m, con los contrafuertes</td></tr>
+  </tbody>
+</table>
+<p>Costo: la celda del p95 tiene 281 árboles, unos 1&nbsp;100 segmentos, y el carro mira las 9 celdas que lo rodean, unos 10&nbsp;000 segmentos más. <code>car._hit</code> los recorre con numpy, 3 círculos por paso. El bench lo mide junto con el dibujo. Un árbol que cae sobre la calzada ya se descarta en <code>off_streets</code>, así que ningún tronco corta una calle.</p>
+
+<h2><span class="n">07</span>Cómo se ve <span class="try">try it</span></h2>
 <div class="mock">
   <svg id="row" viewBox="0 0 480 220" role="img" aria-label="Maqueta de una fila de árboles vista de lado"></svg>
   <div class="ctl">
     <div><label>Zona</label><div class="row" id="zone"><button data-v="coast">costa</button><button data-v="old" class="on">centro viejo</button><button data-v="vedado">Vedado</button><button data-v="park">parque</button><button data-v="out">fuera</button></div></div>
-    <div><label>Mes</label><div class="row" id="month"><button data-v="jun" class="on">junio</button><button data-v="dec">diciembre</button></div></div>
+    <div><label for="mon">Mes: <span id="monv"></span></label><input id="mon" type="range" min="1" max="12" step="1" value="6"></div>
     <div><button id="seed">otra semilla</button></div>
     <div class="out" id="out"></div>
   </div>
 </div>
-<p class="cap">Maqueta de lado, a escala aproximada, con las mezclas de la sección 04. Muestra la silueta y la variación, no la malla real. Datos de muestra.</p>
+<p class="cap">Maqueta de lado, a escala aproximada, con las mezclas de la sección 04 y los colores de la sección 05. Muestra la silueta y la variación, no la malla real. Datos de muestra.</p>
 
-<h2><span class="n">06</span>Cambios en el código</h2>
+<h2><span class="n">08</span>Cambios en el código</h2>
 <ol>
-  <li><code>rules/trees.py</code>: una plantilla por especie en vez de una, <code>species(xz, zone)</code> que elige con la semilla de cada punto, y <code>trees()</code> que agrupa por especie, gira, escala y tiñe.</li>
-  <li><code>cells.py</code>: pasa la zona de cada árbol (municipio y distancia al mar, calculada una vez por celda).</li>
+  <li><code>rules/trees.py</code>: una plantilla por especie y estado de copa (llena, rala, pelada) en vez de una, y <code>cell_trees(i, j)</code>, que junta los árboles de la celda y les da especie, escala, giro y color con la semilla de cada punto y el mes. <code>trees()</code> agrupa por especie, gira, escala y tiñe.</li>
+  <li><code>cells.py</code>: dibuja lo que da <code>cell_trees</code>. La zona de cada árbol sale del municipio y de la distancia al mar, calculada una vez por celda.</li>
+  <li><code>walls.py</code>: añade los troncos de <code>cell_trees</code> a los muros de la celda.</li>
   <li><code>parks.py</code>: pasa la especie de cada fila de paseo y la ceiba de la plaza.</li>
   <li><code>summary.py</code>: el verde lejano toma el tono medio de la mezcla de la zona.</li>
-  <li>El flamboyán lee el mes del reloj del juego, que ya usa el clima: rojo de mayo a agosto, verde el resto. El cambio solo se ve al reconstruir la celda.</li>
+  <li>El mes sale del reloj del juego, el mismo que usa el clima.</li>
+  <li>Base: la rama <code>whole-cuba</code>, que ya siembra al abrir la celda. Esta obra empieza cuando esa rama entre en main, o sobre ella.</li>
 </ol>
 
-<h2><span class="n">07</span>Pruebas</h2>
+<h2><span class="n">09</span>Pruebas</h2>
 <ul>
   <li>Cada plantilla: triángulos dentro del presupuesto, normales unitarias, nada bajo el suelo, base en el origen.</li>
   <li>La mezcla: 10&nbsp;000 puntos en cada zona dan las proporciones de la tabla con un margen de 3 puntos.</li>
   <li>El mismo punto da la misma especie, giro y tamaño en dos construcciones.</li>
-  <li>El bench del recorrido fijo en la máquina con GPU, antes y después: p95 sube 2 ms como mucho.</li>
+  <li>Cada especie da en cada mes el color y el estado de copa de la tabla de la sección 05.</li>
+  <li>Choque: un carro que va de frente contra un tronco se para, y uno que lo roza sigue de lado. Los troncos de los muros están en los mismos sitios que los dibujados.</li>
+  <li>El bench del recorrido fijo en la máquina con GPU, antes y después, con los muros de los troncos puestos: p95 sube 2 ms como mucho.</li>
   <li>Vistas aéreas y a pie de calle del Prado, Vedado, la costa del este y un parque orgánico.</li>
 </ul>
 
-<h2><span class="n">08</span>Fuera de esta spec</h2>
+<h2><span class="n">10</span>Fuera de esta spec</h2>
 <ul>
-  <li>Viento: mover las copas en el shader necesita un atributo nuevo en el material de la celda.</li>
-  <li>Árboles que chocan con el carro.</li>
+  <li>Viento: mover las copas en el shader necesita un atributo nuevo en el material de la celda, en manifoldx. Va después.</li>
+  <li>Hojas que caen o flores en el suelo.</li>
   <li>Arbustos, setos y uva caleta.</li>
   <li>Sombra propia de cada árbol en el suelo, más allá de la que ya dé el motor.</li>
 </ul>
 
-<h2><span class="n">09</span>Preguntas abiertas</h2>
-<ol>
-  <li>¿Los troncos chocan con el carro? Hoy no, y con 1,2 millones de árboles un choque mal puesto en una acera estrecha se nota mucho.</li>
-  <li>¿El flamboyán florece según el mes del juego, o siempre rojo para que se vea?</li>
-  <li>¿Viento en las copas ahora (toca manifoldx) o después?</li>
-</ol>
+<h2><span class="n">11</span>Preguntas abiertas</h2>
+<p>Ninguna. Los meses de la sección 05 se ajustan mirando las vistas.</p>
 </main>
 <script>
 const MIX={coast:{coco:50,alm:35,laurel:15},old:{laurel:75,alm:15,flam:10},vedado:{laurel:40,flam:30,alm:20,palma:10},
 park:{laurel:45,flam:25,palma:20,alm:10},out:{palma:45,flam:20,laurel:20,alm:10,ceiba:5}};
 const NAME={laurel:'laurel',flam:'flamboyán',alm:'almendro',palma:'palma real',coco:'cocotero',ceiba:'ceiba'};
-let zone='old',month='jun',seed=1;
+let zone='old',mon=6,seed=1;
+const MES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const dry=()=>mon>=3&&mon<=4;
 function rnd(){seed=(seed*16807)%2147483647;return (seed-1)/2147483646}
 function pick(m){let r=rnd()*100;for(const k in m){r-=m[k];if(r<0)return k}return Object.keys(m)[0]}
 function shade(c,t){return '#'+c.match(/../g).map(h=>Math.max(0,Math.min(255,Math.round(parseInt(h,16)*t)))
 .toString(16).padStart(2,'0')).join('')}
 function tree(k,x,s,t){const g=[];const y=200,M=7*s;
-const leaf=shade('2f6b2a',t),dark=shade('234f1f',t);
+const leaf=shade(dry()?'4a7a2a':'2f6b2a',t),dark=shade(dry()?'3a5f20':'234f1f',t);
 if(k==='laurel'){g.push(`<rect x="${x-0.5*M}" y="${y-4*M}" width="${M}" height="${4*M}" fill="#5a4030"/>`);
 for(const [dx,dy,r] of [[-1.6,-6,2.6],[1.6,-6.2,2.5],[0,-8,2.8]])g.push(`<circle cx="${x+dx*M}" cy="${y+dy*M}" r="${r*M}" fill="${dy<-7?leaf:dark}"/>`)}
-if(k==='flam'){const red=month==='jun'?shade('c8382a',t):leaf;
+if(k==='flam'){const sparse=mon>=2&&mon<=4;const red=mon>=5&&mon<=8?shade('c8382a',t):mon===9?shade('2f6b2a',t):sparse?shade('8a9a5a',t):shade('d08a2a',t);
 g.push(`<path d="M${x} ${y} L${x} ${y-4*M} M${x} ${y-4*M} L${x-3*M} ${y-6*M} M${x} ${y-4*M} L${x+3*M} ${y-6*M}" stroke="#5a4030" stroke-width="${0.6*M}"/>`);
-g.push(`<ellipse cx="${x}" cy="${y-6.6*M}" rx="${5.5*M}" ry="${1.6*M}" fill="${red}"/>`)}
+g.push(`<ellipse cx="${x}" cy="${y-6.6*M}" rx="${(sparse?4:5.5)*M}" ry="${(sparse?0.9:1.6)*M}" fill="${red}" opacity="${sparse?0.7:1}"/>`)}
 if(k==='alm'){g.push(`<rect x="${x-0.35*M}" y="${y-9*M}" width="${0.7*M}" height="${9*M}" fill="#5a4030"/>`);
-[[4.5,-4],[3.6,-6.2],[2.4,-8.2]].forEach(([w,dy],i)=>g.push(`<ellipse cx="${x}" cy="${y+dy*M}" rx="${w*M}" ry="${0.7*M}" fill="${i==0?shade('8a4a2a',t):leaf}"/>`))}
+[[4.5,-4],[3.6,-6.2],[2.4,-8.2]].forEach(([w,dy],i)=>g.push(`<ellipse cx="${x}" cy="${y+dy*M}" rx="${w*M}" ry="${0.7*M}" fill="${(mon===12||mon<=2)&&i<2?shade(i?'c0702a':'b8452a',t):shade('2f6b2a',t)}"/>`))}
 if(k==='palma'||k==='coco'){const h=(k==='palma'?18:11)*M,bend=k==='coco'?3*M:0;
 g.push(`<path d="M${x} ${y} Q${x+bend*0.2} ${y-h/2} ${x+bend} ${y-h}" stroke="${k==='palma'?'#a8a49a':'#7a6650'}" stroke-width="${0.8*M}" fill="none"/>`);
 for(let a=-4;a<=4;a++){const ex=x+bend+a*1.1*M,ey=y-h+Math.abs(a)*0.7*M+1.5*M;
 g.push(`<path d="M${x+bend} ${y-h} Q${x+bend+a*0.7*M} ${y-h-1.5*M} ${ex} ${ey}" stroke="${leaf}" stroke-width="${0.45*M}" fill="none"/>`)}}
 if(k==='ceiba'){g.push(`<path d="M${x-2.5*M} ${y} L${x-0.8*M} ${y-3*M} L${x-0.8*M} ${y-12*M} L${x+0.8*M} ${y-12*M} L${x+0.8*M} ${y-3*M} L${x+2.5*M} ${y}Z" fill="#8f877a"/>`);
-g.push(`<ellipse cx="${x}" cy="${y-13*M}" rx="${8*M}" ry="${2.2*M}" fill="${dark}"/>`)}
+if(mon>=1&&mon<=3)g.push(`<path d="M${x} ${y-12*M} L${x-6*M} ${y-14*M} M${x} ${y-12*M} L${x+6*M} ${y-14*M} M${x} ${y-12*M} L${x} ${y-15*M}" stroke="#8f877a" stroke-width="${0.5*M}"/>`);else g.push(`<ellipse cx="${x}" cy="${y-13*M}" rx="${8*M}" ry="${2.2*M}" fill="${shade('234f1f',t)}"/>`)}
 return g.join('')}
 function draw(){const s0=seed;const out=[`<rect x="0" y="200" width="480" height="20" fill="#3d3a33"/>`],count={};
 let x=30;while(x<460){const k=pick(MIX[zone]);count[k]=(count[k]||0)+1;
@@ -201,9 +233,9 @@ document.getElementById('row').innerHTML=out.join('');seed=s0;
 document.getElementById('out').textContent=Object.entries(count).map(([k,n])=>`${NAME[k]}: ${n}`).join('\n')}
 function group(id,set){document.querySelectorAll('#'+id+' button').forEach(b=>b.onclick=()=>{
 document.querySelectorAll('#'+id+' button').forEach(o=>o.classList.toggle('on',o===b));set(b.dataset.v);draw()})}
-group('zone',v=>zone=v);group('month',v=>month=v);
+group('zone',v=>zone=v);
+const ms=document.getElementById('mon');ms.oninput=()=>{mon=+ms.value;document.getElementById('monv').textContent=MES[mon-1];draw()};ms.oninput();
 document.getElementById('seed').onclick=()=>{seed=(seed*48271)%2147483647||7;draw()};
-draw();
 </script>
 </body>
 </html>

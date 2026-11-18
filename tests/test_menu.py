@@ -74,7 +74,7 @@ def test_menu_goes_from_main_to_driving_to_pause_and_back(city_npz, tmp_path, mo
     engine.render_frame(supersample=1)
     menu.press("Escape")
     assert menu.current == "pause" and game.mode == "paused" and game.clock.paused
-    for _ in range(4):
+    for _ in range(5):
         menu.press("ArrowDown")  # Menú principal
     menu.press("Enter")
     assert menu.current == "main" and game.mode == "menu"

@@ -16,7 +16,7 @@ import numpy as np
 from contravia.graph import CLASSES, Graph
 from contravia.rules.traffic import KINDS
 
-LENGTH = {"car": 4.5, "taxi": 5.0, "moto": 2.5, "bus": 12.0, "truck": 8.0}
+LENGTH = {"car": 4.5, "taxi": 5.0, "moto": 2.0, "bus": 12.0, "truck": 8.0}
 WIDTH = {"car": 1.8, "taxi": 1.95, "moto": 0.8, "bus": 2.5, "truck": 2.5}
 ACCEL, BRAKE, S0, HEADWAY = 1.5, 2.0, 2.0, 1.2  # intelligent driver model: m/s², m/s², m, s
 LANE_WIDTH = 3.0  # metres, at most; narrower when the street is narrow

@@ -1,25 +1,29 @@
-"""The fleet: the kinds of vehicle the streets draw, their families, eras, parameter ranges and colours.
+"""The fleet: the kinds of vehicle the streets draw, their presets, families, eras, ranges and colours.
 
 A kind is what the traffic counts (a car, a taxi, a bus, a truck, a moto, a tricycle, a bicitaxi, a bike, a police
 car or a fire engine). A family is one shape inside a kind: the 1950s almendrón or the 1980s three-box saloon.
 Every family names its manifoldx builder, the reference preset it starts from, the era whose colours it wears and
-how many variants it draws.
+how many variants it draws. The presets are the single source of every reference parameter set: a family draws
+from its preset and the Garaje's :func:`catalogue` builds the same object, so the almendrón exists once.
 
-:func:`variant` returns one variant of one family: a parameter set drawn from :func:`ranges`, plus its colourways
-as palettes. It is seeded from the kind, the family and the index with SHA-256, never with Python's ``hash``, so
-the same arguments give the same vehicle on every machine and in every run. A draw that manifoldx's
+:func:`ranges` is the one table of ranges. It answers for a family and, when given, checks its era; the traffic
+draws from it and the Garaje spans the union of a builder's families with it, so a range changed once changes
+both. :func:`variant` returns one variant of one family: a parameter set drawn from the family's ranges, plus its
+colourways as palettes. It is seeded from the kind, the family and the index with SHA-256, never with Python's
+``hash``, so the same arguments give the same vehicle on every machine and in every run. A draw that manifoldx's
 ``validate`` rejects is redrawn from a derived seed a bounded number of times; a family that keeps failing has a
 bug in its ranges, and the error says so.
 
 The names are the ones people in Havana use for these cars; no family is named after a maker or a model. The car
 ranges follow the eras table of the vehicles spec, and the ranges of buses, trucks and cycles sit around their
 reference presets. Every range lies inside the range manifoldx publishes for the same parameter
-(:meth:`manifoldx.modeling.assets.vehicle.ParamsRanges.ranges`), so every draw can be built and the Garaje can
-offer the same table as the ends of its sliders.
+(:meth:`manifoldx.modeling.assets.vehicle.ParamsRanges.ranges`), so every draw and every slider position can be
+built.
 """
 
 from __future__ import annotations
 
+import functools
 import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -29,21 +33,41 @@ from manifoldx.modeling.assets.bus import BusParams, build_bus
 from manifoldx.modeling.assets.car import CarParams, build_car
 from manifoldx.modeling.assets.cycle import (
     CycleParams,
-    bicycle,
     build_cycle,
-    cargo_tricycle,
-    cycle_rickshaw,
-    electric_moto,
-    motorcycle,
+)
+from manifoldx.modeling.assets.cycle import (
+    bicycle as _bicycle,
+)
+from manifoldx.modeling.assets.cycle import (
+    cargo_tricycle as _cargo_tricycle,
+)
+from manifoldx.modeling.assets.cycle import (
+    cycle_rickshaw as _cycle_rickshaw,
+)
+from manifoldx.modeling.assets.cycle import (
+    electric_moto as _electric_moto,
+)
+from manifoldx.modeling.assets.cycle import (
+    motorcycle as _motorcycle,
 )
 from manifoldx.modeling.assets.truck import (
     TruckParams,
-    box_truck,
     build_truck,
-    cargo_truck_1980s,
-    dump_truck,
-    fire_engine,
-    tanker,
+)
+from manifoldx.modeling.assets.truck import (
+    box_truck as _box_truck,
+)
+from manifoldx.modeling.assets.truck import (
+    cargo_truck_1980s as _cargo_truck_1980s,
+)
+from manifoldx.modeling.assets.truck import (
+    dump_truck as _dump_truck,
+)
+from manifoldx.modeling.assets.truck import (
+    fire_engine as _fire_engine,
+)
+from manifoldx.modeling.assets.truck import (
+    tanker as _tanker,
 )
 
 # The ten kinds of the fleet spec, in the order the sheets and the traffic read them.
@@ -203,7 +227,7 @@ def camion_pasajeros() -> TruckParams:
     is all this family needs.
     """
     return replace(
-        box_truck(), length=7.6, height=3.35, wheelbase=4.2, front_overhang=1.20,
+        _box_truck(), length=7.6, height=3.35, wheelbase=4.2, front_overhang=1.20,
         cab_length=1.75, body_height=3.15, body_floor=1.05,
         cab_paint="#d9d5c4", body_paint="#cfc9b4",
     )
@@ -216,17 +240,83 @@ def triciclo_pasajeros() -> CycleParams:
     with a hub motor and a footboard. The canopy is what reads as a cab from the street.
     """
     return replace(
-        cycle_rickshaw(), power="hub", step_through=True, footboard=True,
+        _cycle_rickshaw(), power="hub", step_through=True, footboard=True,
         headlamp="rect", tail_lamp=True, frame_paint="#e8e4d4", box_paint="#7fa8c4",
     )
 
 
+# The trucks and cycles the catalogue names after their trade: each family and its preset are one and the same
+# reference parameter set, so the traffic's variant and the Garaje's preset start from the same numbers.
+
+
+def camion_80() -> TruckParams:
+    """An 1980s cargo truck: a flatbed with wooden sides and a round-cabbed lorry in front."""
+    return _cargo_truck_1980s()
+
+
+def furgon() -> TruckParams:
+    """A box truck: a closed cargo box behind the cab, for the centre's deliveries."""
+    return _box_truck()
+
+
+def cisterna() -> TruckParams:
+    """A tanker: a silver cylinder over the chassis, for fuel and water."""
+    return _tanker()
+
+
+def volquete() -> TruckParams:
+    """A dump truck: a raised steel bin that tips its load at a building site."""
+    return _dump_truck()
+
+
+def bomberos() -> TruckParams:
+    """A fire engine: a red locker body, a ladder on the roof and beacons on the cab."""
+    return _fire_engine()
+
+
+def patrulla() -> CarParams:
+    """A 1980s saloon in the police's white and blue, with the blue band low on its flanks and a roof bar."""
+    return replace(ruso(), livery=POLICE_AREAS, lightbar="bar",
+                   lightbar_colours=(POLICE_BLUES[0], POLICE_FLASH))
+
+
+def moto_electrica() -> CycleParams:
+    """An electric moto: a hub motor, a step-through frame and a flat footboard."""
+    return _electric_moto()
+
+
+def moto_dos_tiempos() -> CycleParams:
+    """A 1980s two-stroke motorcycle: a small tank, a saddle and a chrome exhaust."""
+    return _motorcycle()
+
+
+def triciclo_carga() -> CycleParams:
+    """An electric cargo tricycle: two rear wheels under a yellow box and a low saddle."""
+    return _cargo_tricycle()
+
+
+def bicitaxi() -> CycleParams:
+    """A pedal rickshaw: a bench and a canopy over two rear wheels, pedalled from the front."""
+    return _cycle_rickshaw()
+
+
+def bicicleta() -> CycleParams:
+    """A city bicycle: a plain diamond frame, a saddle and a rear rack."""
+    return _bicycle()
+
+
 # --- the ranges each era draws from --------------------------------------------------------------------------
+
+# The measurements a family edits but its generator fixes through a style option or its preset instead of drawing
+# a number. They sit in the same era table as every other measurement, so the Garaje's slider and the generator
+# read one number, and the draw skips them so a family's variants stay the same.
+STYLE_ONLY = frozenset({"fin_height", "fender_crown", "whitewall", "corner_radius"})
 
 # Cars: the eras table of the vehicles spec, then each family narrows the fields it has to. All the heights
 # are absolute metres and stay in order for every point of the box, so a draw never needs a repair: the sill is
 # below the belt, the belt below the roof, the bumper below the belt, and the stations along the body keep
-# their order.
+# their order. Fins, fender crowns and whitewalls are the era's styling: the 1950s wear them, the decades after
+# keep them small or leave them out, and a style option picks the exact value.
 CAR_RANGES = {
     "1950s": {
         "length": (4.80, 5.40), "width": (1.85, 2.00), "height": (1.45, 1.60),
@@ -242,6 +332,7 @@ CAR_RANGES = {
         "hood_crown": (0.10, 0.16), "windscreen_wrap": (0.00, 0.60),
         "b_pillar_u": (0.52, 0.60), "c_pillar_u": (0.62, 0.68),
         "headlamp_yaw": (15.0, 30.0), "taillamp_yaw": (20.0, 35.0),
+        "fin_height": (0.0, 0.30), "fender_crown": (0.0, 0.20), "whitewall": (0.0, 0.08),
     },
     "80s": {
         "length": (3.70, 4.40), "width": (1.55, 1.70), "height": (1.38, 1.48),
@@ -256,6 +347,7 @@ CAR_RANGES = {
         "bumper_height": (0.36, 0.44), "bumper_proud": (0.04, 0.08),
         "hood_crown": (0.08, 0.12), "b_pillar_u": (0.52, 0.58), "c_pillar_u": (0.62, 0.68),
         "headlamp_yaw": (12.0, 24.0), "taillamp_yaw": (16.0, 28.0),
+        "fin_height": (0.0, 0.04), "fender_crown": (0.0, 0.04), "whitewall": (0.0, 0.0),
     },
     "modern": {
         "length": (4.30, 4.70), "width": (1.70, 1.85), "height": (1.45, 1.58),
@@ -270,6 +362,7 @@ CAR_RANGES = {
         "bumper_height": (0.38, 0.46), "bumper_proud": (0.0, 0.04),
         "hood_crown": (0.08, 0.12), "b_pillar_u": (0.52, 0.58), "c_pillar_u": (0.62, 0.70),
         "headlamp_yaw": (18.0, 34.0), "taillamp_yaw": (16.0, 30.0),
+        "fin_height": (0.0, 0.0), "fender_crown": (0.0, 0.06), "whitewall": (0.0, 0.0),
     },
 }
 
@@ -283,7 +376,7 @@ BUS_RANGES = {
         "sign_bottom": (2.78, 2.86), "sign_top": (2.98, 3.08),
         "window_bottom": (1.15, 1.30), "window_top": (2.50, 2.70),
         "rear_window_bottom": (1.15, 1.30), "rear_window_top": (2.45, 2.65),
-        "door_bottom": (0.28, 0.34), "pillar_spacing": (1.20, 1.50),
+        "door_bottom": (0.28, 0.34), "pillar_spacing": (1.20, 1.50), "corner_radius": (0.05, 0.60),
     },
     "guagua_vieja": {
         "length": (8.80, 10.00), "width": (2.40, 2.50), "height": (2.90, 3.10), "floor": (0.65, 0.80),
@@ -293,7 +386,7 @@ BUS_RANGES = {
         "sign_bottom": (2.60, 2.70), "sign_top": (2.82, 2.94),
         "window_bottom": (1.34, 1.48), "window_top": (2.30, 2.46),
         "rear_window_bottom": (1.30, 1.44), "rear_window_top": (2.26, 2.42),
-        "door_bottom": (0.60, 0.72), "pillar_spacing": (1.05, 1.30),
+        "door_bottom": (0.60, 0.72), "pillar_spacing": (1.05, 1.30), "corner_radius": (0.05, 0.45),
     },
     "interprovincial": {
         "length": (11.5, 13.0), "width": (2.50, 2.60), "height": (3.30, 3.60), "floor": (0.55, 0.70),
@@ -303,7 +396,7 @@ BUS_RANGES = {
         "sign_bottom": (2.84, 2.94), "sign_top": (3.10, 3.24),
         "window_bottom": (1.44, 1.56), "window_top": (2.70, 2.88),
         "rear_window_bottom": (1.40, 1.54), "rear_window_top": (2.66, 2.84),
-        "door_bottom": (0.50, 0.62), "pillar_spacing": (1.35, 1.60),
+        "door_bottom": (0.50, 0.62), "pillar_spacing": (1.35, 1.60), "corner_radius": (0.05, 0.55),
     },
 }
 
@@ -473,29 +566,29 @@ _add(
            ranges=BUS_RANGES["guagua_vieja"]),
     Family(name="interprovincial", kind="bus", era="modern", builder="bus", preset=interprovincial, variants=2,
            ranges=BUS_RANGES["interprovincial"]),
-    Family(name="camion_80", kind="truck", era="80s", builder="truck", preset=cargo_truck_1980s, variants=2,
+    Family(name="camion_80", kind="truck", era="80s", builder="truck", preset=camion_80, variants=2,
            ranges=TRUCK_RANGES["camion_80"]),
-    Family(name="furgon", kind="truck", era="80s", builder="truck", preset=box_truck, variants=2,
+    Family(name="furgon", kind="truck", era="80s", builder="truck", preset=furgon, variants=2,
            ranges=TRUCK_RANGES["furgon"]),
-    Family(name="cisterna", kind="truck", era="80s", builder="truck", preset=tanker, variants=2,
+    Family(name="cisterna", kind="truck", era="80s", builder="truck", preset=cisterna, variants=2,
            ranges=TRUCK_RANGES["cisterna"]),
-    Family(name="volquete", kind="truck", era="modern", builder="truck", preset=dump_truck, variants=2,
+    Family(name="volquete", kind="truck", era="modern", builder="truck", preset=volquete, variants=2,
            ranges=TRUCK_RANGES["volquete"]),
     Family(name="pasajeros", kind="truck", era="modern", builder="truck", preset=camion_pasajeros, variants=2,
            ranges=TRUCK_RANGES["pasajeros"]),
-    Family(name="moto_electrica", kind="moto", era="modern", builder="cycle", preset=electric_moto, variants=3,
+    Family(name="moto_electrica", kind="moto", era="modern", builder="cycle", preset=moto_electrica, variants=3,
            ranges=CYCLE_RANGES["moto_electrica"]),
-    Family(name="moto_dos_tiempos", kind="moto", era="80s", builder="cycle", preset=motorcycle, variants=2,
+    Family(name="moto_dos_tiempos", kind="moto", era="80s", builder="cycle", preset=moto_dos_tiempos, variants=2,
            ranges=CYCLE_RANGES["moto_dos_tiempos"]),
-    Family(name="triciclo_carga", kind="tricycle", era="modern", builder="cycle", preset=cargo_tricycle,
+    Family(name="triciclo_carga", kind="tricycle", era="modern", builder="cycle", preset=triciclo_carga,
            variants=1, ranges=CYCLE_RANGES["triciclo_carga"]),
     Family(name="triciclo_pasajeros", kind="tricycle", era="modern", builder="cycle",
            preset=triciclo_pasajeros, variants=1, ranges=CYCLE_RANGES["triciclo_pasajeros"]),
-    Family(name="bicitaxi", kind="bicitaxi", era="modern", builder="cycle", preset=cycle_rickshaw, variants=2,
+    Family(name="bicitaxi", kind="bicitaxi", era="modern", builder="cycle", preset=bicitaxi, variants=2,
            ranges=CYCLE_RANGES["bicitaxi"]),
-    Family(name="bicicleta", kind="bike", era="modern", builder="cycle", preset=bicycle, variants=2,
+    Family(name="bicicleta", kind="bike", era="modern", builder="cycle", preset=bicicleta, variants=2,
            ranges=CYCLE_RANGES["bicicleta"]),
-    Family(name="bomberos", kind="fire", era="services", builder="truck", preset=fire_engine, variants=1,
+    Family(name="bomberos", kind="fire", era="services", builder="truck", preset=bomberos, variants=1,
            ranges={
                "length": (8.20, 9.00), "width": (2.45, 2.55), "height": (3.15, 3.35),
                "wheelbase": (4.40, 4.80), "front_overhang": (1.40, 1.60), "track": (2.00, 2.10),
@@ -558,11 +651,16 @@ STYLES = {
 
 # --- colours -------------------------------------------------------------------------------------------------
 
-# The body colours of each era, before they are faded: the vehicles spec's lists.
+# The body colours of each era, before they are faded, each with the name the Garaje shows it under: the vehicles
+# spec's lists. This is the one colour table: the generator draws the faded hexes and the Garaje's swatches are the
+# same entries, in this order, with these names.
 ERA_COLOURS = {
-    "1950s": ("#3fbfb5", "#efe6cf", "#e8796b", "#a8dcc4", "#e6a6b4", "#efe0a0"),
-    "80s": ("#243b62", "#cbbd9a", "#e8e6e0", "#b8862f", "#7fa8c4", "#a83228"),
-    "modern": ("#eceff0", "#b8bcc0", "#6f7377", "#232529", "#2f5d8c", "#a4241c"),
+    "1950s": (("Turquesa", "#3fbfb5"), ("Crema", "#efe6cf"), ("Coral", "#e8796b"),
+              ("Menta", "#a8dcc4"), ("Rosado", "#e6a6b4"), ("Amarillo pálido", "#efe0a0")),
+    "80s": (("Azul marino", "#243b62"), ("Beige", "#cbbd9a"), ("Blanco", "#e8e6e0"),
+            ("Ocre", "#b8862f"), ("Azul claro", "#7fa8c4"), ("Rojo", "#a83228")),
+    "modern": (("Plata", "#eceff0"), ("Gris", "#b8bcc0"), ("Gris oscuro", "#6f7377"),
+               ("Negro", "#232529"), ("Azul", "#2f5d8c"), ("Rojo oscuro", "#a4241c")),
 }
 
 # How far each era's paint has faded toward the sun-bleached dust of Havana.
@@ -579,7 +677,13 @@ ERA_SECONDS = {
 AMBER = "#f0b23c"
 POLICE_WHITE = "#f2f4f6"
 POLICE_BLUES = ("#22418c", "#16295a", "#2f5d8c", "#1d3f86")
+POLICE_FLASH = "#e01b1b"
 FIRE_REDS = ("#c62828", "#b32222", "#d33a2c")
+
+# A police car's paint areas: a blue band low on the flanks and blue front doors. The hex names the paint the
+# livery replaces, so the palette's `livery0` and `livery1` materials take the blue.
+POLICE_AREAS = (("#111111", [(0.0, 0.30), (1.0, 0.30), (1.0, 0.60), (0.0, 0.60)]),
+                ("#111111", [(0.02, 0.30), (0.34, 0.30), (0.34, 0.84), (0.02, 0.84)]))
 
 
 def _rgb(colour: str) -> np.ndarray:
@@ -603,8 +707,13 @@ def _faded(colour: str, amount: float) -> str:
     return "#{:02x}{:02x}{:02x}".format(*out)
 
 
-# The faded lists the generator draws from.
-COLOURS = {era: tuple(_faded(colour, FADE[era]) for colour in colours)
+def faded(colour: str, era: str) -> str:
+    """A colour as the street paints it in `era`: mixed toward dust by that era's fade."""
+    return _faded(colour, FADE[era])
+
+
+# The faded lists the generator draws from, and the Garaje's swatches read.
+COLOURS = {era: tuple(faded(colour, era) for _, colour in colours)
            for era, colours in ERA_COLOURS.items()}
 
 # The colours a guagua's band is painted in: the greens, cyans and oranges of the metroguaguas, and the blues
@@ -615,14 +724,104 @@ BUS_ACCENTS = ("#8ccf7a", "#31b6d8", "#f0a63a", "#2f5d8c", "#c62828", "#e8d44f")
 CANOPIES = ("#efe4c6", "#5fc4b7", "#e8796b", "#7fa8c4")
 
 
+# --- the Garaje's catalogue ----------------------------------------------------------------------------------
+
+
+def _swatch(colour: str, roughness: float = 0.45, metallic: float = 0.0) -> tuple:
+    """A palette entry: an sRGB colour, a roughness and a metallic, as the builders' palettes take them."""
+    return (colour, roughness, metallic)
+
+
+@dataclass(frozen=True)
+class Preset:
+    """One reference vehicle of the catalogue: its key, the name the game shows, its family, tab and era, its
+    reference parameters and colours, and the facts its card shows.
+
+    `drivable` is False for cycles until riders exist. `livery` is the Garaje's livery the preset wears, if any.
+    """
+
+    key: str
+    name: str
+    family: str
+    tab: str
+    era: str
+    params: object
+    palette: dict
+    seats: int
+    where: str
+    livery: str = "Ninguno"
+    drivable: bool = True
+
+
+@functools.cache
+def catalogue() -> dict[str, Preset]:
+    """Every reference vehicle by key, in the order the Garaje's Salón lists it.
+
+    Each preset takes its parameters from the same function its traffic family draws from, so a shape fixed once
+    is fixed for the traffic and for the Garaje together. The palette is only the colours the vehicle is shown
+    with; the geometry is the preset's.
+    """
+    presets = [
+        Preset("almendron", "Almendrón", "car", "Carros", "Años 50", almendron(),
+               {"paint": _swatch("#7fded6"), "roof": _swatch("#f6eed6", 0.6)}, 6,
+               "Rutas de almendrones, todo el día"),
+        Preset("ruso", "Ruso", "car", "Carros", "Años 70-80", ruso(),
+               {"paint": _swatch("#2b4a86")}, 5, "Toda la ciudad"),
+        Preset("moscovita", "Moscovita", "car", "Carros", "Años 70-80", moscovita(),
+               {"paint": _swatch("#f4a593")}, 5, "Toda la ciudad"),
+        Preset("metroguagua", "Metroguagua", "bus", "Guaguas", "Moderno", metroguagua(),
+               {"paint": _swatch("#f3efe2"), "livery0": _swatch("#8ccf7a", 0.5), "sign": _swatch(AMBER, 0.5),
+                "black": _swatch("#33373a", 0.5), "glass": _swatch("#c8d8dd", 0.05),
+                "chrome": _swatch("#a8adb1", 0.3)}, 80, "Sus rutas y paradas"),
+        Preset("camion", "Camión de los 80", "truck", "Camiones", "Años 70-80", camion_80(),
+               {"paint": _swatch("#7fa8bd", 0.4, 0.1), "body": _swatch("#7fa8bd", 0.4, 0.1),
+                "deck": _swatch("#8a5a33", 0.85)}, 2, "Avenidas y puerto"),
+        Preset("caja", "Camión de caja", "truck", "Camiones", "Moderno", furgon(),
+               {"paint": _swatch("#f1f2f3", 0.35), "body": _swatch("#b9bdc2")}, 2, "El centro, de noche"),
+        Preset("pipa", "Pipa", "truck", "Camiones", "Años 70-80", cisterna(),
+               {"paint": _swatch("#e7c33b", 0.35), "body": _swatch("#c9ccd0", 0.25, 0.9),
+                "tank": _swatch("#c9ccd0", 0.25, 0.9)}, 2, "Avenidas, de noche"),
+        Preset("volteo", "Volteo", "truck", "Camiones", "Años 70-80", volquete(),
+               {"paint": _swatch("#d96a1f", 0.4), "body": _swatch("#d96a1f", 0.4)}, 2, "Obras y afueras"),
+        Preset("patrulla", "Patrulla", "car", "Servicios", "Años 70-80", patrulla(),
+               {"paint": _swatch(POLICE_WHITE, 0.35), "roof": _swatch(POLICE_BLUES[0], 0.5)}, 4,
+               "Donde haya lío", livery="Policía"),
+        Preset("bomberos", "Bomberos", "truck", "Servicios", "Años 70-80", bomberos(),
+               {"paint": _swatch(FIRE_REDS[0], 0.35), "body": _swatch(FIRE_REDS[0], 0.35),
+                "locker": _swatch("#b9bdc2", 0.45, 0.6), "ladder": _swatch("#c9ccd0", 0.3, 0.8),
+                "livery0": _swatch("#f4f4f2", 0.35)}, 4, "Desde su estación"),
+        Preset("bicitaxi", "Bicitaxi", "cycle", "Ciclos", "Moderno", bicitaxi(),
+               {"paint": _swatch("#d6dbdc", 0.35, 0.1), "box": _swatch("#5fc4b7"), "canopy": _swatch("#efe4c6", 0.65),
+                "spoke": _swatch("#d8dcdd", 0.25, 0.8), "chrome": _swatch("#d8dcdd", 0.2, 0.8),
+                "saddle": _swatch("#2a2a2e", 0.8)}, 2, "Centro y Habana Vieja", drivable=False),
+        Preset("triciclo", "Triciclo eléctrico", "cycle", "Ciclos", "Moderno", triciclo_carga(),
+               {"paint": _swatch("#ffe94f", 0.5), "box": _swatch("#ffe94f", 0.5), "canopy": _swatch("#ffe94f", 0.5),
+                "seat": _swatch("#8fe0cf", 0.5), "saddle": _swatch("#8fe0cf", 0.5)}, 6, "Rutas cortas",
+               drivable=False),
+        Preset("moto", "Moto", "cycle", "Ciclos", "Años 70-80", moto_dos_tiempos(),
+               {"paint": _swatch("#b6f2e2", 0.4, 0.05), "saddle": _swatch("#17171a", 0.85),
+                "engine": _swatch("#c9c9c4", 0.45, 0.2), "chrome": _swatch("#dfe2e3", 0.15, 0.9)}, 2,
+               "Toda la ciudad", drivable=False),
+        Preset("motoelectrica", "Moto eléctrica", "cycle", "Ciclos", "Moderno", moto_electrica(),
+               {"paint": _swatch("#ff7a62"), "saddle": _swatch("#bfe8d8", 0.6), "box": _swatch("#bfe8d8", 0.6),
+                "chrome": _swatch("#c3c7c9", 0.35, 0.6), "rim": _swatch("#8e9295", 0.5, 0.6),
+                "spoke": _swatch("#a9adaf", 0.5, 0.6)}, 2, "Toda la ciudad", drivable=False),
+        Preset("bicicleta", "Bicicleta", "cycle", "Ciclos", "Moderno", bicicleta(),
+               {"paint": _swatch("#2f5fa8")}, 1, "Toda la ciudad", drivable=False),
+    ]
+    return {preset.key: preset for preset in presets}
+
+
 # --- ranges and variants -------------------------------------------------------------------------------------
 
 
 def ranges(family: str, era: str | None = None) -> dict[str, tuple[float, float]]:
     """The ranges one family draws from, per parameter, as ``(low, high)`` in the parameter's own unit.
 
-    `era` is checked against the family's era when it is given, so a caller that reads the Garaje's table cannot
-    silently ask one family for another era's box. A livery family reports the union of the eras it paints over.
+    `era` is checked against the family's era when it is given, so a caller that spans a builder's families cannot
+    silently ask one family for another era's box. A livery family reports the union of the eras it paints over,
+    and a family's table carries the measurements its style options fix as well, so the Garaje's sliders and the
+    generator read one number.
     """
     if family not in FAMILIES:
         raise KeyError(f"fleet: no family named {family!r}; the families are {sorted(FAMILIES)}")
@@ -673,10 +872,13 @@ def _draw(base: Family, family: Family, k: int, rng: np.random.Generator) -> obj
     """One parameter set of `base`, with `family`'s style options, in the order the class declares its fields.
 
     The numeric draws go in field-name order so the stream does not depend on how the ranges dict was written,
-    and the style options come after them.
+    and the style options come after them. The measurements in :data:`STYLE_ONLY` are not drawn: the preset or a
+    style option fixes them, and they sit in the table only so the Garaje can offer their whole range.
     """
     values = {}
     for name in sorted(base.ranges):
+        if name in STYLE_ONLY:
+            continue
         low, high = base.ranges[name]
         values[name] = round(float(rng.uniform(low, high)), 3)
     for name, choices, weights in (STYLES.get(base.era, ()) if base.builder == "car" else ()):
@@ -701,11 +903,8 @@ def _paint(family: Family, params: object, k: int) -> object:
         )
     if family.livery == "police":
         # White paint, a blue band low on the flanks, blue front doors and a roof bar of two colours.
-        return replace(
-            params, lightbar="bar", lightbar_colours=(POLICE_BLUES[0], "#e01b1b"),
-            livery=(("#111111", [(0.0, 0.30), (1.0, 0.30), (1.0, 0.60), (0.0, 0.60)]),
-                    ("#111111", [(0.02, 0.30), (0.34, 0.30), (0.34, 0.84), (0.02, 0.84)])),
-        )
+        return replace(params, lightbar="bar", lightbar_colours=(POLICE_BLUES[0], POLICE_FLASH),
+                       livery=POLICE_AREAS)
     return params
 
 

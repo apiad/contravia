@@ -51,6 +51,13 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   pedals (`contravia/input.py`). `contravia play --traffic my.json` changes demand settings
   (`contravia/rules/traffic.py`, only the keys the file names). While playing, `manifoldx emit traffic_config population=3000000` changes settings and
   `manifoldx emit close x=... z=... minutes=40` closes a street; `engine.state.traffic` reports the numbers.
+- The Garaje (`contravia/menu.py`, drawn as `docs/superpowers/specs/2026-11-18-garaje-design.html` proposes) browses
+  every vehicle of `contravia/rules/fleet.py` turning in the street, edits a copy's knobs inside their ranges
+  (`contravia/rules/designs.py`: the union over the fleet's eras of that one table, clipped to manifoldx's
+  `Params.ranges()` and narrowed live by its `validate()`), saves designs as
+  JSON in the config folder's `garaje/` (`contravia/garage.py`) and drives any car, bus or truck from the main menu,
+  the free drive's Vehículo row or the pause. A vehicle builds on a worker thread; names are never trademarks.
+  `--screen garage|design --shot` saves either screen.
 - `contravia flowmap out.png --time "Tue 08:00" [--traffic my.json]` draws the flow layer over the province without a
   window; `contravia bench --time ...` adds traffic numbers to the run.
 - `contravia fleet-sheet OUTDIR [--kind car]` renders one review PNG per kind: a row per variant of `contravia/rules/fleet.py`
