@@ -58,7 +58,7 @@ class Game:
 
     def __init__(self, engine, city: World, at: tuple[float, float] = (0.0, 0.0), traffic=None, clock=None,
                  sky=None, with_traffic: bool = False):
-        from manifoldx.modeling.assets.car import CarParams, build_car, spawn_car
+        from manifoldx.modeling.assets.car import spawn_car
         from manifoldx.streaming import QuadStreamer, Streamer
 
         from contravia.atmosphere import Atmosphere
@@ -106,7 +106,7 @@ class Game:
         self._sea = relief(self.terrain)
         self.base = self._spawn_base()
         self.shadow = self._spawn_shadow()
-        self.model = kept(engine.state, "player car", "CarParams()", lambda: build_car(CarParams()))
+        self.model = kept(engine.state, "player car", "CarParams()", _player_car)
         self.handles = spawn_car(engine, self.model)
         self.family, self.driven, self.realism, self.locked_assists = "moderno", None, 30.0, ()
         self.physics_ms = 0.0
@@ -168,10 +168,9 @@ class Game:
         self.runner = FlowRunner(Flow(graph, self.traffic_config), self.clock)
         self.runner.warm_up(minutes=30)
         from contravia import traffic
-        from contravia.traffic import Cars
 
         tables = kept(self.engine.state, "traffic tables", (source(traffic.__file__), len(graph)),
-                      lambda: Cars(graph).tables())
+                      lambda: _baked_tables(self.city.focused_file(), graph))
         self.layer = TrafficLayer(graph, self.runner, tables=tables)
         self.fleet = Fleet(self.engine)
         self.runner.start()
@@ -814,6 +813,31 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     Image.fromarray(img).save(shot)
     game.streamer.close()
     game.detail.close()
+
+
+def _player_car():
+    """The default car's model, built once per manifoldx version and kept in the user's cache folder."""
+    from importlib.metadata import version
+
+    from manifoldx.modeling.assets.car import CarParams, build_car
+
+    from contravia.baked import baked, cache_dir
+
+    key = version("manifold-gfx")
+    return baked(cache_dir() / "player-car.pkl", key, lambda: build_car(CarParams()))
+
+
+def _baked_tables(path, graph) -> dict:
+    """The traffic tables of a province's graph, kept beside its data file once computed."""
+    from pathlib import Path
+
+    from contravia import traffic
+    from contravia.baked import baked, stamp
+
+    if path is None:
+        return traffic.Cars(graph).tables()
+    return baked(path.with_name(path.name + ".traffic.pkl"), stamp(path, Path(traffic.__file__)),
+                 lambda: traffic.Cars(graph).tables())
 
 
 def _water_without(holes, points) -> np.ndarray:

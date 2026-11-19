@@ -11,7 +11,7 @@ import os
 
 from contravia.clearance import boxes, roads_around
 from contravia.geo import CELL
-from contravia.landmarks import Landmarks
+from contravia.landmarks import Landmarks, cached
 from contravia.mesh import MeshBuilder
 from contravia.rules import buildings, detail, facades, ground, roads, trees
 from contravia.terrain import seat
@@ -30,7 +30,7 @@ def city() -> World:
     path = (os.environ.get("HAVANA_DATA", "data/cuba"),)
     if _city is None or path != _city_path:
         _city, _city_path = World.load(*path), path
-        _landmarks = Landmarks(_city)
+        _landmarks = cached(_city)
     return _city
 
 

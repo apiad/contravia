@@ -7,6 +7,8 @@ and the walls the car hits both leave out what a landmark replaces. The mock-ups
 that layer 5 builds from photos.
 """
 
+from pathlib import Path
+
 import numpy as np
 
 from contravia.citydata import Cell, CityData
@@ -98,3 +100,19 @@ class Landmarks:
     def walls(self, i: int, j: int) -> np.ndarray:
         """The (W, 2, 2) landmark wall segments whose midpoint lies in cell (i, j)."""
         return self._walls.get((i, j), np.zeros((0, 2, 2), np.float32))
+
+
+def cached(city) -> Landmarks:
+    """The city's Landmarks, read from beside its data when a World.load made it, computed and kept there once."""
+    source = getattr(city, "source", None)
+    if source is None:
+        return Landmarks(city)
+    from contravia import clearance, mesh
+    from contravia.baked import baked, stamp
+    from contravia.rules import noise
+
+    here = Path(__file__).parent
+    keep = source / "landmarks.pkl" if source.is_dir() else source.with_name(source.name + ".landmarks.pkl")
+    data = source / "index.npz" if source.is_dir() else source
+    key = stamp(data, here, clearance.__file__, mesh.__file__, noise.__file__)
+    return baked(keep, key, lambda: Landmarks(city))
