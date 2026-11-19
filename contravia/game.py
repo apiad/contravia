@@ -39,6 +39,7 @@ from contravia.world import World
 TAU = (12.0, 48.0)  # the streamer's screen error in pixels: the finest it may draw and the coarsest
 TARGET_MS = 20.0  # the frame time the streamer's detail is tuned for, 50 fps
 TUNE_EVERY = 60  # frames between two tunings, over whose median frame time
+PHOTO_SIZE = (1280, 720)  # pixels of the player's photo of a place
 FAR = 15000.0  # the camera's far plane: past the clear-weather fog's end
 RECENTRE = 2000.0  # metres from the engine's origin before it moves to the camera
 BASE = 40_000.0  # side of the plain ground under everything with flat data, so empty cells show ground, not sky
@@ -131,6 +132,7 @@ class Game:
         self.album = Album.load({p.id: p.province for p in self.places})
         self.spot, self._spot_at = None, 0.0
         self.aim = None  # while aiming at a place: {"place", "ground", "yaw", "pitch", "zoom"} (start_aim)
+        self._photo_pending = None  # (PNG path, future of its pixels) between a shot and its saving
         self.camera_override = None  # bench.py sets a function () -> (eye, target) in world metres
         self.mode = "drive"  # or "menu", "paused", "photo", "map", "garage": see contravia/menu.py
         self.photo = None  # the photo mode's and the Garaje's camera around the car: (yaw, pitch, distance)
@@ -573,6 +575,40 @@ class Game:
         return collect.framing(eye, target, collect.corners(a["place"], a["ground"]), a["zoom"],
                                walls=self.walls.near(self.car.x, self.car.z))
 
+    def take_photo(self):
+        """Photograph the place aimed at: render the photo camera's view without the HUD or menus, put the place in
+        the album and save the PNG once the pixels are read back. Returns (texture, game time, weather) for the card."""
+        from manifoldx.camera import Camera
+
+        from contravia.hud import DAY_NAMES
+        from contravia.settings import WEATHER
+
+        a = self.aim
+        eye, target = self.aim_pose()
+        o = self.o
+        cam = Camera(position=tuple(np.asarray(eye) - o), target=tuple(np.asarray(target) - o),
+                     fov=collect.fov_for(a["zoom"]), near=0.5, far=FAR)
+        texture = self.engine.render_to_texture(cam, PHOTO_SIZE, live=False, fog=True)
+        now = self.clock.now()
+        when = f"{DAY_NAMES[now.weekday()].lower()} {now:%H:%M}"
+        weather = {state: label.lower() for label, state in WEATHER}.get(self.weather_state, "")
+        pid = a["place"].id
+        self.album.add(pid, when, weather)
+        self._photo_pending = (self.album.photo_path(pid), self.engine.read_texture(texture))
+        self.spot = None
+        return texture, when, weather
+
+    def _save_photo(self) -> None:
+        """Write the last photo's PNG once its pixels are back from the GPU."""
+        if self._photo_pending is None or not self._photo_pending[1].done():
+            return
+        from PIL import Image
+
+        path, future = self._photo_pending
+        self._photo_pending = None
+        path.parent.mkdir(parents=True, exist_ok=True)
+        Image.fromarray(np.asarray(future.result(), np.uint8)).save(path)
+
     def _find_spot(self, now: float) -> None:
         """Twice a second, the nearest place without a photo that is in reach and in sight of the car, or None."""
         if now - self._spot_at < 0.5:
@@ -694,6 +730,7 @@ class Game:
             self.shelf.transform.pos = (0.0, self._shelf_y(), 0.0)
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
         self.engine.camera.vertical_scale = self._exaggeration()
+        self._save_photo()
         self.engine.camera.fov = collect.fov_for(self.aim["zoom"]) if self.mode == "aim" and self.aim else collect.FOV_DEG
         self.hud.show(self.mode == "drive")
         if self.mode == "drive":

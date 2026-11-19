@@ -529,6 +529,32 @@ class AimScreen(Screen):
                    1 + (inp.is_pressed("w") - inp.is_pressed("s")) * dt * 0.8)
 
 
+class CardScreen(Screen):
+    """A place's card, after its photo: the photo, how many of its province the player has, the title, what it is,
+    where and when, and its text. ENTER or Escape drives on."""
+
+    def build(self, width):
+        from manifoldx.gui import Image, Panel
+
+        c = self.menu.card
+        p = c["place"]
+        lines = textwrap.wrap(p.text, 58)[:8]
+        body = [_text(c["count"], ui.BOLD, 13, ui.INK)]
+        chip = Panel(body, style_overrides={"padding": "2 8", "bg": ui.YELLOW})
+        words = Panel([chip, _text(p.title, ui.TITLE, 30, ui.PAPER), _text(c["meta"], ui.BOLD, 14, ui.GREY)]
+                      + [_text(line, ui.BOLD, 15, ui.PAPER) for line in lines],
+                      style_overrides={**CLEAR, "gap": 6, "width": 470})
+        photo = Image(c["texture"], style_overrides={"width": 480, "height": 270})
+        self.panels = [Panel([photo, words], anchor="center",
+                             style_overrides={"direction": "h", "gap": 22, "padding": 22, "bg": ui.alpha(ui.INK, 0.92)}),
+                       _hints(width, [("ENTER", "Seguir")])]
+
+    def key(self, k):
+        if k in ("enter", "back"):
+            self.menu.game.resume()
+            self.menu.show(None)
+
+
 class MapScreen(Screen):
     """The map: the world from the air (contravia/mapview.py). The wheel or W and S zoom, dragging or the arrows
     move, Q and E turn, ENTER drives on the road nearest the crosshair, Escape goes back where it came from."""
@@ -886,7 +912,7 @@ class DesignScreen(RowsScreen):
 
 
 SCREENS = {"main": MainScreen, "free": FreeScreen, "options": OptionsScreen, "pause": PauseScreen,
-           "photo": PhotoScreen, "aim": AimScreen, "map": MapScreen, "garage": GarageScreen, "design": DesignScreen}
+           "photo": PhotoScreen, "aim": AimScreen, "card": CardScreen, "map": MapScreen, "garage": GarageScreen, "design": DesignScreen}
 KEY_NAMES = set(KEYS)
 
 
@@ -901,6 +927,7 @@ class Menu:
         self.builder = garage.Builder()
         self.default_model = game.model
         self.chosen, self.design, self.target, self.shown = None, None, None, None
+        self.card = None  # the last photographed place's card: {"place", "texture", "meta", "count"}
         self.undo, self.saved, self.note = [], False, ""
         self.designs = garage.load_designs()
         self.refresh_vehicles()
@@ -1091,7 +1118,16 @@ class Menu:
         self.refresh_vehicles()
 
     def took(self, framing) -> None:
-        """A good photo of the place aimed at: the next step saves it and shows its card."""
+        """A good photo of the place aimed at: take it and show the place's card over the stopped game."""
+        g = self.game
+        place = g.aim["place"]
+        texture, when, weather = g.take_photo()
+        total = sum(p.province == place.province for p in g.places)
+        self.card = {"place": place, "texture": texture, "meta": " · ".join(
+            x for x in (place.type.replace("_", " "), place.municipio, when, weather) if x),
+            "count": f"NUEVO · {g.album.count(place.province)} de {total} en {place.province}"}
+        self.screens.pop("card", None)
+        self.show("card")
 
     def pause(self) -> None:
         self.game.pause()

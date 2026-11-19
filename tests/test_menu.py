@@ -199,3 +199,49 @@ def test_f_aims_at_the_spot_space_says_what_is_wrong_and_escape_drives_on(city_n
         assert engine.camera.fov == pytest.approx(collect.FOV_DEG)
     finally:
         game._shutdown()
+
+
+def test_a_good_shot_saves_the_photo_fills_the_album_and_shows_the_card(city_npz):
+    from concurrent.futures import Future
+
+    import manifoldx as mx
+    from PIL import Image
+
+    from contravia.game import PHOTO_SIZE, Game
+    from contravia.menu import Menu
+    from contravia.world import World
+
+    engine = mx.Engine("shot", width=64, height=48)
+    game = Game(engine, World.load(str(city_npz)), clock=Clock(at=parse_at("Tue 10:00")))
+    menu = Menu(engine, game, FreeDrive.from_flags(when="Tue 10:00"), Options.load(), screen=None)
+    read = []
+
+    def read_texture(texture):
+        read.append(texture)
+        f = Future()
+        f.set_result(np.full((PHOTO_SIZE[1], PHOTO_SIZE[0], 3), 200, np.uint8))
+        return f
+
+    engine.read_texture = read_texture
+    try:
+        engine.render_frame(supersample=1)
+        from contravia import album, collect
+
+        game.spot = _place_at(game, "cerca", 40.0, 0.0, side=12.0, h=14.0)
+        game.places = collect.Places([])
+        game.places._all = [game.spot]
+        game.album = album.Album.load({"cerca": "La Habana"})
+        game.walls.near = lambda *a, **k: np.zeros((0, 2, 2))
+        menu.press("f")
+        assert game.shoot().verdict == "good"  # the starting zoom frames it
+        menu.press("Space")
+        assert menu.current == "card" and read
+        assert menu.card["count"] == "NUEVO · 1 de 1 en La Habana" and "mar 10:00" in menu.card["meta"]
+        assert game.album.has("cerca") and game.spot is None
+        engine.render_frame(supersample=1)  # the next frame writes the PNG
+        png = game.album.photo_path("cerca")
+        assert Image.open(png).size == PHOTO_SIZE
+        menu.press("Enter")
+        assert menu.current is None and game.mode == "drive"
+    finally:
+        game._shutdown()
