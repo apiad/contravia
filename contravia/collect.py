@@ -26,6 +26,20 @@ LARGEST = 0.90  # and at most this share; above it the camera is too close
 CENTRE = 0.60  # the box's centre must fall in this central share of the frame, on each axis
 INSIDE = 0.80  # at least this share of the box's rectangle on screen must be inside the frame
 ASPECT = 16 / 9  # the game window's width over its height
+EYE_HEIGHT = 1.5  # metres over the car where the photo camera stands
+REACH_SIDES = 6.0  # a place is in reach closer than this many times its largest side
+REACH_MAX = 300.0  # and never farther than this, metres
+ZOOM_MIN, ZOOM_MAX = 1.0, 3.0  # the photo camera's zoom range
+ZOOM_FILL = 0.6  # the share of the frame the starting zoom aims the box to fill
+SIGHT_INSET = 1.0  # metres a sight ray stops short of the box, so the place's own outline does not hide it
+SIGHT_EDGE = 0.15  # the share of the near face's width the side rays keep in from its ends
+
+
+# The landmarks the game models by hand (contravia/landmarks), by NAME, and the place each one is. Their box comes
+# from the mesh, which is what the player frames. The Malecón and the Plaza keep the list's box: their meshes are
+# 7 km of coast and a whole square, and the photo is of a stretch of the one and of the Memorial in the other.
+MODELLED = {"Capitolio": "L0333", "Gran Teatro": "L0330", "Morro": "L0312", "Hotel Nacional": "M001",
+            "FOCSA": "L0378", "Habana Libre": "M002"}
 
 
 @dataclass(frozen=True)
@@ -48,6 +62,7 @@ class Place:
     x: float  # the box's centre in world metres (geo.to_local)
     z: float
     axis: tuple[float, float]  # the unit direction of the `w` side in the world, as (x, z)
+    base: float | None = None  # the box's bottom when a mesh gives it; else the ground's height under the centre
 
 
 def _axis(lat: float, lon: float, yaw_deg: float) -> tuple[float, float]:
@@ -98,6 +113,26 @@ class Places:
     def by_id(self, pid: str) -> Place:
         return self._ids[pid]
 
+    def with_meshes(self, bounds: dict) -> Places:
+        """The same places, with the box of each modelled landmark (MODELLED) set to its mesh's (Landmarks.bounds).
+
+        The box stays axis-aligned, so a landmark turned on the grid gets a box a little larger than itself."""
+        new = Places([])
+        swap = {}
+        for name, pid in MODELLED.items():
+            if name in bounds and pid in self._ids:
+                lo, hi = (np.asarray(v, float) for v in bounds[name])
+                old = self._ids[pid]
+                swap[pid] = Place(**{**old.__dict__, "x": float(lo[0] + hi[0]) / 2, "z": float(lo[2] + hi[2]) / 2,
+                                     "w": float(hi[0] - lo[0]), "d": float(hi[2] - lo[2]),
+                                     "h": float(hi[1] - lo[1]), "axis": (1.0, 0.0), "base": float(lo[1])})
+        new._all = [swap.get(p.id, p) for p in self._all]
+        new._ids = {p.id: p for p in new._all}
+        for p in new._all:
+            i, j = geo.cell_of([p.x, p.z])
+            new._cells.setdefault((int(i), int(j)), []).append(p)
+        return new
+
     def near(self, x: float, z: float, r: float) -> list[Place]:
         """The places whose centre is less than `r` metres from (x, z), looking only at the cells the circle touches."""
         (i0, j0), (i1, j1) = geo.cell_of([[x - r, z - r], [x + r, z + r]])
@@ -144,11 +179,14 @@ class Framing:
     size: float  # the larger of the box's width and height on screen, as shares of the frame's
     centre: tuple[float, float]  # where the box's centre falls, -1 to 1 on each axis
     inside: float  # the share of the box's rectangle on screen that lies inside the frame
-    verdict: str  # "good", "far", "near" or "off"
+    verdict: str  # "good", "far", "near", "off" or "hidden"
 
 
-def framing(eye, target, box_corners, zoom: float = 1.0, aspect: float = ASPECT) -> Framing:
-    """Judge how a camera frames a box given by its 8 corners (from `corners`)."""
+def framing(eye, target, box_corners, zoom: float = 1.0, aspect: float = ASPECT, walls=None) -> Framing:
+    """Judge how a camera frames a box given by its 8 corners (from `corners`).
+
+    With `walls`, a (W, 2, 2) array of wall segments in plan (Walls.near), a framing that would be good is
+    "hidden" when the walls stand between the camera and the box (in_sight)."""
     s = project(eye, target, box_corners, zoom, aspect)
     if (s[:, 2] <= 0).any():
         return Framing(0.0, (math.nan, math.nan), 0.0, "off")
@@ -164,6 +202,70 @@ def framing(eye, target, box_corners, zoom: float = 1.0, aspect: float = ASPECT)
         verdict = "off"
     elif size < SMALLEST:
         verdict = "far"
+    elif walls is not None and not in_sight(eye, box_corners, walls):
+        verdict = "hidden"
     else:
         verdict = "good"
     return Framing(float(size), (float(cx), float(cy)), float(inside), verdict)
+
+
+def in_reach(p: Place, x: float, z: float) -> bool:
+    """Whether the car at (x, z) is close enough to a place for the photo hint."""
+    return math.hypot(p.x - x, p.z - z) < min(REACH_SIDES * max(p.w, p.d, p.h), REACH_MAX)
+
+
+def _crosses(a, b, walls) -> bool:
+    """Whether the segment a-b in plan crosses any of the (W, 2, 2) wall segments."""
+    if len(walls) == 0:
+        return False
+    w = np.asarray(walls, float).reshape(-1, 2, 2)
+    p, r = np.asarray(a, float), np.asarray(b, float) - np.asarray(a, float)
+    q, s = w[:, 0], w[:, 1] - w[:, 0]
+    den = r[0] * s[:, 1] - r[1] * s[:, 0]
+    qp = q - p
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t = (qp[:, 0] * s[:, 1] - qp[:, 1] * s[:, 0]) / den
+        u = (qp[:, 0] * r[1] - qp[:, 1] * r[0]) / den
+    return bool(np.any((den != 0) & (t >= 0) & (t <= 1) & (u >= 0) & (u <= 1)))
+
+
+def in_sight(eye, box_corners, walls) -> bool:
+    """Whether a camera at `eye` sees the box past the walls, in plan.
+
+    Rays go from the eye to the middle and to both ends of the box's side nearest the eye (kept SIGHT_EDGE in
+    from the corners, where the neighbours' walls meet it), each stopping SIGHT_INSET metres short. The box is
+    in sight when at least two of the three are clear. The walls have no height, so a low wall hides like a
+    building does.
+    """
+    c = np.asarray(box_corners, float)[::2][:, [0, 2]]  # the four corners in plan, as corners() orders them
+    faces = [(c[0], c[1]), (c[1], c[3]), (c[3], c[2]), (c[2], c[0])]
+    e = np.array([eye[0], eye[2]], float)
+    a, b = min(faces, key=lambda f: np.linalg.norm((f[0] + f[1]) / 2 - e))
+    clear = 0
+    for k in (SIGHT_EDGE, 0.5, 1 - SIGHT_EDGE):
+        end = a + (b - a) * k
+        gap = np.linalg.norm(end - e)
+        if gap <= SIGHT_INSET:
+            clear += 1
+            continue
+        clear += not _crosses(e, end + (e - end) * SIGHT_INSET / gap, walls)
+    return clear >= 2
+
+
+def start_zoom(eye, target, box_corners, aspect: float = ASPECT) -> float:
+    """The zoom, within the camera's range, at which the box fills ZOOM_FILL of the frame."""
+    s = project(eye, target, box_corners, 1.0, aspect)
+    if (s[:, 2] <= 0).any():
+        return ZOOM_MIN
+    size = max(np.ptp(s[:, 0]), np.ptp(s[:, 1])) / 2
+    return float(min(ZOOM_MAX, max(ZOOM_MIN, ZOOM_FILL / max(size, 1e-9))))
+
+
+def fov_for(zoom: float) -> float:
+    """The vertical field of view in degrees of the game's camera at a zoom: the tangent of half the angle shrinks."""
+    return math.degrees(2 * math.atan(math.tan(math.radians(FOV_DEG) / 2) / zoom))
+
+
+AIM_YAW = math.radians(25.0)  # how far the arrows turn the photo view from the place, either side
+AIM_PITCH = math.radians(15.0)  # and up or down
+WHY = {"far": "Muy lejos", "near": "Muy cerca", "off": "Céntralo", "hidden": "Algo lo tapa"}  # a miss, in the note

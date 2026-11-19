@@ -107,6 +107,7 @@ class Hud:
         self._loading = False
         self._area, self._area_t, self._area_a = "", 0.0, None
         self._address = None
+        self._spot = ""  # the name of the place the photo hint shows, or "" with no hint
         self._clock_text, self._weather, self._lit, self._gear, self._speed = None, None, None, None, None
         self.panels, self.minimap = [], []
         self.stats_panel, self.stats_lines, self.stats_on = None, [], False
@@ -185,6 +186,14 @@ class Hud:
                      style_overrides={**CLEAR, "gap": 4})
         lamps = Panel(self.lamp_texts, anchor="bottom-right", offset=(MARGIN + 52, MARGIN + 98),
                       style_overrides={**CLEAR, "gap": 6, "direction": "h"})
+        # Bottom centre, while a place without a photo is in reach and in sight: its name and the key F.
+        self.spot_text = Text(self._spot, style_overrides={"font": ui.BOLD, "font_size": 17, "fg": ui.PAPER})
+        key = Panel([Text("F", style_overrides={"font": ui.KEYS, "font_size": 15, "fg": ui.INK})],
+                    style_overrides={"padding": "1 8", "bg": ui.YELLOW})
+        self.spot_panel = Panel([Image(ui.icon("foto"), style_overrides={"width": 22, "height": 22}), self.spot_text, key,
+                                 Text("Foto", style_overrides={"font": ui.BOLD, "font_size": 15, "fg": ui.PAPER})],
+                                anchor="bottom-center", offset=(0, MARGIN),
+                                style_overrides={"direction": "h", "gap": 10, "padding": "6 14", "bg": ui.alpha(ui.INK, 0.85)})
         self.panels = [clock, area_back, area, self.address_back, self.address, speed_back, self._number_panel,
                        gear_panel, tail, lamps]
         self.area_panel = area
@@ -193,7 +202,7 @@ class Hud:
         self.stats_panel = Panel(self.stats_lines, anchor="top-left", offset=(MARGIN, MARGIN + 60),
                                  style_overrides={"padding": 10, "gap": 2, "bg": "#000000b0", "width": 460,
                                                   "height": 24 + 22 * STATS_LINES})
-        for p in (clock, area, gear_panel, self.address_back, self.address):  # the others fit by their anchor
+        for p in (clock, area, gear_panel, self.address_back, self.address, self.spot_panel):  # the others fit by their anchor
             ui.fit(p)
         if self.shown:
             self.shown = False
@@ -211,6 +220,8 @@ class Hud:
             (g.append if on else g.remove)(p)
         if self.stats_on:
             (g.append if on else g.remove)(self.stats_panel)
+        if self._spot:
+            (g.append if on else g.remove)(self.spot_panel)
 
     def configure(self, units: str, minimap: bool) -> None:
         """km/h or mph, and the minimap shown or hidden; takes effect at once."""
@@ -276,6 +287,18 @@ class Hud:
         self.area_shadow.style_overrides = {**self.area_shadow.style_overrides, "fg": ui.alpha(ui.RED, a)}
         self.area_city.style_overrides = {**self.area_city.style_overrides, "fg": ui.alpha(ui.INK, a)}
         self.area_chip.style_overrides = {**self.area_chip.style_overrides, "bg": ui.alpha(ui.PAPER, a)}
+
+    def set_spot(self, name: str) -> None:
+        """The photo hint at the bottom centre for the place `name`; "" takes it off."""
+        if name == self._spot:
+            return
+        had, self._spot = self._spot, name
+        if not self.panels:
+            return
+        self.spot_text.text = name
+        ui.refit(self.spot_panel)
+        if self.shown and bool(had) != bool(name):
+            (self.engine.gui.append if name else self.engine.gui.remove)(self.spot_panel)
 
     def set_address(self, street: str, line: str, place: str) -> None:
         """The street the car is on, the line under it ("entre L y M") and "barrio · municipio"."""

@@ -22,6 +22,8 @@ import time
 
 import numpy as np
 
+from contravia import collect
+from contravia.album import Album
 from contravia.camera import chase
 from contravia.car import CarState, Controls, Driven, settle
 from contravia.geo import CELL, to_local
@@ -37,6 +39,7 @@ from contravia.world import World
 TAU = (12.0, 48.0)  # the streamer's screen error in pixels: the finest it may draw and the coarsest
 TARGET_MS = 20.0  # the frame time the streamer's detail is tuned for, 50 fps
 TUNE_EVERY = 60  # frames between two tunings, over whose median frame time
+PHOTO_SIZE = (1280, 720)  # pixels of the player's photo of a place
 FAR = 15000.0  # the camera's far plane: past the clear-weather fog's end
 RECENTRE = 2000.0  # metres from the engine's origin before it moves to the camera
 BASE = 40_000.0  # side of the plain ground under everything with flat data, so empty cells show ground, not sky
@@ -124,6 +127,12 @@ class Game:
         self.tune = True  # tau follows the frame time; the bench and offline shots keep it fixed
         self.driver = Driver()
         self.hud = Hud(engine)
+        # The collectible places, the player's collection, and the place the photo hint offers (contravia/collect.py).
+        self.places = collect.Places.load().with_meshes(self.walls.landmarks.bounds)
+        self.album = Album.load({p.id: p.province for p in self.places})
+        self.spot, self._spot_at = None, 0.0
+        self.aim = None  # while aiming at a place: {"place", "ground", "yaw", "pitch", "zoom"} (start_aim)
+        self._photo_pending = None  # (PNG path, future of its pixels) between a shot and its saving
         self.camera_override = None  # bench.py sets a function () -> (eye, target) in world metres
         self.mode = "drive"  # or "menu", "paused", "photo", "map", "garage": see contravia/menu.py
         self.photo = None  # the photo mode's and the Garaje's camera around the car: (yaw, pitch, distance)
@@ -483,7 +492,7 @@ class Game:
 
     def resume(self) -> None:
         """Drive on from the pause."""
-        self.mode, self.photo = "drive", None
+        self.mode, self.photo, self.aim = "drive", None, None
         self.clock.resume()
 
     def to_menu(self) -> None:
@@ -517,6 +526,132 @@ class Game:
         m = int(a["g_muni"][k])
         self.area = str(a["g_muni_names"][m]) if 0 <= m < len(a["g_muni_names"]) else ""
         self.address = describe(a, *at) if "g_name" in a else ("", "", self.area)
+
+    def ground_of(self, p: collect.Place) -> float:
+        """The height a place's box stands on: its mesh's bottom for a modelled landmark, else the ground's."""
+        if p.base is not None:
+            return p.base
+        return float(self.terrain.height(np.array([p.x]), np.array([p.z]))[0])
+
+    def photo_eye(self) -> tuple[float, float, float]:
+        """Where the photo camera stands: 1.5 m over the car."""
+        return (self.car.x, self.car.y + collect.EYE_HEIGHT, self.car.z)
+
+    def go_near(self, p: collect.Place) -> None:
+        """Put the car on a street outside a place's box from which it frames well, trying sixteen directions at
+        a photo's distance; the nearest street to the place when none does."""
+        ground = self.ground_of(p)
+        box = collect.corners(p, ground)
+        reach = min(collect.REACH_MAX, max(40.0, 1.6 * max(p.w, p.d, p.h)))
+        best = None
+        for k in range(16):
+            a = k * math.pi / 8
+            found = self.walls.nearest_road(p.x + reach * math.cos(a), p.z + reach * math.sin(a))
+            if found is None:
+                continue
+            x, z, _ = found
+            local = ((x - p.x) * p.axis[0] + (z - p.z) * p.axis[1], -(x - p.x) * p.axis[1] + (z - p.z) * p.axis[0])
+            if abs(local[0]) < p.w / 2 + 5 and abs(local[1]) < p.d / 2 + 5:
+                continue  # inside the place, or against its wall
+            eye, target = (x, ground + collect.EYE_HEIGHT, z), (p.x, ground + p.h / 2, p.z)
+            f = collect.framing(eye, target, box, collect.start_zoom(eye, target, box),
+                                walls=self.walls.near(x, z))
+            score = (f.verdict != "good", abs(f.size - collect.ZOOM_FILL))
+            if best is None or score < best[0]:
+                best = (score, x, z)
+        self.teleport(*(best[1:] if best else (p.x, p.z)))
+
+    def start_aim(self) -> bool:
+        """Stop the car and the clock and point the photo camera at the spot, zoomed to frame it; False with no spot."""
+        p = self.spot
+        if p is None:
+            return False
+        self.mode = "aim"
+        self.clock.pause()
+        ground = self.ground_of(p)
+        self.aim = {"place": p, "ground": ground, "yaw": 0.0, "pitch": 0.0, "zoom": 1.0}
+        eye, target = self.aim_pose()
+        self.aim["zoom"] = collect.start_zoom(eye, target, collect.corners(p, ground))
+        return True
+
+    def aim_pose(self) -> tuple[tuple, tuple]:
+        """(eye, target) of the photo camera: from over the car toward the box's centre, turned by the arrows."""
+        a = self.aim
+        p = a["place"]
+        eye = self.photo_eye()
+        dx, dy, dz = p.x - eye[0], a["ground"] + p.h / 2 - eye[1], p.z - eye[2]
+        yaw = math.atan2(dz, dx) + a["yaw"]
+        pitch = math.atan2(dy, math.hypot(dx, dz)) + a["pitch"]
+        d = (math.cos(pitch) * math.cos(yaw), math.sin(pitch), math.cos(pitch) * math.sin(yaw))
+        return eye, (eye[0] + d[0] * 10, eye[1] + d[1] * 10, eye[2] + d[2] * 10)
+
+    def turn_aim(self, dyaw: float, dpitch: float, zoom_factor: float) -> None:
+        """Turn the photo view and change its zoom, within collect's limits."""
+        a = self.aim
+        a["yaw"] = min(collect.AIM_YAW, max(-collect.AIM_YAW, a["yaw"] + dyaw))
+        a["pitch"] = min(collect.AIM_PITCH, max(-collect.AIM_PITCH, a["pitch"] + dpitch))
+        a["zoom"] = min(collect.ZOOM_MAX, max(collect.ZOOM_MIN, a["zoom"] * zoom_factor))
+
+    def shoot(self) -> collect.Framing:
+        """How the photo camera frames its place now, walls included."""
+        a = self.aim
+        eye, target = self.aim_pose()
+        return collect.framing(eye, target, collect.corners(a["place"], a["ground"]), a["zoom"],
+                               walls=self.walls.near(self.car.x, self.car.z))
+
+    def take_photo(self):
+        """Photograph the place aimed at: render the photo camera's view without the HUD or menus, put the place in
+        the album and save the PNG once the pixels are read back. Returns (texture, game time, weather) for the card."""
+        from manifoldx.camera import Camera
+
+        from contravia.hud import DAY_NAMES
+        from contravia.settings import WEATHER
+
+        a = self.aim
+        eye, target = self.aim_pose()
+        o = self.o
+        cam = Camera(position=tuple(np.asarray(eye) - o), target=tuple(np.asarray(target) - o),
+                     fov=collect.fov_for(a["zoom"]), near=0.5, far=FAR)
+        texture = self.engine.render_to_texture(cam, PHOTO_SIZE, live=False)
+        now = self.clock.now()
+        when = f"{DAY_NAMES[now.weekday()].lower()} {now:%H:%M}"
+        weather = {state: label.lower() for label, state in WEATHER}.get(self.weather_state, "")
+        pid = a["place"].id
+        self.album.add(pid, when, weather)
+        self._photo_pending = (self.album.photo_path(pid), self.engine.read_texture(texture))
+        self.spot = None
+        return texture, when, weather
+
+    def _save_photo(self) -> None:
+        """Write the last photo's PNG once its pixels are back from the GPU."""
+        if self._photo_pending is None or not self._photo_pending[1].done():
+            return
+        from PIL import Image
+
+        path, future = self._photo_pending
+        self._photo_pending = None
+        path.parent.mkdir(parents=True, exist_ok=True)
+        Image.fromarray(np.asarray(future.result(), np.uint8)).save(path)
+
+    def _find_spot(self, now: float) -> None:
+        """Twice a second, the nearest place without a photo that is in reach and in sight of the car, or None."""
+        if now - self._spot_at < 0.5:
+            return
+        self._spot_at = now
+        eye = self.photo_eye()
+        walls = None
+        best = None
+        for p in self.places.near(self.car.x, self.car.z, collect.REACH_MAX):
+            if self.album.has(p.id) or not collect.in_reach(p, self.car.x, self.car.z):
+                continue
+            if walls is None:
+                walls = self.walls.near(self.car.x, self.car.z)
+            if not collect.in_sight(eye, collect.corners(p, self.ground_of(p)), walls):
+                continue
+            d = math.hypot(p.x - self.car.x, p.z - self.car.z)
+            if best is None or d < best[0]:
+                best = (d, p)
+        self.spot = best[1] if best else None
 
     def _shutdown(self, _=None) -> None:
         """Stop what the game started itself: the street builders, the wall builder and the traffic thread. A reload under
@@ -584,7 +719,10 @@ class Game:
             self.physics_ms = (time.perf_counter() - t0) * 1000
             self.km += math.hypot(self.car.x - self._before.x, self.car.z - self._before.z) / 1000
         # manifoldx turns +x toward -z for a positive yaw; the game turns it toward +z.
-        place_car(self.handles, self.model, **self.driven.pose())
+        pose = self.driven.pose()
+        if self.mode == "aim":  # the photographer stepped out: the camera stands where the car's roof would be
+            pose["at"] = (pose["at"][0], pose["at"][1] - 1000.0, pose["at"][2])
+        place_car(self.handles, self.model, **pose)
         half = -self.car.yaw / 2  # the same turn as the car's, about the vertical
         ground = float(self.surface.height(np.array([self.car.x]), np.array([self.car.z]), near=self.car.y)[0])
         self.shadow.transform.pos = (self.car.x, ground + SHADOW_LIFT, self.car.z)
@@ -596,6 +734,9 @@ class Game:
             from contravia import mapview
 
             eye, target = mapview.pose(self.map)
+            self.eye, target = np.asarray(eye, float), np.asarray(target, float)
+        elif self.mode == "aim" and self.aim:
+            eye, target = self.aim_pose()
             self.eye, target = np.asarray(eye, float), np.asarray(target, float)
         elif self.mode in ("photo", "garage") and self.photo:
             yaw, pitch, dist = self.photo
@@ -616,6 +757,8 @@ class Game:
             self.shelf.transform.pos = (0.0, self._shelf_y(), 0.0)
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
         self.engine.camera.vertical_scale = self._exaggeration()
+        self._save_photo()
+        self.engine.camera.fov = collect.fov_for(self.aim["zoom"]) if self.mode == "aim" and self.aim else collect.FOV_DEG
         self.hud.show(self.mode == "drive")
         if self.mode == "drive":
             e = self.driven.spec.engine
@@ -623,6 +766,8 @@ class Game:
                             loading=bool(getattr(self.engine.state, "cells_waiting", 0)))
             self.hud.set_time(self.clock.now(), self.weather_state)
             self._find_area(now)
+            self._find_spot(now)
+            self.hud.set_spot(self.spot.title if self.spot else "")
             self.hud.set_area(self.area, self._dt)
             self.hud.set_address(*self.address)
             self.hud.show_stats(self._stats_lines())
@@ -790,7 +935,7 @@ class Game:
 def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, size=(1280, 720),
          traffic: str | None = None, when: str | None = None, warp: float = 1.0, sky: str | None = None,
          pipelined: bool = True, with_traffic: bool = False,
-         screen: str | None = None, height: float | None = None, yaw: float = 0.0) -> None:
+         screen: str | None = None, height: float | None = None, yaw: float = 0.0, place: str | None = None) -> None:
     """Open a window on the main menu, or with `shot`, render offscreen until the city is drawn and save a PNG.
 
     screen opens a menu screen ("main", "free", "options", "pause", "photo", "map", "garage", "design") or "drive"
@@ -799,7 +944,9 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     starts with them as they are.
 
     with_traffic turns the traffic on, as a traffic file does: traffic: a JSON file of demand settings. when ("Sun 08:00", "17:30") pins the clock, 10:00 today by default,
-    and "now" runs it on the machine's clock; warp speeds it up, for tests and the dev channel. pipelined runs the systems of the next
+    and "now" runs it on the machine's clock; warp speeds it up, for tests and the dev channel. place, a collectible place's id, starts
+    the car on the street nearest it; with screen "aim" the photo camera aims at it, and with "card" it is photographed
+    and its card shows, whatever the framing. pipelined runs the systems of the next
     frame while the window draws this one; --no-pipeline is the serial path, for comparing the two.
     With screen "map", height (metres) puts the map's camera that high over `at`, turned yaw degrees from north,
     and the car stays at the Capitolio: `at` may be far from any road.
@@ -822,7 +969,17 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
         from contravia import mapview
 
         game.map = mapview.zoom(mapview.MapCam(float(at[0]), float(at[1]), 1.0, math.radians(yaw)), height)
-    if "car" in engine.state:  # a reload under contravia dev drives on
+    if place:
+        p = game.places.by_id(place)
+        game.go_near(p)
+        if screen in ("aim", "card"):
+            def aim(_=None):
+                game.spot = p
+                game.start_aim()
+                menu.show("aim")
+
+            engine.on("startup")(aim)
+    elif "car" in engine.state:  # a reload under contravia dev drives on
         screen = "drive"
     from contravia.menu import Menu
     from contravia.settings import FreeDrive, Options
@@ -853,6 +1010,10 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     while n < frames or (game.waiting() and time.monotonic() - t0 < 300):
         img = engine.render_frame(supersample=1)
         n += 1
+    if place and screen == "card":  # photographed once the city is drawn, as a player would
+        menu.took(game.shoot())
+        for _ in range(4):  # the photo renders, is read back and saved, and the card draws
+            img = engine.render_frame(supersample=1)
     Image.fromarray(img).save(shot)
     game.streamer.close()
     game.detail.close()

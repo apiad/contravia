@@ -27,12 +27,16 @@ class Landmarks:
     def __init__(self, city: CityData):
         mb = MeshBuilder()
         self.names, self.replaces, self.clear = [], set(), []
+        self.bounds: dict[str, tuple[np.ndarray, np.ndarray]] = {}  # NAME: the (min, max) corners of its mesh
         rings = []
         for module in MODULES:
+            mark = mb.mark()
             piece = module.place(city, mb)
             if piece is None:
                 continue
             self.names.append(module.NAME)
+            if (b := mb.bounds_since(mark)) is not None:
+                self.bounds[module.NAME] = b
             self.replaces |= piece.replaces
             self.clear += [np.asarray(r, float) for r in piece.clear]
             rings += piece.walls

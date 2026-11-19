@@ -6,6 +6,12 @@ from contravia.citydata import CityData
 from contravia.prepare import build_city, read_osm
 
 
+@pytest.fixture(autouse=True)
+def _config(tmp_path_factory, monkeypatch):
+    """Every test keeps options, designs and the photo collection in a folder of its own, never the user's."""
+    monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path_factory.mktemp("config")))
+
+
 @pytest.fixture(scope="session")
 def city_npz(tmp_path_factory):
     """The mini.osm fixture prepared into an npz; HAVANA_DATA points at it for cells.build."""
