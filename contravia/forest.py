@@ -15,8 +15,8 @@ import numpy as np
 
 from contravia.clearance import roads_around
 from contravia.rules import trees
-from contravia.rules.species import SPECIES, season
-from contravia.rules.treegrammar import PARTS, VARIANTS, meshes
+from contravia.rules.species import CROWNS, SPECIES, season
+from contravia.rules.treegrammar import LODS, PARTS, VARIANTS, meshes
 
 LOD_AT = (60.0, 160.0)  # metres from the camera where a tree drops to LOD 1, then to LOD 2
 HYSTERESIS = 8.0  # metres a tree goes past a threshold before it changes level, so it does not flicker
@@ -41,6 +41,16 @@ def levels(d, old=None) -> np.ndarray:
     near, far = np.searchsorted(LOD_AT, d - HYSTERESIS), np.searchsorted(LOD_AT, d + HYSTERESIS)
     keep = (old >= near) & (old <= far)
     return np.where(keep, old, new).astype(np.int8)
+
+
+def warm(species) -> None:
+    """Grow every mesh a tree of each species may be drawn with (its levels of detail, crowns and near
+    variants), so the main thread finds them made: a species' meshes take about a second to grow."""
+    for s in species:
+        for lod in range(LODS):
+            for crown in CROWNS:
+                for v in range(VARIANTS if lod == 0 else 1):
+                    meshes(SPECIES[int(s)], lod, crown, v)
 
 
 class Stand:
@@ -102,10 +112,13 @@ class Forest:
         self._frame = 0
 
     def grow(self, i: int, j: int):
-        """The (Trees) rows of cell (i, j): those the cell's rules grow and the car hits."""
+        """The (Trees) rows of cell (i, j): those the cell's rules grow and the car hits. On this thread too, the
+        meshes of their species, which the main thread would otherwise stop for at their first spawn."""
         c = self.landmarks.keep(i, j, self.city.cell(i, j))
         near = roads_around(self.city, i, j)
-        return trees.cell_trees(i, j, c, self.city.terrain, near, trees.arrays_of(self.city, i, j))
+        t = trees.cell_trees(i, j, c, self.city.terrain, near, trees.arrays_of(self.city, i, j))
+        warm(np.unique(t.species))
+        return t
 
     def update(self, cells, eye) -> None:
         """Follow the set of cells drawn in full: grow the new ones' trees on a thread, spawn those grown,

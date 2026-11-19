@@ -72,3 +72,16 @@ def test_trees_are_instances_that_change_level_of_detail_with_the_camera(monkeyp
     forest.update({(0, 0)}, (0.0, 5.0, 0.0))
     assert list(forest.stands[(0, 0)].lod) == [0, 2, 2] and not forest._pending
     forest.close()
+
+
+def test_warm_grows_every_mesh_a_species_may_be_drawn_with():
+    from contravia.forest import warm
+    from contravia.rules.treegrammar import meshes
+
+    meshes.cache_clear()
+    warm([SPECIES.index("coco")])
+    before = meshes.cache_info()
+    for lod, crown in ((0, "full"), (1, "sparse"), (2, "bare")):
+        meshes("coco", lod, crown, 0)
+    meshes("coco", 0, "full", 1)
+    assert meshes.cache_info().misses == before.misses  # each was grown already
