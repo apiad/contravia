@@ -18,7 +18,7 @@ TONES = {
     50: (0.64, 0.58, 0.53),  # built-up, like the roofs
     60: (0.80, 0.74, 0.58),  # bare ground and sand
     70: (0.90, 0.90, 0.90),  # snow (none in Cuba)
-    80: (0.14, 0.33, 0.43),  # inland water
+    80: (0.14, 0.33, 0.43),  # water: left out of the mix (see colours)
     90: (0.39, 0.50, 0.38),  # herbaceous wetland: the ciénagas
     95: (0.22, 0.38, 0.28),  # mangrove
     100: (0.50, 0.56, 0.40),  # moss
@@ -35,8 +35,12 @@ def palette(when) -> np.ndarray:
 
 
 def colours(shares, when) -> np.ndarray:
-    """(..., 3) colours of squares with these class shares; a square with no data is GROUND."""
-    s = np.asarray(shares, float)
+    """(..., 3) colours of squares with these class shares; a square with no data is GROUND. Water is left out:
+    a square on the coast is half sea, which the ocean already draws, and would tint its land blue."""
+    from contravia.cover import CLASSES
+
+    s = np.asarray(shares, float).copy()
+    s[..., CLASSES.index(80)] = 0.0
     total = s.sum(axis=-1, keepdims=True)
     mixed = s @ palette(when) / np.maximum(total, 1e-9)
     return np.where(total > 0, mixed, np.asarray(GROUND, float))

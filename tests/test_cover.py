@@ -54,6 +54,10 @@ def test_the_palette_mixes_by_share_and_no_data_is_ground():
     c = rules.colours(shares, date(2026, 6, 1))
     assert np.allclose(c[0], (np.array(rules.TONES[40]) + rules.TONES[60]) / 2)
     assert np.allclose(c[1], GROUND)
+    half_sea = np.zeros(len(cover.CLASSES))
+    half_sea[cover.CLASSES.index(80)] = 0.5  # a square on the coast: half sea, half sand
+    half_sea[cover.CLASSES.index(60)] = 0.5
+    assert np.allclose(rules.colours(half_sea, date(2026, 6, 1)), rules.TONES[60])
 
 
 def test_shade_darkens_slopes_away_from_the_light_from_high_levels_only():
