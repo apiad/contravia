@@ -3,7 +3,8 @@
 Top left: the game's time, the day and the weather's icon. Top right: a round minimap with a cream rim, the
 scene itself seen from MINIMAP_HEIGHT metres straight above the car, rendered by the engine into a texture
 (render_to_texture) when the car has moved MINIMAP_MOVE metres or turned MINIMAP_TURN degrees since the last
-render, at most every MINIMAP_EVERY frames and at least every MINIMAP_IDLE. Its top is the way the car faces, so the red arrow in its middle
+render, or while the cells around the car are still loading, at most every MINIMAP_EVERY frames and at least
+every MINIMAP_IDLE. Its top is the way the car faces, so the red arrow in its middle
 always points up and the streets turn around it; the N badge rides the rim where north is. Bottom left: the
 name of the municipio when the car enters it, large, fading out after AREA_SHOWN seconds. Bottom right: the
 speed, the gear in yellow and a rev counter in segments, from the car's own automatic gearbox, and the four
@@ -67,13 +68,16 @@ def speed_text(speed: float, units: str = "kmh") -> str:
     return f"{abs(speed) * (3.6 if units == 'kmh' else 2.23694):.0f}"
 
 
-def minimap_stale(last, pose, frames: int) -> bool:
+def minimap_stale(last, pose, frames: int, loading: bool = False) -> bool:
     """Whether the minimap must render again for the car at pose = (x, z, yaw), `frames` frames after it
-    last rendered at `last` (None before its first render)."""
+    last rendered at `last` (None before its first render); while loading, the cells landing around the car
+    change it even when the car stands still."""
     if last is None or frames >= MINIMAP_IDLE:
         return True
     if frames < MINIMAP_EVERY:
         return False
+    if loading:
+        return True
     turn = abs((math.degrees(pose[2] - last[2]) + 180.0) % 360.0 - 180.0)
     return bool(math.hypot(pose[0] - last[0], pose[1] - last[1]) >= MINIMAP_MOVE or turn >= MINIMAP_TURN)
 
@@ -100,9 +104,10 @@ class Hud:
         self.units, self.minimap_on, self.shown = "kmh", True, False
         self._frame = 0
         self._drawn, self._drawn_frame = None, 0  # the car's pose at the minimap's last render, and its frame
-        self._area, self._area_t = "", 0.0
+        self._loading = False
+        self._area, self._area_t, self._area_a = "", 0.0, None
         self._address = None
-        self._clock_text, self._weather, self._lit, self._gear = None, None, None, None
+        self._clock_text, self._weather, self._lit, self._gear, self._speed = None, None, None, None, None
         self.panels, self.minimap = [], []
         self.stats_panel, self.stats_lines, self.stats_on = None, [], False
         engine.on("startup")(self._build)
@@ -264,8 +269,9 @@ class Hud:
         else:
             self._area_t += dt
         a = 0.0 if not name else min(1.0, max(0.0, 1.0 - (self._area_t - AREA_SHOWN) / AREA_FADE))
-        if a == 0.0 and self._area_t > AREA_SHOWN + AREA_FADE + 1:
-            return  # already gone
+        if a == self._area_a:
+            return  # shown, or gone, as it was
+        self._area_a = a
         self.area_text.style_overrides = {**self.area_text.style_overrides, "fg": ui.alpha(ui.PAPER, a)}
         self.area_shadow.style_overrides = {**self.area_shadow.style_overrides, "fg": ui.alpha(ui.RED, a)}
         self.area_city.style_overrides = {**self.area_city.style_overrides, "fg": ui.alpha(ui.INK, a)}
@@ -283,13 +289,18 @@ class Hud:
         ui.refit(self.address_back)
         ui.refit(self.address)
 
-    def update(self, car, origin: np.ndarray, rpm_range: tuple[float, float] = (850.0, 6500.0)) -> None:
+    def update(self, car, origin: np.ndarray, rpm_range: tuple[float, float] = (850.0, 6500.0),
+               loading: bool = False) -> None:
         """Show the car's speed, gear and revs between rpm_range's idle and redline, light the assists' lamps,
-        and when the car has moved or turned enough (minimap_stale) render the minimap above it and turn the
-        north badge with it."""
+        each written only when what it shows changed, and when the car has moved or turned enough, or the cells
+        around it are loading (minimap_stale), render the minimap above it and turn the north badge with it;
+        once loading ends it renders once more."""
         if not self.panels:
             return
-        self.speed_text.text = self.speed_shadow.text = speed_text(car.speed, self.units)
+        speed = speed_text(car.speed, self.units)
+        if speed != self._speed:
+            self._speed = speed
+            self.speed_text.text = self.speed_shadow.text = speed
         for text, was, now in zip(self.lamp_texts, self._lamps, lamps_lit(car), strict=True):
             if was != now:
                 text.style_overrides = {**text.style_overrides, "fg": ui.YELLOW if now else ui.alpha(ui.PAPER, 0.25)}
@@ -304,7 +315,10 @@ class Hud:
             self.revs.svg = ui.revs(lit, REV_SEGMENTS)
         self._frame += 1
         pose = (car.x, car.z, car.yaw)
-        if not self.minimap_on or not minimap_stale(self._drawn, pose, self._frame - self._drawn_frame):
+        if self._loading and not loading:  # the last cells landed after the last render
+            self._drawn = None
+        self._loading = loading
+        if not self.minimap_on or not minimap_stale(self._drawn, pose, self._frame - self._drawn_frame, loading):
             return
         self._drawn, self._drawn_frame = pose, self._frame
         self.north.offset = north_offset(car.yaw, MINIMAP_SHOWN, 26)

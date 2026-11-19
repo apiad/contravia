@@ -619,7 +619,8 @@ class Game:
         self.hud.show(self.mode == "drive")
         if self.mode == "drive":
             e = self.driven.spec.engine
-            self.hud.update(self.car, self.o, (e.idle_rpm, e.peak_power_rpm * 1.15))
+            self.hud.update(self.car, self.o, (e.idle_rpm, e.peak_power_rpm * 1.15),
+                            loading=bool(getattr(self.engine.state, "cells_waiting", 0)))
             self.hud.set_time(self.clock.now(), self.weather_state)
             self._find_area(now)
             self.hud.set_area(self.area, self._dt)

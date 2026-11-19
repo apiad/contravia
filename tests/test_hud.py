@@ -56,3 +56,70 @@ def test_the_minimap_redraws_only_when_the_car_moved_or_turned():
     assert not minimap_stale(last, (150.0, 200.0, 0.3), MINIMAP_EVERY - 1)  # never more often than before
     assert minimap_stale((0.0, 0.0, math.pi - 0.01), (0.0, 0.0, -math.pi + 0.01), MINIMAP_EVERY) is False
     assert minimap_stale(last, last, MINIMAP_IDLE)  # the traffic around a still car moves on
+    assert minimap_stale(last, last, MINIMAP_EVERY, loading=True)  # cells land around a still car
+    assert not minimap_stale(last, last, MINIMAP_EVERY - 1, loading=True)
+
+
+class _Engine:
+    """Just enough engine for the HUD to build its panels: a GUI root and a texture that is a plain SVG."""
+
+    def __init__(self):
+        from manifoldx.gui.widgets import _GuiRoot
+
+        self.gui, self.started = _GuiRoot(), []
+
+    def on(self, _event):
+        return self.started.append
+
+    def render_to_texture(self, *_args, **_kwargs):
+        from contravia import ui
+
+        return ui.icon("sol")
+
+    def refresh_texture(self, _texture):
+        pass
+
+
+def test_the_hud_writes_a_widget_only_when_what_it_shows_changed():
+    import numpy as np
+
+    from contravia.hud import AREA_SHOWN, Hud
+
+    engine = _Engine()
+    hud = Hud(engine)
+    engine.started[0]()
+    car = CarState(0, 0, 0, 10.0, gear=2, rpm=3000)
+    hud.update(car, np.zeros(3))
+    hud.speed_text.text = "stale"  # a write from here on would replace it
+    hud.update(CarState(1, 0, 0, 10.05, gear=2, rpm=3000), np.zeros(3))  # still 36 km/h
+    assert hud.speed_text.text == "stale"
+    hud.update(CarState(2, 0, 0, 20.0, gear=2, rpm=3000), np.zeros(3))
+    assert hud.speed_text.text == "72"
+
+    hud.set_area("Centro Habana", 0.1)
+    shown = hud.area_text.style_overrides = {"fg": "stale"}
+    hud.set_area("Centro Habana", 0.1)  # still fully shown
+    assert hud.area_text.style_overrides is shown
+    hud.set_area("Centro Habana", AREA_SHOWN)  # fading
+    assert hud.area_text.style_overrides is not shown
+
+
+def test_the_minimap_renders_once_more_when_loading_ends():
+    import numpy as np
+
+    from contravia.hud import MINIMAP_EVERY, Hud
+
+    engine = _Engine()
+    renders = []
+    engine.refresh_texture = renders.append
+    hud = Hud(engine)
+    engine.started[0]()
+    car = CarState(0, 0, 0, 0.0)
+    for _ in range(MINIMAP_EVERY + 1):
+        hud.update(car, np.zeros(3), loading=True)
+    assert len(renders) == 2  # the first frame, then MINIMAP_EVERY frames later while loading
+    hud.update(car, np.zeros(3), loading=False)
+    assert len(renders) == 3  # the cells that landed since
+    for _ in range(MINIMAP_EVERY * 2):
+        hud.update(car, np.zeros(3), loading=False)
+    assert len(renders) == 3  # a still car on a loaded world
