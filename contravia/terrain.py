@@ -160,6 +160,7 @@ def fetch_tile(folder, lat: int, lon: int) -> Path | None:
     if none.exists():
         return None
     Path(folder).mkdir(parents=True, exist_ok=True)
+    import http.client
     import time
 
     for attempt in range(5):  # the bucket is slow from some networks: a read that times out is tried again
@@ -174,7 +175,7 @@ def fetch_tile(folder, lat: int, lon: int) -> Path | None:
                 raise
             none.touch()
             return None
-        except (TimeoutError, urllib.error.URLError, ConnectionError):
+        except (TimeoutError, urllib.error.URLError, ConnectionError, http.client.IncompleteRead):
             if attempt == 4:
                 raise
             time.sleep(10 * (attempt + 1))
