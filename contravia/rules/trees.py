@@ -1,4 +1,4 @@
-"""Where a cell's trees stand, which species each one is, and drawing them (the species: rules/species.py).
+"""Where a cell's trees stand and which species each one is (the species: rules/species.py).
 
 No tree is stored. A cell's trees are its parks' trees, the ones its green grows (in_green) and, on land OSM says
 nothing about, the wild ones (wild): clumps where a broad noise is high, clearings where it is low, never on a
@@ -6,7 +6,8 @@ road or in the sea. Each tree's species comes from its zone (the coast, the old 
 rest) and a seed from its position; its size, turn, tone and seasonal shift come from the same seed. So the same
 cell always grows the same trees, and they look as the game's date says.
 
-draw() copies one template per species and crown to every tree that has it, so a cell's trees cost a few batches.
+A cell's trees are rows, not geometry: the game draws them as instances of their species' meshes
+(rules/treegrammar.py) by level of detail (forest.py).
 """
 
 import numpy as np
@@ -67,45 +68,6 @@ def off_streets(xz, street_tris) -> np.ndarray:
         v = (v0[:, 0] * d[..., 1] - d[..., 0] * v0[:, 1]) / den
         keep &= ~((u >= 0) & (v >= 0) & (u + v <= 1)).any(axis=1)
     return keep
-
-
-def draw(mb, t, day) -> None:
-    """Add the (Trees) t to mb as they look on day: each species and crown is one template copied to its trees,
-    turned, scaled and tinted, so a cell's trees cost a few batches, not one per tree."""
-    from contravia.rules.species import ACCENT, LEAF, SPECIES, season, template
-
-    if not len(t):
-        return
-    looks = {}
-    crown = np.empty(len(t), object)
-    leaf, accent = np.zeros((len(t), 3)), np.zeros((len(t), 3))
-    for k in range(len(t)):
-        key = (int(t.species[k]), int(t.shift[k]))
-        if key not in looks:
-            looks[key] = season(SPECIES[key[0]], day, key[1])
-        look = looks[key]
-        crown[k], leaf[k], accent[k] = look.crown, look.leaf, look.accent
-    tone = (0.85 + 0.3 * t.tone)[:, None]
-    for s in np.unique(t.species):
-        for cr in ("full", "sparse", "bare"):
-            idx = np.flatnonzero((t.species == s) & (crown == cr))
-            if not len(idx):
-                continue
-            tp = template(SPECIES[s], cr)
-            n, v = len(idx), len(tp.positions)
-            c, si = np.cos(t.yaw[idx]), np.sin(t.yaw[idx])
-            rot = np.zeros((n, 3, 3))
-            rot[:, 0, 0], rot[:, 0, 2], rot[:, 1, 1], rot[:, 2, 0], rot[:, 2, 2] = c, -si, 1.0, si, c
-            pos = np.einsum("nij,vj->nvi", rot, tp.positions) * t.scale[idx, None, None]
-            pos += np.stack([t.xz[idx, 0], t.y[idx], t.xz[idx, 1]], axis=1)[:, None, :]
-            nrm = np.einsum("nij,vj->nvi", rot, tp.normals)
-            col = np.broadcast_to(tp.rgb, (n, v, 3)).copy()
-            is_leaf, is_accent = tp.role == LEAF, tp.role == ACCENT
-            col[:, is_leaf] = (leaf[idx] * tone[idx])[:, None, :]
-            col[:, is_accent] = (accent[idx] * tone[idx])[:, None, :]
-            col *= tp.shade[None, :, None]
-            mb.add(pos.reshape(-1, 3), nrm.reshape(-1, 3), np.clip(col, 0, 1).reshape(-1, 3),
-                   (tp.triangles[None] + v * np.arange(n)[:, None, None]).reshape(-1, 3))
 
 
 def wild(i: int, j: int, terrain, roads: np.ndarray):

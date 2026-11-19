@@ -67,8 +67,11 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   a school or a sports ground never becomes a park.
 - No tree's look is stored (`contravia/rules/trees.py`, `contravia/rules/species.py`, spec
   `docs/superpowers/specs/2026-11-18-trees-design.html`): when a cell opens, `cell_trees` gives each tree a species
-  from its zone, its park and a seed from its position, and `draw` colours it for the game's date (flowering, autumn
-  leaves, bare in the dry season). The car hits the trunks of the same trees (`walls.py`).
+  from its zone, its park and a seed from its position. A cell's mesh holds no tree: `contravia/forest.py` keeps one
+  row per tree of each cell drawn in full and spawns it as GPU instances of its species' meshes, which a grammar per
+  species grows at three levels of detail (`contravia/rules/treegrammar.py`: trunk, branch levels, leaf clusters);
+  each tree moves between levels by its distance to the camera, and its Tint (manifoldx) carries the date's colours
+  (flowering, autumn leaves, bare in the dry season). The car hits the trunks of the same trees (`walls.py`).
 - `contravia play` opens on the main menu (`contravia/menu.py`, drawn as `docs/ux/contravia-ux.html` shows): Story and the
   Cuba map are "próximamente", Free drive sets place, time, day, weather, traffic and clock speed
   (`contravia/settings.py`), Esc pauses, and the options are kept in the user's config folder
