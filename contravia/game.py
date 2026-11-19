@@ -568,7 +568,7 @@ class Game:
                 left = np.array([-math.sin(yaw), 0.0, math.cos(yaw)]) * GARAGE_SHIFT * dist
                 self.eye, target = self.eye + left, target + left
         else:
-            self.eye, target = chase(self.eye, self.car, self._dt, self.surface)
+            self.eye, target = chase(self.eye, self.driven.seen(), self._dt, self.surface)
         self.o = self._recentre()
         if not self._sea:
             self.base.transform.pos = (float(self.eye[0]), FLAT_BASE_Y, float(self.eye[2]))
