@@ -63,3 +63,14 @@ def far_and_fog(cam: MapCam) -> tuple[float, tuple[float, float]]:
     """The far plane and the fog's (start, end) for this height: the fog only softens the horizon."""
     dist = cam.h / math.sin(math.radians(PITCH_DEG))
     return dist * 8, (dist * 3, dist * 7)
+
+
+EXAGGERATE = ((10_000.0, 1.0), (1_000_000.0, 20.0))  # (height, factor): none below 10 km, 20 times at 1 000 km
+
+
+def exaggeration(h: float) -> float:
+    """How many times the map stretches heights with the eye h metres up: 1 up to 10 km, then growing with the
+    logarithm of the height to 20 at 1 000 km, so the sierras read from the whole island like a relief atlas."""
+    (h0, k0), (h1, k1) = EXAGGERATE
+    t = min(max(math.log(max(h, 1.0) / h0) / math.log(h1 / h0), 0.0), 1.0)
+    return k0 + (k1 - k0) * t

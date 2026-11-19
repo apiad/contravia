@@ -18,7 +18,7 @@ from contravia.geo import CELL
 from contravia.mesh import MeshBuilder, signed_area
 from contravia.rules import facades
 from contravia.rules.cover import colours as cover_colours
-from contravia.rules.cover import shade
+from contravia.rules.cover import exaggeration, shade, tint
 from contravia.rules.ground import GROUND, SEA, WATER_Y, relief
 from contravia.rules.roads import ROAD
 from contravia.rules.trees import TREE_EVERY, far_green, today
@@ -191,13 +191,14 @@ def _heights(xz, terrain, sea: bool) -> np.ndarray:
     return np.maximum(y, WATER_Y + LIFT) if sea else y
 
 
-def _normals(xz, terrain, step: float) -> np.ndarray:
-    """Unit normals of the terrain at points xz, its slope measured step metres either side."""
+def _normals(xz, terrain, step: float, stretch: float = 1.0) -> np.ndarray:
+    """Unit normals of the terrain at points xz, its slope measured step metres either side, its heights
+    stretched `stretch` times."""
     if terrain is None:
         return np.tile((0.0, 1.0, 0.0), (len(xz), 1))
     x, z = xz[:, 0], xz[:, 1]
-    dx = (terrain.height(x + step, z) - terrain.height(x - step, z)) / (2 * step)
-    dz = (terrain.height(x, z + step) - terrain.height(x, z - step)) / (2 * step)
+    dx = (terrain.height(x + step, z) - terrain.height(x - step, z)) / (2 * step) * stretch
+    dz = (terrain.height(x, z + step) - terrain.height(x, z - step)) / (2 * step) * stretch
     n = np.stack([-dx, np.ones_like(dx), -dz], axis=1)
     return n / np.linalg.norm(n, axis=1, keepdims=True)
 
@@ -239,7 +240,8 @@ def _ground(mb, land, x0, z0, sq, side, terrain, colours, sea, L: int) -> None:
     t = np.concatenate(tris).reshape(-1, 2)
     pos = np.c_[t[:, 0], _heights(t, terrain, sea), t[:, 1]]
     normals = _normals(t, terrain, sq / 2)
-    colour = shade(_blend(colours, t, x0, z0, sq), normals, L)
+    steep = _normals(t, terrain, sq / 2, exaggeration(L))  # the slope as the map stretches it at this level
+    colour = shade(tint(_blend(colours, t, x0, z0, sq), pos[:, 1], L), steep, L)
     mb.add(pos, normals, colour, np.arange(len(t)).reshape(-1, 3))
     edge = shapely.segmentize(shapely.intersection(shapely.box(x0, z0, x0 + side, z0 + side).boundary, land), sq)
     for line in shapely.get_parts(shapely.line_merge(edge) if not edge.is_empty else edge):

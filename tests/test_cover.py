@@ -84,3 +84,17 @@ def test_a_summary_with_cover_draws_its_squares_in_the_palette():
     m = summary_mesh(s, L, 0, 0, origin)
     up = np.asarray(m.normals)[:, 1] > 0.5
     assert np.allclose(np.asarray(m.colors)[up], rules.TONES[60], atol=1e-3)
+
+
+def test_height_tints_come_in_from_the_city_stage_green_low_and_brown_high():
+    colour = np.full((2, 3), 0.5)
+    heights = np.array([0.0, 800.0])
+    assert np.allclose(rules.tint(colour, heights, rules.TINT_FROM), 0.5)
+    high = rules.tint(colour, heights, rules.TINT_TO)
+    w = rules.TINT_MAX
+    assert np.allclose(high[0], 0.5 * (1 - w) + np.array(rules.TINTS[0][1]) * w)
+    assert np.allclose(high[1], 0.5 * (1 - w) + np.array(rules.TINTS[3][1]) * w)
+
+
+def test_the_shading_sees_the_slope_as_the_map_stretches_it():
+    assert rules.exaggeration(6) == 1.0 and rules.exaggeration(9) == 8.0 and rules.exaggeration(13) == 20.0
