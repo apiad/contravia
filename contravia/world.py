@@ -84,8 +84,9 @@ class IslandTerrain:
 class World:
     """The island's provinces, read lazily from a folder; or one CityData in memory."""
 
-    def __init__(self, core: CityData | None = None, folder=None):
+    def __init__(self, core: CityData | None = None, folder=None, weights: dict | None = None):
         self.folder = Path(folder) if folder is not None else None
+        self.source: Path | None = None  # the folder or file it was loaded from; World.load sets it
         self._open: OrderedDict = OrderedDict()
         self._summaries: dict = {}
         self._focus = 0
@@ -94,7 +95,7 @@ class World:
         if core is not None:  # one province, in memory
             self.names, self.paths = ["La Habana"], [None]
             self._open[0] = core
-            weights = _weights(core)
+            weights = _weights(core) if weights is None else weights
             cells = np.array(sorted(weights), np.int64).reshape(-1, 2)
             self._region_keys = [np.sort(_keys(np.array([k for k, v in weights.items() if v > BARE],
                                                          np.int64).reshape(-1, 2)))]
@@ -133,12 +134,20 @@ class World:
     @classmethod
     def load(cls, data) -> World:
         """A folder of provinces (with its index, written now if missing), or one province's data file."""
-        path = Path(data)
+        from contravia.baked import baked, stamp
+
+        path = Path(data).resolve()
         if path.is_dir():
             if not (path / "index.npz").exists():
                 index(path)
-            return cls(folder=path)
-        return cls(CityData.load(path))
+            world = cls(folder=path)
+        else:
+            core = CityData.load(path)
+            weights = baked(path.with_name(path.name + ".weights.pkl"), stamp(path, Path(__file__)),
+                            lambda: _weights(core))
+            world = cls(core, weights=weights)
+        world.source = path
+        return world
 
     # Provinces, opened on demand.
 
@@ -209,6 +218,10 @@ class World:
         return self.names[self._focus]
 
     # What the game and the cell builder ask.
+
+    def focused_file(self) -> Path | None:
+        """The data file of the province the graph is from, or None for a World made in memory."""
+        return self.paths[self._focus] or self.source
 
     @property
     def graph(self):

@@ -124,6 +124,15 @@ class Driven:
         return {"at": tuple(at), "rotation": tuple(rotation), "wheel_turn": float(f.wheel_turn[0].mean()),
                 "steer": -float(f.steer_angle[0][f.p.steered[0]].mean()), "travel": f.travel(0).tolist()}
 
+    def seen(self) -> CarState:
+        """The state where the car is drawn, between the last two steps: what the camera follows. The last step's
+        own state is up to a step ahead of the model, by a share that changes every frame, so a camera aimed at it
+        moves the car forward and back on screen."""
+        pos, rot = self.fleet.pose()
+        ahead = matrices(rot[:1])[0][:, 0]
+        return replace(self.state, x=float(pos[0, 0]), z=float(pos[0, 2]),
+                       yaw=math.atan2(ahead[2], ahead[0]))
+
     def _read(self) -> CarState:
         f = self.fleet
         R = matrices(f.rotation)[0]

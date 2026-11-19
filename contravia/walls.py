@@ -13,7 +13,7 @@ import numpy as np
 from contravia.citydata import CityData
 from contravia.clearance import boxes, roads_around
 from contravia.geo import CELL
-from contravia.landmarks import Landmarks
+from contravia.landmarks import cached
 from contravia.rules import trees
 
 
@@ -27,7 +27,7 @@ class Walls:
 
     def __init__(self, city: CityData):
         self.city = city
-        self.landmarks = Landmarks(city)
+        self.landmarks = cached(city)
         self._cache: dict[tuple[int, int], np.ndarray] = {}
         self._pending: dict[tuple[int, int], Future] = {}  # cells being built ahead of the car
         self._pool = ThreadPoolExecutor(1, thread_name_prefix="walls")

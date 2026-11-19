@@ -139,3 +139,18 @@ def test_on_a_hillside_road_the_car_pitches_with_it_and_does_not_roll():
     assert abs(on_road.roll) < 1e-3 and abs(on_road.pitch - np.arctan(0.05)) < 2e-3
     off_road = settle(CarState(0.0, 60.0, 0.0, 0.0), Surface(city, t))
     assert abs(off_road.roll) > 0.1                                    # on the grass it follows the hillside
+
+
+def test_the_camera_follows_the_car_where_it_is_drawn_at_any_frame_rate():
+    """Below 30 fps the frames are long and uneven: the camera must aim where the model is drawn, between the last
+    two physics steps, or the car slides forward and back on screen by up to a step's travel."""
+    d = driven()
+    d.launch(25.0)
+    rng = np.random.default_rng(3)
+    ahead = []
+    for _ in range(120):
+        d.step(Controls(steer=0, throttle=0.3, brake=0, handbrake=False), float(rng.uniform(0.028, 0.045)), NONE)
+        seen = d.seen()
+        at = np.asarray(d.pose()["at"])
+        ahead.append((at[0] - seen.x) * math.cos(seen.yaw) + (at[2] - seen.z) * math.sin(seen.yaw))
+    assert np.ptp(ahead[20:]) < 0.01
