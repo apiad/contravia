@@ -93,4 +93,8 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
 - `data/` is never committed: no OSM extract, no npz.
 - Code is for students: one job per module, docstrings in full sentences.
 - An engine limit is fixed in manifoldx with a benchmark, not worked around here.
+- Gates: a merge to main needs green tests and nothing else. The full `contravia bench` (the whole route, about
+  15 minutes a run) runs only before a release. To make something faster, measure only the part being optimised,
+  with a profile of a few minutes at most, before and after each change; never wait on the full bench to learn
+  what a profile already shows, and never run it on every iteration.
 - Checks: `rift check` (tests and lint).
