@@ -24,9 +24,7 @@ prepared up front (built_tree).
 """
 
 import math
-import os
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import shapely
@@ -72,16 +70,6 @@ PAINTED = {c for k in ("motorway", "trunk", "primary", "secondary", "tertiary") 
 
 # What contravia.structures adds per cell: triangles and their paint, walls with heights, cuts in the ground, roofs.
 STRUCTURE_KINDS = ("struct_tris", "struct_paint", "struct_walls", "street_cuts", "street_roofs")
-
-_POOL: ThreadPoolExecutor | None = None
-
-
-def _pool() -> ThreadPoolExecutor:
-    global _POOL
-    if _POOL is None:
-        _POOL = ThreadPoolExecutor(os.cpu_count())
-    return _POOL
-
 
 def unit(v):
     """v scaled to length 1 along its last axis."""
@@ -467,13 +455,13 @@ def built_tree(geoms):
 
 
 def pmap(fn, items, chunk=32):
-    """fn over items on the thread pool (this Python has no GIL), results in order."""
-    items = list(items)
-    chunks = [items[i:i + chunk] for i in range(0, len(items), chunk)]
-    out = []
-    for r in _pool().map(lambda ch: [fn(x) for x in ch], chunks):
-        out += r
-    return out
+    """fn over items, results in order, in this thread.
+
+    It ran on a thread pool once (this Python has no GIL), but GEOS keeps a reference count on its shared geometry
+    factory that is not safe across threads: geometries freed in two threads at once crashed the process
+    (GeometryFactory::dropRef). `contravia prepare --jobs` builds provinces in separate processes instead.
+    `chunk` is kept for the callers' sake and does nothing."""
+    return [fn(x) for x in items]
 
 
 def end_widths(chains, ends):
