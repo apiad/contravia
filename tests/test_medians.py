@@ -5,9 +5,8 @@ import numpy as np
 from contravia import medians
 from contravia.graph import build_graph
 from contravia.prepare import WIDTHS
-from contravia.streets import build
+from contravia.streets import LIFT, arclen, build
 from contravia.structures import CONCRETE, KERB_TOP, LAMPS, POLE
-from contravia.terrain import Terrain
 
 
 def _avenue(name, z0=0.0):
@@ -28,9 +27,14 @@ def _avenue(name, z0=0.0):
     return a, ribbons, owner, axes, chains
 
 
+def _flat(axes):
+    """Each ribbon's centreline profile on flat ground."""
+    return [(arclen(q), np.full(len(q), LIFT)) for q in axes]
+
+
 def test_carlos_iii_gets_a_kerb_with_lamps_on_its_centreline():
     a, ribbons, owner, axes, chains = _avenue("Avenida Salvador Allende (Carlos III)")
-    tris, paint, keys, walls, _ = medians.build(ribbons, owner, axes, chains, Terrain.flat(), a)
+    tris, paint, keys, walls, _ = medians.build(ribbons, owner, axes, chains, _flat(axes), a)
     kerb = tris[paint == KERB_TOP]
     mid = kerb[(kerb[:, :, 0] > 30).all(axis=1) & (kerb[:, :, 0] < 170).all(axis=1)]  # away from the junctions
     assert len(mid) and np.abs(mid[:, :, 2]).max() < medians.KERB_W / 2 + 1.0         # on the centreline (it drifts under 1 m)
@@ -42,16 +46,16 @@ def test_carlos_iii_gets_a_kerb_with_lamps_on_its_centreline():
 def test_boyeros_south_of_the_rotonda_gets_a_wall_the_car_hits():
     z = medians.ROTONDA_Z + 1000
     a, ribbons, owner, axes, chains = _avenue("Avenida Rancho Boyeros", z0=z)
-    tris, paint, _, walls, _ = medians.build(ribbons, owner, axes, chains, Terrain.flat(), a)
+    tris, paint, _, walls, _ = medians.build(ribbons, owner, axes, chains, _flat(axes), a)
     assert (paint == CONCRETE).any() and len(walls)
     mid = walls[(walls[:, [0, 2]] > 30).all(axis=1) & (walls[:, [0, 2]] < 170).all(axis=1)]
     assert len(mid) and (np.abs(mid[:, [1, 3]] - z) < medians.WALL_W / 2 + 1.0).all()
-    assert (walls[:, 5] - walls[:, 4] >= medians.WALL_H).all()
+    assert (walls[:, 5] - walls[:, 4] >= medians.WALL_H - 1e-5).all()
 
 
 def test_another_avenue_gets_no_median():
     a, ribbons, owner, axes, chains = _avenue("Avenida Cualquiera")
-    tris, *_ = medians.build(ribbons, owner, axes, chains, Terrain.flat(), a)
+    tris, *_ = medians.build(ribbons, owner, axes, chains, _flat(axes), a)
     assert not len(tris)
 
 

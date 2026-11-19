@@ -47,18 +47,21 @@ def test_the_triangles_cover_the_pieces_once_and_stay_in_their_cell():
     assert (xz >= lo[:, None] - 1e-3).all() and (xz <= lo[:, None] + CELL + 1e-3).all()
 
 
-def test_on_a_hill_a_junction_is_flat_and_the_road_never_dips_under_the_ground():
+def test_on_a_hill_a_junction_lies_on_the_ground_s_plane_and_the_road_follows_the_ground_at_lift():
     t = _hill()
     (_, _, _, rings, _, _), (tris, _, _, _, _, _) = _cross(t)
     centres = tris[:, :, [0, 2]].mean(axis=1)
     junction = shapely.contains_xy(rings[0].buffer(-0.05), centres[:, 0], centres[:, 1])
-    assert junction.any() and np.ptp(tris[junction, :, 1]) < 1e-3
+    j = tris[junction].reshape(-1, 3).astype(float)
+    a = np.c_[np.ones(len(j)), j[:, 0], j[:, 2]]
+    (_, gx, gz), *_ = np.linalg.lstsq(a, j[:, 1], rcond=None)
+    assert junction.any() and abs(gx - 0.02) < 1e-3 and abs(gz - 0.05) < 1e-3   # tilted with the hill
     y = tris[:, :, 1].reshape(-1)
     ground = t.height(tris[:, :, 0].reshape(-1), tris[:, :, 2].reshape(-1))
-    assert (y >= ground + LIFT - 1e-3).all()
+    assert np.allclose(y, ground + LIFT, atol=2e-3)                            # never under it, never floating
 
 
-def test_a_ribbon_is_level_across_and_meets_its_junction_without_a_step():
+def test_a_ribbon_tilts_with_the_ground_across_and_meets_its_junction_without_a_step():
     t = _hill()
     (_, _, _, rings, _, _), (tris, _, _, _, _, _) = _cross(t)
     city = CityData.from_features(np.zeros((0, 5)), [], np.zeros(0), [], np.zeros(0), np.zeros((0, 2)), t)
@@ -66,11 +69,26 @@ def test_a_ribbon_is_level_across_and_meets_its_junction_without_a_step():
     city.add_kind("street_edges", np.zeros((0, 2, 3)), np.zeros((0, 2), int))
     s = Surface(city, t)
     across = s.height(np.array([100.0, 100.0]), np.array([-2.5, 2.5]))   # the east arm, kerb to kerb
-    assert abs(across[0] - across[1]) < 0.01
-    edge = rings[0].exterior.interpolate(rings[0].exterior.project(shapely.Point(10, 0)))
-    inside, outside = (edge.x - 0.05, edge.y), (edge.x + 0.05, edge.y)
-    y = s.height(np.array([inside[0], outside[0]]), np.array([inside[1], outside[1]]))
-    assert abs(y[0] - y[1]) < 0.02
+    assert abs((across[1] - across[0]) - 5.0 * 0.05) < 0.01               # the hill's 5 % across it
+    for x in (10, -10):                                                   # the east and west arms' ends
+        ring = rings[0].exterior
+        for z in (-2.0, 0.0, 2.0):
+            edge = ring.interpolate(ring.project(shapely.Point(x, z)))
+            d = 0.05 * np.sign(x)
+            y = s.height(np.array([edge.x - d, edge.x + d]), np.array([edge.y, edge.y]))
+            assert abs(y[0] - y[1]) < 0.02
+
+
+def test_on_a_ten_percent_slope_the_street_stands_less_than_three_tenths_over_the_ground():
+    """A hill of 10 % down the cross's north-south arms and 4 % along the others, with a crest: no part of
+    the street may stand more than 0.3 m over the ground, the 99th percentile of Havana's target."""
+    r, c = np.mgrid[0:300, 0:300]
+    z, x = -1500 + 10.0 * r, -1500 + 10.0 * c
+    t = Terrain(0.10 * z + 0.04 * x - 0.001 * np.maximum(x, 0) ** 2 / 2, (-1500, -1500), (10, 10))
+    _, (tris, _, _, _, _, _) = _cross(t, "primary")
+    p = tris.reshape(-1, 3).astype(float)
+    over = p[:, 1] - t.height(p[:, 0], p[:, 2])
+    assert over.min() > -1e-3 and over.max() < 0.3
 
 
 def test_the_wheels_stand_on_the_drawn_triangles():
@@ -159,3 +177,18 @@ def test_paint_heights_match_every_pair_without_building_every_pair():
     xz = np.vstack([rng.uniform(-5, 105, (3000, 2)), tris[:50, 0, [0, 2]], (tris[:50, 0] + tris[:50, 1])[:, [0, 2]] / 2])
     fallback = rng.uniform(0, 1, len(xz))
     assert np.array_equal(_on(tris, xz, fallback), _on_every_pair(tris, xz, fallback))
+
+
+def test_a_winding_street_on_a_slope_stands_at_lift_over_the_ground_all_along():
+    """A street through a dozen bends, rounded into one ribbon, on a 10 % slope: its profile must be read at the
+    arclength along its own centreline, or on a curve it drifts metres along the slope and sinks or floats."""
+    from tests.graphs import make_graph
+
+    j = [(40.0 * i, 30.0 * (i % 2)) for i in range(13)]
+    edges = [e for i in range(12) for e in ((i, i + 1), (i + 1, i))]
+    _, c = np.mgrid[0:300, 0:300]
+    t = Terrain(0.10 * (-1500 + 10.0 * c), (-1500, -1500), (10, 10))
+    tris = mesh(*build(dict(make_graph(j, edges).a), WIDTHS), t)[0]
+    p = tris.reshape(-1, 3).astype(float)
+    over = p[:, 1] - t.height(p[:, 0], p[:, 2])
+    assert over.min() > 0 and over.max() < 2 * LIFT   # on a bend the outer kerb reads the slope a little off

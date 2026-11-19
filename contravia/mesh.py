@@ -17,6 +17,17 @@ class MeshBuilder:
         self._faced = False
         self._srf, self._surfaced = [], False
 
+    def mark(self) -> int:
+        """A mark of how much has been added so far, for bounds_since."""
+        return len(self._pos)
+
+    def bounds_since(self, mark: int) -> tuple[np.ndarray, np.ndarray] | None:
+        """The (min, max) corners of the vertices added since `mark`, or None if nothing was."""
+        if len(self._pos) == mark:
+            return None
+        p = np.concatenate(self._pos[mark:])
+        return p.min(axis=0), p.max(axis=0)
+
     def add(self, positions, normals, color, indices, facade=None, surface=0) -> None:
         """Add vertices with one colour, or one per vertex, and triangles indexing them from 0. facade is
         one (bays along, floors up, building type, seed) per vertex for walls the shader draws windows on;

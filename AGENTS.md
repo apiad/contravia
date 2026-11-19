@@ -44,7 +44,8 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   slope as stretched at their level (`rules/cover.py`): a stylised relief atlas, not a photo.
 - `contravia prepare` also builds the road graph traffic drives on (g_* arrays); data from before layer 2 plays with no traffic.
 - `contravia prepare` then builds the street surface from that graph (`contravia/streets.py`): avenues' two carriageways
-  joined, junctions merged and rounded, one flat height per junction, cut per cell and triangulated. The cells draw
+  joined, junctions merged and rounded, each junction on the plane that fits the ground under it and each street
+  5 cm over the ground, tilted with it across, cut per cell and triangulated. The cells draw
   it and the wheels stand on the same triangles (`contravia/surface.py`). `contravia streets` rebuilds it in an existing
   data file in about 3 minutes, without reading OSM again. Data without it draws the old
   per-segment ribbons.
@@ -55,8 +56,10 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   it (`Surface.height(..., near=)`) and a wall stops the car only at its own heights.
 - `contravia prepare` then lays the pavements (`contravia/walks.py`): a road-network face built over more than 30 %
   (12 % in the old centre) rises 15 cm kerb to kerb; elsewhere each building gets a 1.5 m platform and a path to
-  its street. The cells draw them with manifoldx's pavement patterns and the wheels stand on them. `contravia walks`
-  rebuilds them in an existing data file in about 4 minutes.
+  its street. Every raised edge is bevelled so a wheel rolls up it, and outside dense blocks a street edge that
+  stands 10 cm or more over the ground gets a verge: a 0.5 m shoulder at its height, then a 2.5 m slope down. The
+  cells draw them with manifoldx's pavement patterns and the wheels stand on them. `contravia walks` rebuilds them
+  in an existing data file in about 5 minutes; the verges read the streets, so after `contravia streets` run it too.
 - `contravia prepare` turns blocks with few or no buildings into parks (`contravia/parks.py`, spec
   `docs/superpowers/specs/2026-11-18-parks-design.html`): city parks with paths, plaza and centrepiece, paseos, the paved
   Prado and wild parks outside the city, some with a lake. `contravia/props.py` builds their motifs as `park_tris`, the
@@ -110,6 +113,15 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   on them; the Malecón leaves out its wall pieces across the coast road. `contravia walls-check` counts what would
   stand inside a road over all of Havana and must read 0 (about 3 minutes; it needs `data/`, so it is not a rift
   rule; tests/test_walls.py checks the same rule on the fixture city).
+- Collectible places (spec `docs/superpowers/specs/2026-11-19-collectible-places-design.html`): `contravia/places.json`
+  is written outside the repo from EcuRed and OSM and reviewed by hand; replace it whole, never edit it here.
+  `contravia/collect.py` loads it into world metres by cell, finds the places near a point and judges how a camera
+  frames a place's box.
+  While driving, the nearest place without a photo that is in reach and in sight shows at the bottom (`hud.set_spot`);
+  F aims a camera over the car at it (menu `aim`), SPACE judges the framing, and a good one saves
+  `fotos/<id>.png` and `coleccion.json` in the config folder (`contravia/album.py`) and shows the place's card.
+  `contravia play --place ID` starts on a street that frames it; `--screen aim` or `--screen card` with `--shot`
+  saves those screens.
 - The game grows in layers, and every layer covers the whole city. Never detail one district ahead of the rest.
 - Same inputs, same city: every random draw is seeded from an OSM id or a block centroid.
 - `data/` is never committed: no OSM extract, no npz.

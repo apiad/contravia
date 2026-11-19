@@ -159,7 +159,8 @@ def walks(mb, tris: np.ndarray, paint: np.ndarray) -> None:
     if not len(t):
         return
     p = t.reshape(-1, 3)
-    from contravia.walks import DIRT_TOP, PARTS, PATH_TOP
+    from contravia.rules.ground import grass
+    from contravia.walks import DIRT_TOP, PARTS, PATH_TOP, SHOULDER_CODE, SLOPE_CODE
 
     code = np.repeat(np.asarray(paint, int), 3)
     zone, part = np.minimum(code // PARTS, 2), code % PARTS
@@ -167,8 +168,13 @@ def walks(mb, tris: np.ndarray, paint: np.ndarray) -> None:
     dirt = part >= DIRT_TOP
     col[dirt] = np.asarray(DIRT) * np.where(part[dirt] == DIRT_TOP, 1.0, 0.85)[:, None]
     col *= (0.9 + 0.2 * fbm(p[:, 0], p[:, 2], 3.0, seed=23))[:, None]
+    verge = code >= SHOULDER_CODE  # a verge off a street's edge: packed earth, then the ground's own grass
+    col[code == SHOULDER_CODE] = np.multiply(DIRT, 0.8)
+    slope = code == SLOPE_CODE
+    col[slope] = grass(p[slope, 0], p[slope, 2], np.zeros(int(slope.sum())))
     surface = np.where((part == 0) | (part == PATH_TOP), np.asarray(WALK_PATTERN)[zone],
                        np.where(part == 2, PLATFORM_PATTERN, 0))
+    surface[verge] = 0
     mb.add(p, np.repeat(_normal(t), 3, axis=0), col, np.arange(len(p)).reshape(-1, 3), surface=surface)
 
 

@@ -123,3 +123,21 @@ def test_the_minimap_renders_once_more_when_loading_ends():
     for _ in range(MINIMAP_EVERY * 2):
         hud.update(car, np.zeros(3), loading=False)
     assert len(renders) == 3  # a still car on a loaded world
+
+
+def test_the_photo_hint_shows_the_place_only_while_there_is_one():
+    from contravia.hud import Hud
+
+    engine = _Engine()
+    hud = Hud(engine)
+    engine.started[0]()
+    hud.show(True)
+    assert hud.spot_panel not in engine.gui._panels
+    hud.set_spot("Teatro Sauto")
+    assert hud.spot_panel in engine.gui._panels and hud.spot_text.text == "Teatro Sauto"
+    hud.show(False)
+    assert hud.spot_panel not in engine.gui._panels
+    hud.show(True)
+    assert hud.spot_panel in engine.gui._panels
+    hud.set_spot("")
+    assert hud.spot_panel not in engine.gui._panels

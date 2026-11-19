@@ -28,6 +28,21 @@ def relief(terrain) -> bool:
     return bool(h.size) and float(h.max()) > SEA
 
 
+def drawn(terrain, x, z) -> np.ndarray:
+    """The height at (x, z) of the ground as ground() draws it: the terrain at the vertices of each cell's grid,
+    N per side, and straight between them over the grid's two triangles per square. Between its samples the
+    terrain itself curves; what lies on the ground, like the streets, must clear this one."""
+    step = CELL / (N - 1)
+    fx, fz = np.asarray(x, float) / step, np.asarray(z, float) / step
+    c, r = np.floor(fx), np.floor(fz)
+    tx, tz = fx - c, fz - r
+    def at(dc, dr):
+        return terrain.height((c + dc) * step, (r + dr) * step)
+    h00, h01, h10, h11 = at(0, 0), at(1, 0), at(0, 1), at(1, 1)
+    return np.where(tx + tz <= 1, h00 + tx * (h01 - h00) + tz * (h10 - h00),
+                    h11 + (1 - tx) * (h10 - h11) + (1 - tz) * (h01 - h11))
+
+
 def grass(x, z, slope) -> np.ndarray:
     """The (V, 3) grass colour at points (x, z) with ground slopes `slope` (rise over run)."""
     dark = fbm(x, z, 90.0, seed=1)[:, None]

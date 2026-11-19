@@ -37,7 +37,8 @@ def _city(t, arrays=None):
     city.add_kind("street_edges", edges, ekeys)
     ribbons, owner, axes, rings, rnode, chains = pieces
     st, paint, skeys, walls, wkeys, cuts, ckeys, roofs, rkeys, holes = dress(
-        ribbons, owner, axes, chains, keep["prof"], t, None, rings, rnode, keep["hj"])
+        ribbons, owner, axes, chains, keep["prof"], t, None, rings, rnode,
+        {n: y for n, y in keep["hj"].items() if n not in keep["planes"]}, keep["tilts"])
     city.add_kind("struct_tris", st, skeys)
     city.add_kind("struct_paint", paint, skeys)
     city.add_kind("struct_walls", walls, wkeys)
@@ -233,3 +234,20 @@ def test_a_car_drives_into_and_out_of_a_tunnel_both_ways_without_touching_a_wall
         assert step < 0.05                       # and no wheel steps more than a few cm in a frame
         assert low < -6.0                        # it went down into the tunnel
         assert abs(end.x - x1) < 5.0 and abs(end.y) < 0.5   # and came back up on the far side
+
+
+def test_a_street_tilted_with_a_hillside_gets_no_walls_and_no_cut():
+    """Streets follow the ground across, so the higher kerb's ground stands over the centre: that is not a sunk
+    street, and nothing may wall it in."""
+    from tests.graphs import four_way
+
+    r, c = np.mgrid[0:300, 0:300]
+    t = Terrain(0.12 * (-1500 + 10.0 * r) + 0.08 * (-1500 + 10.0 * c), (-1500, -1500), (10, 10))
+    pieces = build(dict(four_way(arm=150.0).a), WIDTHS)
+    keep = {}
+    mesh(*pieces, t, keep)
+    ribbons, owner, axes, rings, rnode, chains = pieces
+    _, _, _, walls, _, cuts, *_ = dress(ribbons, owner, axes, chains, keep["prof"], t, None, rings, rnode,
+                                        {n: y for n, y in keep["hj"].items() if n not in keep["planes"]},
+                                        keep["tilts"])
+    assert not len(walls) and not len(cuts)

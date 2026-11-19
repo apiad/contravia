@@ -119,3 +119,16 @@ def test_the_relief_past_the_malecon_goes_under_the_sea_but_not_under_the_road()
     malecon.carve(t, road)
     assert t.height(-1000.0, -702.0) == 3.0                     # under the road
     assert t.height(-1000.0, -702.0 - 10.5 - malecon.CARVE - 15) == malecon.SEABED
+
+
+def test_each_landmark_knows_the_box_of_its_own_mesh():
+    from contravia import collect
+
+    ids = [capitolio.OSM_ID, 19355360, 23918434, 23918435, 23866797, 23866811, 289803271,
+           plaza.TOWER, plaza.BASE, plaza.MINCOM]
+    lm = Landmarks(city_with([(i, square((k * 300.0, 2000.0), 30)) for k, i in enumerate(ids)]))
+    lo, hi = lm.bounds["Capitolio"]
+    p = lm.mesh.positions
+    cap = p[(np.abs(p[:, 0]) < 150) & (np.abs(p[:, 2] - 2000.0) < 150)]
+    assert np.allclose(lo, cap.min(axis=0), atol=1e-3) and np.allclose(hi, cap.max(axis=0), atol=1e-3)
+    assert set(collect.MODELLED) <= set(lm.bounds)

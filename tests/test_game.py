@@ -2,6 +2,7 @@ import subprocess
 import sys
 import time
 
+import numpy as np
 from PIL import Image
 
 
@@ -124,3 +125,34 @@ def test_a_game_can_start_in_another_province(island_dir):
     assert game.city.focused == "Artemisa" and abs(game.car.x - 900_000.0) < 100
     game.streamer.close()
     game.detail.close()
+
+
+def test_the_spot_is_the_nearest_place_in_reach_and_sight_without_a_photo(city):
+    import manifoldx as mx
+
+    from contravia import collect, geo
+    from contravia.game import Game
+    from contravia.world import World
+
+    engine = mx.Engine("spot", width=64, height=48)
+    game = Game(engine, World(city))
+    try:
+        x, z, _ = game.walls.nearest_road(300.0, 200.0)
+        game.teleport(x, z)
+
+        def place(pid, dx, dz):
+            lat, lon = geo.to_latlon([[game.car.x + dx, game.car.z + dz]])[0]
+            return {"id": pid, "title": pid, "type": "monumento", "province": "La Habana", "municipio": "Plaza",
+                    "text": "", "photo_target": "", "lat": lat, "lon": lon,
+                    "box": {"w": 8.0, "d": 8.0, "h": 10.0, "yaw_deg": 0.0},
+                    "scores": {"h": 1, "c": 1, "v": 1, "total": 3, "tier": "débil"}}
+
+        game.places = collect.Places([place("near", 0.0, 0.0), place("far", 400.0, 0.0)])
+        game.walls.near = lambda *a, **k: np.zeros((0, 2, 2))  # an open field: nothing in the way
+        game._find_spot(1e9)
+        assert game.spot.id == "near"
+        game.album.add("near", "lun 10:00", "despejado")
+        game._find_spot(2e9)
+        assert game.spot is None  # the other one is out of reach
+    finally:
+        game._shutdown()
