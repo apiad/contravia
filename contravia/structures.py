@@ -39,6 +39,7 @@ COPING = 0.4  # metres a cut's wall rises above the ground
 LAMP = 0.25  # half the width of the tunnel's lamp strip
 WALL_PAD = 0.3  # metres a wall stands out from the road's edge
 TWIN = 12.0  # metres between two tunnels' centrelines under which they are one box
+JOIN = 1.0  # metres: a street meets a junction's edge when it is this near the junction's height there
 DRY = WATER_Y + 0.3  # metres: a road below the ground lower than this opens a hole in the sea's plane
 SHORE = WATER_Y + 0.3  # metres: the lowest top of a cut's wall where the relief has a sea, so water never laps over it
 
@@ -120,10 +121,11 @@ def build(ribbons, owner, axes, chains, prof, terrain, lower_tree=None, rings=()
         return out
 
     outs = pmap(ribbon, range(len(axes)), chunk=64)
-    levels = {}  # layer -> (its ribbons, an STRtree of them)
+    levels = {}  # layer -> (its ribbons, an STRtree of them, their centrelines and profiles)
     for k in range(len(axes)):
-        levels.setdefault(chains[owner[k]].layer, []).append(ribbons[k])
-    levels = {L: (rs, built_tree(rs)) for L, rs in levels.items()}
+        levels.setdefault(chains[owner[k]].layer, []).append(k)
+    levels = {L: ([ribbons[k] for k in ks], built_tree([ribbons[k] for k in ks]),
+                  [(shapely.LineString(axes[k]), prof[k]) for k in ks]) for L, ks in levels.items()}
     tips = np.array([q[i] for q in axes for i in (0, -1)]).reshape(-1, 2)
     tip_tree = shapely.STRtree(shapely.points(tips))
 
@@ -179,9 +181,10 @@ def _twin(q, others, oprof, w):
 def _ring(out, poly, y, layer, same, terrain, sea, mouths=()):
     """A junction's dress: on a bridge a parapet along its free edges and a deck under it; in a tunnel, or sunk
     below the ground, walls along its free edges and a roof where its streets would have one, or a cut in the
-    ground, and a hole in the sea where it runs low. Its free edges are those no street of its level meets, nor a
-    bridge or tunnel that leaves from it (mouths, their ribbons); same holds that level's ribbons and an STRtree
-    of them, or None."""
+    ground, and a hole in the sea where it runs low. Its free edges are those no street of its level meets at its
+    height (one that meets it a storey higher, at the top of a cut, leaves a drop), nor a bridge or tunnel that
+    leaves from it (mouths, their ribbons); same holds that level's ribbons, an STRtree of them and their
+    centrelines and profiles, or None."""
     fence = poly.buffer(WALL_PAD, join_style="mitre")
     if not isinstance(fence, shapely.Polygon) or fence.is_empty:
         return
@@ -192,9 +195,15 @@ def _ring(out, poly, y, layer, same, terrain, sea, mouths=()):
         return
     mid = (a + b) / 2
     near = [] if same is None else same[1].query(poly, predicate="dwithin", distance=1.0)
-    meet = [same[0][i] for i in near] + list(mouths)
-    joined = shapely.union_all([m.buffer(0.01) for m in meet]) if meet else None
-    free = np.ones(len(a), bool) if joined is None else ~shapely.contains_xy(joined, mid[:, 0], mid[:, 1])
+    free = np.ones(len(a), bool)
+    for i in near:
+        on = shapely.contains_xy(same[0][i].buffer(0.01), mid[:, 0], mid[:, 1])
+        line, (s0, h0) = same[2][i]
+        at = np.interp(shapely.line_locate_point(line, shapely.points(mid[on])), s0, h0)
+        on[on] = np.abs(at - y) < JOIN
+        free &= ~on
+    if mouths:
+        free &= ~shapely.contains_xy(shapely.union_all([m.buffer(0.01) for m in mouths]), mid[:, 0], mid[:, 1])
     flat = _triangles(fence)
     ya, yy = np.full(len(a), y), np.full(len(flat), y)
     if layer > 0:
