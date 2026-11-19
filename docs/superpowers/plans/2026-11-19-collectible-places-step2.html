@@ -118,7 +118,7 @@ pre{font:12.5px/1.5 var(--font-mono);background:var(--raised);border:1px solid v
 </ol>
 <div class="verify"><b>Verificar:</b> <code>python -m pytest tests/test_game.py tests/test_hud.py -q</code> pasa.</div></details>
 
-<details class="task" id="task-5" data-state="pending"><summary><span class="st">pendiente</span><b>5. Apuntar: F y la vista de foto</b><span class="files">contravia/menu.py, contravia/game.py, tests/test_menu.py</span></summary>
+<details class="task" id="task-5" data-state="done"><summary><span class="st">pendiente</span><b>5. Apuntar: F y la vista de foto</b><span class="files">contravia/menu.py, contravia/game.py, tests/test_menu.py</span></summary>
 <ol>
 <li>F mientras se maneja con <code>spot</code> abre la pantalla <code>aim</code>: el reloj y el carro se paran, la cámara se pone a 1,5 m sobre el carro mirando al centro de la caja, con <code>start_zoom</code>. Las flechas giran la vista hasta 25° a cada lado y 15° arriba y abajo; W y S cambian el zoom entre 1 y 3 (<code>engine.camera.fov</code> = 60° estrechado por el zoom). ESC vuelve a manejar.</li>
 <li>ESPACIO mide el encuadre con la cámara de ese momento, las paredes de <code>Walls.near</code> y la altura del suelo de <code>World.height</code>. Si no es <code>good</code>, la nota de la pantalla dice por qué: «Muy lejos», «Muy cerca», «Céntralo» o «Algo lo tapa».</li>
@@ -126,14 +126,14 @@ pre{font:12.5px/1.5 var(--font-mono);background:var(--raised);border:1px solid v
 </ol>
 <div class="verify"><b>Verificar:</b> <code>python -m pytest tests/test_menu.py -q</code> pasa.</div></details>
 
-<details class="task" id="task-6" data-state="pending"><summary><span class="st">pendiente</span><b>6. manifoldx: leer una textura</b><span class="files">manifoldx: manifoldx/engine.py, tests</span></summary>
+<details class="task" id="task-6" data-state="doing"><summary><span class="st">pendiente</span><b>6. manifoldx: leer una textura</b><span class="files">manifoldx: manifoldx/engine.py, tests</span></summary>
 <ol>
 <li>En manifoldx, <code>Engine.read_texture(handle) -&gt; Future</code>: copia la textura de un <code>render_to_texture</code> a un búfer en el siguiente cuadro y resuelve con un arreglo (alto, ancho, 3) de <code>uint8</code>, con la misma maquinaria que <code>Readback</code> del canal de desarrollo. Prueba con un render fuera de pantalla de un color de fondo conocido.</li>
 <li>Issue, rama, PR verde en manifoldx; se fusiona con el visto bueno del mantenedor. Luego <code>uv lock --upgrade-package manifold-gfx</code> en contravia.</li>
 </ol>
 <div class="verify"><b>Verificar:</b> la prueba nueva de manifoldx pasa y el PR está verde.</div></details>
 
-<details class="task" id="task-7" data-state="pending"><summary><span class="st">pendiente</span><b>7. El disparo y la ficha</b><span class="files">contravia/menu.py, contravia/game.py, contravia/album.py, tests/test_menu.py</span></summary>
+<details class="task" id="task-7" data-state="done"><summary><span class="st">pendiente</span><b>7. El disparo y la ficha</b><span class="files">contravia/menu.py, contravia/game.py, contravia/album.py, tests/test_menu.py</span></summary>
 <ol>
 <li>Con <code>good</code>, el juego renderiza la vista de la cámara a 1280 × 720 con <code>render_to_texture</code> (sin HUD ni menús), la lee con <code>read_texture</code>, guarda <code>fotos/&lt;id&gt;.png</code> y la apunta en el álbum.</li>
 <li>La pantalla <code>card</code> sale sobre el juego parado: la foto (la misma textura), «NUEVO · n de m en &lt;provincia&gt;», el título, tipo · municipio · hora del juego · clima, y el texto. ENTER o ESC vuelve a manejar; el aviso ya no sale para ese lugar.</li>
@@ -141,7 +141,7 @@ pre{font:12.5px/1.5 var(--font-mono);background:var(--raised);border:1px solid v
 </ol>
 <div class="verify"><b>Verificar:</b> <code>python -m pytest tests/test_menu.py tests/test_album.py -q</code> pasa.</div></details>
 
-<details class="task" id="task-8" data-state="pending"><summary><span class="st">pendiente</span><b>8. Capturas, documentación y cierre</b><span class="files">contravia/cli.py, contravia/game.py, AGENTS.md</span></summary>
+<details class="task" id="task-8" data-state="done"><summary><span class="st">pendiente</span><b>8. Capturas, documentación y cierre</b><span class="files">contravia/cli.py, contravia/game.py, AGENTS.md</span></summary>
 <ol>
 <li><code>contravia play --place ID</code> pone el carro en la calle más cercana al lugar, de cara a él; con <code>--screen aim --shot</code> o <code>--screen card --shot</code> guarda esas pantallas. Capturas de tres lugares de La Habana para revisarlas a ojo.</li>
 <li><code>AGENTS.md</code>: el aviso, F, ESPACIO, la ficha y <code>--place</code>.</li>
@@ -160,6 +160,9 @@ pre{font:12.5px/1.5 var(--font-mono);background:var(--raised);border:1px solid v
 <li>El mando queda fuera: ni contravia ni manifoldx leen hoy un mando (ninguna mención de gamepad o joystick en los dos). Y y A se asignan cuando el juego lea uno.</li>
 <li>La condición «a la vista» usa las paredes en planta de <code>Walls.near</code>, que no tienen altura: una tapia baja tapa igual que un edificio. Si en la sesión de ajuste estorba, se añade la altura a las paredes.</li>
 <li>La foto no es la del cuadro que se ve: es un render aparte de la misma cámara, porque el cuadro de la ventana lleva los menús dibujados encima.</li>
+<li>La caja de un landmark modelado sale de toda su malla, con jardines y explanadas: la del Capitolio mide 83 × 203 × 92 m, y una foto «buena» lo deja pequeño. Se ajusta en la sesión de la tarea 9.</li>
+<li><code>--place</code> no usa la calle más cercana al centro del lugar, que en el Capitolio cae dentro de su caja: prueba dieciséis direcciones y elige la calle desde la que mejor se encuadra (<code>Game.go_near</code>).</li>
+<li>Mientras se apunta, el carro se dibuja 1 km bajo tierra: la cámara está donde estaría su techo.</li>
 <li>Las cajas de los landmarks modelados salen alineadas a los ejes; para el Capitolio y el Habana Libre es algo más grande que el edificio.</li>
 </ul>
 </main>
