@@ -87,14 +87,14 @@ pre{font:12.5px/1.5 var(--font-mono);background:var(--raised);border:1px solid v
 
 <h2><span class="n">01</span>Tareas</h2>
 
-<details class="task" id="task-1" data-state="pending"><summary><span class="st">pendiente</span><b>1. La colección del jugador</b><span class="files">contravia/album.py, tests/test_album.py</span></summary>
+<details class="task" id="task-1" data-state="done"><summary><span class="st">pendiente</span><b>1. La colección del jugador</b><span class="files">contravia/album.py, tests/test_album.py</span></summary>
 <ol>
 <li>Pruebas, con <code>$CONTRAVIA_CONFIG</code> temporal: una colección vacía no tiene nada; <code>add</code> guarda el id con la fecha real, la hora y el clima del juego y el nombre del PNG, y otra <code>Album.load()</code> lo lee; un id que ya no está en la lista se ignora al cargar sin romper; un <code>coleccion.json</code> roto se trata como vacío y no se pisa hasta el siguiente <code>add</code>.</li>
 <li><code>Album</code>: <code>load(places)</code>, <code>has(id)</code>, <code>add(id, game_time, weather, png_name)</code>, <code>count(province)</code> y <code>photo_path(id)</code> en <code>config_dir()/fotos/</code>. Escribe a un temporal y lo renombra, como <code>settings.py</code>.</li>
 </ol>
 <div class="verify"><b>Verificar:</b> <code>python -m pytest tests/test_album.py -q</code> pasa.</div></details>
 
-<details class="task" id="task-2" data-state="pending"><summary><span class="st">pendiente</span><b>2. A tiro, a la vista y el zoom de partida</b><span class="files">contravia/collect.py, tests/test_collect.py</span></summary>
+<details class="task" id="task-2" data-state="done"><summary><span class="st">pendiente</span><b>2. A tiro, a la vista y el zoom de partida</b><span class="files">contravia/collect.py, tests/test_collect.py</span></summary>
 <ol>
 <li>Pruebas: <code>in_reach</code> es cierto a menos de seis veces el lado mayor o de 300 m, lo que sea menor, y falso más allá; <code>in_sight</code> con un segmento de pared entre la cámara y la cara cercana de la caja da falso, sin pared da cierto, y las paredes de la propia caja no la tapan; <code>start_zoom</code> da el zoom entre 1 y 3 con el que la caja ocupa el 60 % del cuadro, o 3 si ni así llega.</li>
 <li><code>in_sight(eye, place, walls)</code>: cinco rayos en planta desde el ojo al centro y las cuatro esquinas de la cara más cercana, acortados 1 m para no chocar con el contorno del propio lugar; cuenta si al menos tres no cruzan ninguna pared. Las paredes son las de <code>Walls.near</code>, segmentos en planta sin altura.</li>
@@ -102,7 +102,7 @@ pre{font:12.5px/1.5 var(--font-mono);background:var(--raised);border:1px solid v
 </ol>
 <div class="verify"><b>Verificar:</b> <code>python -m pytest tests/test_collect.py -q</code> pasa.</div></details>
 
-<details class="task" id="task-3" data-state="pending"><summary><span class="st">pendiente</span><b>3. La caja de los landmarks modelados</b><span class="files">contravia/mesh.py, contravia/landmarks/__init__.py, contravia/collect.py, tests/test_landmarks.py, tests/test_collect.py</span></summary>
+<details class="task" id="task-3" data-state="done"><summary><span class="st">pendiente</span><b>3. La caja de los landmarks modelados</b><span class="files">contravia/mesh.py, contravia/landmarks/__init__.py, contravia/collect.py, tests/test_landmarks.py, tests/test_collect.py</span></summary>
 <ol>
 <li><code>MeshBuilder.mark()</code> y <code>bounds_since(mark)</code>: el mínimo y el máximo de los vértices añadidos desde la marca.</li>
 <li><code>Landmarks.bounds</code>: por <code>NAME</code>, la caja alineada a los ejes de la malla de ese landmark.</li>
@@ -111,7 +111,7 @@ pre{font:12.5px/1.5 var(--font-mono);background:var(--raised);border:1px solid v
 </ol>
 <div class="verify"><b>Verificar:</b> <code>python -m pytest tests/test_landmarks.py tests/test_collect.py -q</code> pasa.</div></details>
 
-<details class="task" id="task-4" data-state="pending"><summary><span class="st">pendiente</span><b>4. El aviso en la calle</b><span class="files">contravia/game.py, contravia/hud.py, tests/test_game.py, tests/test_hud.py</span></summary>
+<details class="task" id="task-4" data-state="done"><summary><span class="st">pendiente</span><b>4. El aviso en la calle</b><span class="files">contravia/game.py, contravia/hud.py, tests/test_game.py, tests/test_hud.py</span></summary>
 <ol>
 <li>El juego carga <code>Places</code> y <code>Album</code> al arrancar; cada medio segundo de manejo mira los lugares sin foto a menos de 300 m y guarda en <code>game.spot</code> el más cercano que esté a tiro y a la vista desde el carro.</li>
 <li>El HUD muestra abajo al centro el icono <code>foto</code>, el nombre del lugar y la tecla F mientras hay <code>spot</code>, y nada si no. Prueba como las del HUD: con un <code>spot</code> fijado el panel tiene el nombre; sin él no está.</li>
