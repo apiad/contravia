@@ -141,3 +141,21 @@ def test_the_photo_hint_shows_the_place_only_while_there_is_one():
     assert hud.spot_panel in engine.gui._panels
     hud.set_spot("")
     assert hud.spot_panel not in engine.gui._panels
+
+
+def test_the_minimap_marks_a_place_ahead_of_the_car_above_its_centre_and_hides_the_spare_icons():
+    import numpy as np
+
+    from contravia import collect
+    from contravia.hud import MARGIN, MARK_PX, MINIMAP_SHOWN, OFF, Hud
+    from tests.test_collect import at
+
+    engine = _Engine()
+    hud = Hud(engine)
+    engine.started[0]()
+    hud.set_places(collect.Places([at(100, 0, "a")]), lambda pid: pid == "a")
+    hud.update(CarState(0, 0, 0, 0.0), np.zeros(3))  # yaw 0 faces +x
+    (first, image), (second, _) = hud.marks[:2]
+    centre = MARGIN + MINIMAP_SHOWN / 2 - MARK_PX / 2
+    assert first.offset[0] == round(centre) and first.offset[1] < centre - 30
+    assert "#" in image.svg and second.offset == OFF

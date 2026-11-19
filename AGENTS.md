@@ -125,6 +125,9 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   `fotos/<id>.png` and `coleccion.json` in the config folder (`contravia/album.py`) and shows the place's card.
   `contravia play --place ID` starts on a street that frames it; `--screen aim` or `--screen card` with `--shot`
   saves those screens.
+  The minimap and the map's «Lugares» layer show every place with an icon per kind (`contravia/placemarks.py`), grey
+  until photographed; from `placemarks.CITY_H` up the map joins them by municipio. ENTER on a place offers its card
+  (`Menu.view_card`) or driving there (`Game.drive_to`).
 - The game grows in layers, and every layer covers the whole city. Never detail one district ahead of the rest.
 - Same inputs, same city: every random draw is seeded from an OSM id or a block centroid.
 - `data/` is never committed: no OSM extract, no npz.

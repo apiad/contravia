@@ -133,6 +133,7 @@ class Game:
         # The collectible places, the player's collection, and the place the photo hint offers (contravia/collect.py).
         self.places = collect.Places.load().with_meshes(self.walls.landmarks.bounds)
         self.album = Album.load({p.id: p.province for p in self.places})
+        self.hud.set_places(self.places, self.album.has)
         self.spot, self._spot_at = None, 0.0
         self.aim = None  # while aiming at a place: {"place", "ground", "yaw", "pitch", "zoom"} (start_aim)
         self._photo_pending = None  # (PNG path, future of its pixels) between a shot and its saving
@@ -475,6 +476,17 @@ class Game:
         self.mode, self.photo = "map", None
         self.clock.pause()
         self.map = self.map or mapview.MapCam(self.car.x, self.car.z, 2500.0, 0.0)
+
+    def drive_to(self, p: collect.Place) -> str | None:
+        """Leave the map driving on a street from which the place frames well (go_near); the error if none."""
+        self.go_near(p)
+        error = self.engine.state.teleport.get("error")
+        if error:
+            return error
+        self.map = None
+        self.km, self.area, self.address = 0.0, "", ("", "", "")
+        self.resume()
+        return None
 
     def drive_here(self) -> str | None:
         """Leave the map driving on the road nearest the point under its crosshair; the error if there is none."""
