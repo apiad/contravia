@@ -701,7 +701,7 @@ class MapScreen(Screen):
         g.map = cam
 
 
-TILE_W, TILE_H, TILE_GAP = 250, 92, 14  # a province's tile in the album
+TILE_W, TILE_H, TILE_GAP = 205, 92, 12  # a province's tile in the album
 PHOTO_W, PHOTO_H, PHOTO_GAP = 200, 112, 14  # a place's photo in a province's page
 PAGE_COLS, PAGE_ROWS = 5, 3
 
@@ -743,7 +743,7 @@ class AlbumScreen(Screen):
         for k, (name, got, total) in enumerate(self.rows):
             x, y = 60 + (k % self.COLS) * (TILE_W + TILE_GAP), 130 + (k // self.COLS) * (TILE_H + TILE_GAP)
             bar = Image(ui.progress(TILE_W - 30, 6, got / total), style_overrides={"width": TILE_W - 30, "height": 6})
-            tile = _tile([_text(name.upper(), ui.TITLE, 20, ui.PAPER),
+            tile = _tile([_text(name.upper(), ui.TITLE, 17, ui.PAPER),
                           _text(f"{got} / {total}", ui.BOLD, 16, ui.YELLOW if got else ui.GREY), bar],
                          x, y, TILE_W, TILE_H)
             self.tiles.append(tile)

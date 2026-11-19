@@ -87,21 +87,21 @@ pre{font:12.5px/1.5 var(--font-mono);background:var(--raised);border:1px solid v
 
 <h2><span class="n">01</span>Tareas</h2>
 
-<details class="task" id="task-1" data-state="pending"><summary><span class="st">pendiente</span><b>1. Las cuentas y el movimiento en la rejilla</b><span class="files">contravia/album.py, tests/test_album.py</span></summary>
+<details class="task" id="task-1" data-state="done"><summary><span class="st">pendiente</span><b>1. Las cuentas y el movimiento en la rejilla</b><span class="files">contravia/album.py, tests/test_album.py</span></summary>
 <ol>
 <li><code>tally(places, has, key)</code>: por provincia o por dibujo de icono, cuántos llevas y cuántos hay, en el orden de mayor a menor total.</li>
 <li><code>grid_step(index, key, cols, n)</code>: la casilla nueva al pulsar una flecha en una rejilla de <code>n</code> casillas y <code>cols</code> columnas, sin salirse.</li>
 </ol>
 <div class="verify"><b>Verificar:</b> <code>python -m pytest tests/test_album.py -q</code> pasa.</div></details>
 
-<details class="task" id="task-2" data-state="pending"><summary><span class="st">pendiente</span><b>2. Las pantallas</b><span class="files">contravia/menu.py, contravia/ui.py, tests/test_menu.py</span></summary>
+<details class="task" id="task-2" data-state="done"><summary><span class="st">pendiente</span><b>2. Las pantallas</b><span class="files">contravia/menu.py, contravia/ui.py, tests/test_menu.py</span></summary>
 <ol>
 <li><code>AlbumScreen</code> («album»): las 16 provincias en una rejilla de 4 columnas, cada una con su nombre, «41 / 177» y una barra; a la derecha el total y la cuenta por tipo. Se abre desde «Álbum» en la pausa y en el menú principal, y ESC vuelve a donde estaba.</li>
 <li><code>ProvinceScreen</code> («province»): las fichas de la provincia en 5 columnas y 3 filas por página, primero las que tienes; cada una con su foto o un hueco gris con el tipo y el municipio, y el título debajo. ENTER abre la ficha (<code>Menu.view_card</code>, que ahora recibe a qué pantalla vuelve).</li>
 </ol>
 <div class="verify"><b>Verificar:</b> <code>python -m pytest tests/test_menu.py -q</code> pasa.</div></details>
 
-<details class="task" id="task-3" data-state="pending"><summary><span class="st">pendiente</span><b>3. Capturas, documentación y cierre</b><span class="files">contravia/cli.py, AGENTS.md</span></summary>
+<details class="task" id="task-3" data-state="done"><summary><span class="st">pendiente</span><b>3. Capturas, documentación y cierre</b><span class="files">contravia/cli.py, AGENTS.md</span></summary>
 <ol>
 <li><code>--screen album</code> y <code>--screen province</code> en <code>contravia play</code> para las capturas.</li>
 <li>La suite entera en segundo plano, <code>rift check</code>, PR.</li>

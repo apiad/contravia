@@ -84,7 +84,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--place", help="a collectible place's id (contravia/places.json): start on the street nearest it; "
                    "--screen aim aims at it and --screen card photographs it")
     p.add_argument("--screen", choices=["main", "free", "options", "pause", "photo", "map", "garage", "design", "drive",
-                                        "aim", "card"],
+                                        "aim", "card", "album", "province"],
                    help="open on this menu screen, or drive at once; main for a window, drive for --shot")
     p.add_argument("--no-pipeline", dest="pipeline", action="store_false",
                    help="run the systems and the render one after the other instead of overlapping them")

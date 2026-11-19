@@ -1007,6 +1007,15 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     menu = Menu(engine, game, free, Options.load(), screen=screen if screen in ("main", "free", "options") else None)
     if screen in ("pause", "photo", "map"):
         engine.on("startup")(lambda _=None: (menu.pause(), screen != "pause" and menu.show(screen)))
+    if screen in ("album", "province"):  # over the pause; the province of --place, or La Habana
+        def album(_=None):
+            menu.pause()
+            menu.province = game.places.by_id(place).province if place else "La Habana"
+            menu.show("album")
+            if screen == "province":
+                menu.show("province")
+
+        engine.on("startup")(album)
     if screen in ("garage", "design"):
         def garage(_=None):
             game.to_menu()
