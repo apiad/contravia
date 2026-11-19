@@ -46,6 +46,10 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--out", default="data/cuba-src", help="folder for one <province>.src each")
     p.add_argument("--province", action="append", help="pack only this province (name or slug); repeatable")
 
+    p = sub.add_parser("coast", help="write the map's coast (OSM natural=coastline) of an extract into a built island or the sources")
+    p.add_argument("pbf")
+    p.add_argument("--out", default="data/cuba", help="the built island (its index is rewritten on the next load) or data/cuba-src")
+
     p = sub.add_parser("build", help="build the city from the compact source into the player's home, as the first run does")
     p.add_argument("--source", default="data/cuba-src", help="folder of the province sources")
     p.add_argument("--home", help="where to build; the per-user data folder by default")
@@ -132,6 +136,15 @@ def main(argv: list[str] | None = None) -> None:
         from contravia.source import main as source
 
         source(args.pbf, args.dem, args.out, args.province)
+    elif args.command == "coast":
+        import json
+        from pathlib import Path
+
+        from contravia import coast
+
+        land, report = coast.read(args.pbf)
+        report["bytes"] = coast.save(land, Path(args.out) / coast.NAME)
+        print(json.dumps(report))
     elif args.command == "build":
         if args.window or args.shot:
             from contravia.buildscreen import main as window

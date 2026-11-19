@@ -28,6 +28,12 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   the graph of the province the car is in and starts over when it crosses into another.
   `contravia bench` adds the scenes of `bench/cuba.json` after the Havana route when the world holds several
   provinces: a teleport to Santiago, a hill view over Havana and a 300 m flight toward Santa Clara.
+- The map draws far land from the coast, not the relief (`contravia/coast.py`, spec
+  `docs/superpowers/specs/2026-11-19-map-sea-coast-design.html`): OSM's `natural=coastline` joined into land
+  polygons, kept as `coast.src` beside the province sources and in the built island. `prepare` and `source` write it;
+  `contravia coast <pbf> --out data/cuba` adds it to an island already built. The index cuts it per node into each
+  summary (`summary_version` 2 in `index.npz`; an older index is rewritten on load) and `summary_mesh` draws that land
+  as one continuous ground with skirts and 800 m of shallows. An extract with no coastline keeps the old land.
 - `contravia prepare` also builds the road graph traffic drives on (g_* arrays); data from before layer 2 plays with no traffic.
 - `contravia prepare` then builds the street surface from that graph (`contravia/streets.py`): avenues' two carriageways
   joined, junctions merged and rounded, one flat height per junction, cut per cell and triangulated. The cells draw

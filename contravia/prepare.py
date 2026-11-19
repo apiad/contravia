@@ -580,11 +580,17 @@ def main(pbf, out, dem=None, provinces=None, resume: bool = False) -> dict:
     import json
     import time
 
+    from contravia import coast
     from contravia.geo import PROVINCES
     from contravia.terrain import read_terrain
 
     boxes = province_boxes(pbf)
     reports = {}
+    if not provinces or not (Path(out) / coast.NAME).exists():  # the map's coast, for the whole island
+        land, reports["coast"] = coast.read(pbf)
+        if not land.is_empty:
+            reports["coast"]["bytes"] = coast.save(land, Path(out) / coast.NAME)
+        print("coast", json.dumps(reports["coast"]), flush=True)
     for name, slug in PROVINCES:
         if provinces and name not in provinces and slug not in provinces:
             continue
