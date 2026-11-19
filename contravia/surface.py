@@ -32,6 +32,7 @@ class Surface:
         self._cache: dict[tuple[int, int], np.ndarray] = {}
         self._tris: dict[tuple[int, int], tuple | None] = {}
         self._roofs: dict[tuple[int, int], tuple | None] = {}
+        self._bins: dict[tuple[int, int], tuple] = {}  # each cell's triangles by 8 m bin, built once
 
     def _streets(self, i: int, j: int):
         """Cell (i, j)'s street and pavement triangles as (corner a, inverse of the 2x2 edge matrix, heights), or
@@ -99,7 +100,12 @@ class Surface:
                 continue
             i, j = int(ci[group[0]]), int(cj[group[0]])
             st = self._streets(i, j)
-            if st is not None:
+            if st is not None and len(st[0]):
+                if (i, j) not in self._bins:
+                    self._bins[(i, j)] = self._bin_index(st)
+                out[group] = self._on_streets_binned(st, x[group], z[group], out[group],
+                                                     None if nears is None else nears[group], index=self._bins[(i, j)])
+            elif st is not None:
                 out[group] = self._on_streets(st, x[group], z[group], out[group],
                                               None if nears is None else nears[group])
             else:
@@ -141,9 +147,8 @@ class Surface:
         return out
 
     @staticmethod
-    def _on_streets_binned(st, x, z, ground, nears, size=8.0) -> np.ndarray:
-        """_on_streets for many points: each triangle goes into the size-metre bins its bounding box covers, and a
-        point is tested only against the triangles of its bin."""
+    def _bin_index(st, size=8.0):
+        """Each of st's triangles in the size-metre bins its bounding box covers: (origin, span, tri, off)."""
         a, inv, y = st
         det = inv[:, 0, 0] * inv[:, 1, 1] - inv[:, 0, 1] * inv[:, 1, 0]  # inv's inverse holds the edges u, v
         u = np.stack([inv[:, 1, 1], -inv[:, 1, 0]], axis=1) / det[:, None]
@@ -163,6 +168,14 @@ class Surface:
         order = np.argsort(bins, kind="stable")
         tri, bins = tri[order], bins[order]
         off = np.searchsorted(bins, np.arange(span[0] * span[1] + 1))
+        return o, span, tri, off
+
+    @staticmethod
+    def _on_streets_binned(st, x, z, ground, nears, size=8.0, index=None) -> np.ndarray:
+        """_on_streets for many points: each triangle goes into the size-metre bins its bounding box covers, and a
+        point is tested only against the triangles of its bin. index is _bin_index(st), kept by the caller."""
+        a, inv, y = st
+        o, span, tri, off = index if index is not None else Surface._bin_index(st, size)
         px = np.floor(np.stack([x, z], axis=1) / size).astype(np.int64) - o
         ok = (px[:, 0] >= 0) & (px[:, 0] < span[0]) & (px[:, 1] >= 0) & (px[:, 1] < span[1])
         b = np.where(ok, px[:, 0] * span[1] + px[:, 1], 0)
