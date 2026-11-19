@@ -1,0 +1,40 @@
+# Records on every push to main which lines and files each test touches, for test.yml to pick a pull request's
+# tests from. It never gates: recording makes the suite slower and a timing test may fail under it.
+name: testmap
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testmap-main
+  cancel-in-progress: true
+
+env:
+  TESTMAP: "testmap @ git+https://github.com/syalia-srl/testmap@v0.1.0"
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install a software Vulkan driver
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+      - run: uv sync --locked --group dev
+      - name: Record the map
+        run: |
+          uv run --with "$TESTMAP" testmap record --out "$RUNNER_TEMP/testmap/map.json.gz" -- -n auto -m "not slow" \
+            || echo "::warning title=testmap::suite failed under recording"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: testmap
+          path: ${{ runner.temp }}/testmap/map.json.gz
+          retention-days: 14

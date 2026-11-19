@@ -1,7 +1,7 @@
 """The fleet generator: stable variants, ranges inside manifoldx's, and every variant builds.
 
-The build test is the expensive one: it builds each variant of each family once, about two and a half minutes,
-and it is the test that says a sheet can be rendered and a pool filled.
+The build test is the expensive one: it builds each variant of each family once, one test per variant so
+parallel workers share them, and it is the test that says a sheet can be rendered and a pool filled.
 """
 
 import pathlib
@@ -119,12 +119,10 @@ def test_names_carry_no_trademark():
         assert mark not in words, f"{mark!r} names a maker or a model"
 
 
-@pytest.mark.parametrize("kind", fleet.KINDS)
-def test_every_variant_of_every_family_builds(kind):
-    for family in families_of(kind):
-        for k in range(family.variants):
-            variant = fleet.variant(kind, family.name, k)
-            variant.params.validate()
-            vehicle = variant.build()
-            assert vehicle.parts, (family.name, k)
-            assert vehicle.params is variant.params, (family.name, k)
+@pytest.mark.parametrize(("kind", "family", "k"), list(every_variant()))
+def test_every_variant_of_every_family_builds(kind, family, k):
+    variant = fleet.variant(kind, family, k)
+    variant.params.validate()
+    vehicle = variant.build()
+    assert vehicle.parts
+    assert vehicle.params is variant.params

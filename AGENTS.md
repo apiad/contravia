@@ -131,4 +131,5 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   15 minutes a run) runs only before a release. To make something faster, measure only the part being optimised,
   with a profile of a few minutes at most, before and after each change; never wait on the full bench to learn
   what a profile already shows, and never run it on every iteration.
-- Checks: `rift check` (tests and lint).
+- Checks: `rift check` (tests and lint). Run the tests in parallel, `uv run pytest -n auto -m "not slow"`. CI
+  (`.github/workflows/test.yml`) runs them whole on main and, in a PR, only those testmap picks from the diff.
