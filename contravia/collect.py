@@ -26,6 +26,12 @@ LARGEST = 0.90  # and at most this share; above it the camera is too close
 CENTRE = 0.60  # the box's centre must fall in this central share of the frame, on each axis
 INSIDE = 0.80  # at least this share of the box's rectangle on screen must be inside the frame
 ASPECT = 16 / 9  # the game window's width over its height
+REACH_SIDES = 6.0  # a place is in reach closer than this many times its largest side
+REACH_MAX = 300.0  # and never farther than this, metres
+ZOOM_MIN, ZOOM_MAX = 1.0, 3.0  # the photo camera's zoom range
+ZOOM_FILL = 0.6  # the share of the frame the starting zoom aims the box to fill
+SIGHT_INSET = 1.0  # metres a sight ray stops short of the box, so the place's own outline does not hide it
+SIGHT_EDGE = 0.15  # the share of the near face's width the side rays keep in from its ends
 
 
 @dataclass(frozen=True)
@@ -144,11 +150,14 @@ class Framing:
     size: float  # the larger of the box's width and height on screen, as shares of the frame's
     centre: tuple[float, float]  # where the box's centre falls, -1 to 1 on each axis
     inside: float  # the share of the box's rectangle on screen that lies inside the frame
-    verdict: str  # "good", "far", "near" or "off"
+    verdict: str  # "good", "far", "near", "off" or "hidden"
 
 
-def framing(eye, target, box_corners, zoom: float = 1.0, aspect: float = ASPECT) -> Framing:
-    """Judge how a camera frames a box given by its 8 corners (from `corners`)."""
+def framing(eye, target, box_corners, zoom: float = 1.0, aspect: float = ASPECT, walls=None) -> Framing:
+    """Judge how a camera frames a box given by its 8 corners (from `corners`).
+
+    With `walls`, a (W, 2, 2) array of wall segments in plan (Walls.near), a framing that would be good is
+    "hidden" when the walls stand between the camera and the box (in_sight)."""
     s = project(eye, target, box_corners, zoom, aspect)
     if (s[:, 2] <= 0).any():
         return Framing(0.0, (math.nan, math.nan), 0.0, "off")
@@ -164,6 +173,60 @@ def framing(eye, target, box_corners, zoom: float = 1.0, aspect: float = ASPECT)
         verdict = "off"
     elif size < SMALLEST:
         verdict = "far"
+    elif walls is not None and not in_sight(eye, box_corners, walls):
+        verdict = "hidden"
     else:
         verdict = "good"
     return Framing(float(size), (float(cx), float(cy)), float(inside), verdict)
+
+
+def in_reach(p: Place, x: float, z: float) -> bool:
+    """Whether the car at (x, z) is close enough to a place for the photo hint."""
+    return math.hypot(p.x - x, p.z - z) < min(REACH_SIDES * max(p.w, p.d, p.h), REACH_MAX)
+
+
+def _crosses(a, b, walls) -> bool:
+    """Whether the segment a-b in plan crosses any of the (W, 2, 2) wall segments."""
+    if len(walls) == 0:
+        return False
+    w = np.asarray(walls, float).reshape(-1, 2, 2)
+    p, r = np.asarray(a, float), np.asarray(b, float) - np.asarray(a, float)
+    q, s = w[:, 0], w[:, 1] - w[:, 0]
+    den = r[0] * s[:, 1] - r[1] * s[:, 0]
+    qp = q - p
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t = (qp[:, 0] * s[:, 1] - qp[:, 1] * s[:, 0]) / den
+        u = (qp[:, 0] * r[1] - qp[:, 1] * r[0]) / den
+    return bool(np.any((den != 0) & (t >= 0) & (t <= 1) & (u >= 0) & (u <= 1)))
+
+
+def in_sight(eye, box_corners, walls) -> bool:
+    """Whether a camera at `eye` sees the box past the walls, in plan.
+
+    Rays go from the eye to the middle and to both ends of the box's side nearest the eye (kept SIGHT_EDGE in
+    from the corners, where the neighbours' walls meet it), each stopping SIGHT_INSET metres short. The box is
+    in sight when at least two of the three are clear. The walls have no height, so a low wall hides like a
+    building does.
+    """
+    c = np.asarray(box_corners, float)[::2][:, [0, 2]]  # the four corners in plan, as corners() orders them
+    faces = [(c[0], c[1]), (c[1], c[3]), (c[3], c[2]), (c[2], c[0])]
+    e = np.array([eye[0], eye[2]], float)
+    a, b = min(faces, key=lambda f: np.linalg.norm((f[0] + f[1]) / 2 - e))
+    clear = 0
+    for k in (SIGHT_EDGE, 0.5, 1 - SIGHT_EDGE):
+        end = a + (b - a) * k
+        gap = np.linalg.norm(end - e)
+        if gap <= SIGHT_INSET:
+            clear += 1
+            continue
+        clear += not _crosses(e, end + (e - end) * SIGHT_INSET / gap, walls)
+    return clear >= 2
+
+
+def start_zoom(eye, target, box_corners, aspect: float = ASPECT) -> float:
+    """The zoom, within the camera's range, at which the box fills ZOOM_FILL of the frame."""
+    s = project(eye, target, box_corners, 1.0, aspect)
+    if (s[:, 2] <= 0).any():
+        return ZOOM_MIN
+    size = max(np.ptp(s[:, 0]), np.ptp(s[:, 1])) / 2
+    return float(min(ZOOM_MAX, max(ZOOM_MIN, ZOOM_FILL / max(size, 1e-9))))

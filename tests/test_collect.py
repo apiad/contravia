@@ -2,6 +2,7 @@
 
 import math
 
+import numpy as np
 import pytest
 
 from contravia import collect, geo
@@ -108,3 +109,41 @@ def test_the_shipped_list_loads_and_finds_the_capitolio_from_the_origin():
     ps = collect.Places.load()
     assert len(ps) >= 700
     assert "Capitolio" in " ".join(p.title for p in ps.near(0.0, 0.0, 200.0))
+
+
+def test_in_reach_is_six_largest_sides_or_300_m_whichever_is_less():
+    small = collect.Places([record(w=20.0, d=10.0, h=8.0)]).by_id("T1")  # 6 x 20 = 120 m
+    assert collect.in_reach(small, 0.0, 110.0) and not collect.in_reach(small, 0.0, 130.0)
+    big = collect.Places([record(w=200.0, d=100.0, h=30.0)]).by_id("T1")  # 6 x 200 is over 300 m
+    assert collect.in_reach(big, 290.0, 0.0) and not collect.in_reach(big, 310.0, 0.0)
+
+
+def test_a_wall_between_the_camera_and_the_box_hides_it_and_the_box_own_outline_does_not():
+    eye = (0.0, 1.5, 60.0)
+    c = box()  # 20 x 20 x 20 on the origin: the near face is at z = 10
+    assert collect.in_sight(eye, c, np.zeros((0, 2, 2)))
+    across = np.array([[[-30.0, 30.0], [30.0, 30.0]]])  # a building front between them
+    assert not collect.in_sight(eye, c, across)
+    own = np.array([[[-10.0, 10.0], [10.0, 10.0]], [[10.0, 10.0], [10.0, -10.0]]])  # the place's own walls
+    assert collect.in_sight(eye, c, own)
+    narrow = np.array([[[-1.0, 30.0], [1.0, 30.0]]])  # a lamp post's worth of wall blocks one ray of three
+    assert collect.in_sight(eye, c, narrow)
+
+
+def test_framing_says_hidden_when_walls_stand_in_the_way():
+    across = np.array([[[-30.0, 50.0], [30.0, 50.0]]])
+    eye, target = (0.0, 1.5, 60.0), (0.0, 10.0, 0.0)
+    assert collect.framing(eye, target, box(), walls=across).verdict == "hidden"
+    assert collect.framing(eye, target, box(), walls=np.zeros((0, 2, 2))).verdict == "good"
+
+
+def test_start_zoom_fills_sixty_percent_within_one_and_three():
+    def zoom_at(gap):
+        eye, target = (0.0, 1.5, 10.0 + gap), (0.0, 10.0, 0.0)
+        return collect.start_zoom(eye, target, box())
+    assert zoom_at(20.0) == 1.0  # already over 60 %
+    z = zoom_at(50.0)
+    assert 1.0 < z < 3.0
+    eye, target = (0.0, 1.5, 60.0), (0.0, 10.0, 0.0)
+    assert collect.framing(eye, target, box(), zoom=z).size == pytest.approx(0.6, abs=0.02)
+    assert zoom_at(800.0) == 3.0
