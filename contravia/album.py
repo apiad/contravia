@@ -59,3 +59,23 @@ class Album:
         tmp = path.with_suffix(".tmp")
         tmp.write_text(json.dumps(self._others | self.entries, ensure_ascii=False, indent=1), encoding="utf-8")
         os.replace(tmp, path)
+
+
+def tally(places, has, key) -> list[tuple[str, int, int]]:
+    """(name, how many the player has, how many there are) for each value of key(place), such as its province,
+    the largest totals first."""
+    got, total = {}, {}
+    for p in places:
+        k = key(p)
+        total[k] = total.get(k, 0) + 1
+        got[k] = got.get(k, 0) + bool(has(p.id))
+    return sorted(((k, got[k], total[k]) for k in total), key=lambda t: (-t[2], t[0]))
+
+
+def grid_step(index: int, key: str, cols: int, n: int) -> int:
+    """The cell an arrow key moves to in a grid of n cells, cols to a row; it stays put at an edge."""
+    move = {"left": -1, "right": 1, "up": -cols, "down": cols}.get(key, 0)
+    to = index + move
+    if not 0 <= to < n or (key in ("left", "right") and to // cols != index // cols):
+        return index
+    return to
