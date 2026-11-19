@@ -78,7 +78,10 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--warp", type=float, default=1.0, help="run the clock this many times faster; for tests")
     p.add_argument("--height", type=float, help="with --screen map: the map camera's height over --at, in metres")
     p.add_argument("--yaw", type=float, default=0.0, help="with --screen map: the map's turn from north, in degrees")
-    p.add_argument("--screen", choices=["main", "free", "options", "pause", "photo", "map", "garage", "design", "drive"],
+    p.add_argument("--place", help="a collectible place's id (contravia/places.json): start on the street nearest it; "
+                   "--screen aim aims at it and --screen card photographs it")
+    p.add_argument("--screen", choices=["main", "free", "options", "pause", "photo", "map", "garage", "design", "drive",
+                                        "aim", "card"],
                    help="open on this menu screen, or drive at once; main for a window, drive for --shot")
     p.add_argument("--no-pipeline", dest="pipeline", action="store_false",
                    help="run the systems and the render one after the other instead of overlapping them")
@@ -187,7 +190,8 @@ def main(argv: list[str] | None = None) -> None:
 
         play(args.data or _city(), at=args.at, shot=args.shot, frames=args.frames, traffic=args.traffic, when=args.time,
              warp=args.warp, sky=args.sky, pipelined=args.pipeline,
-             with_traffic=args.with_traffic, screen=args.screen, height=args.height, yaw=args.yaw)
+             with_traffic=args.with_traffic, screen=args.screen, height=args.height, yaw=args.yaw,
+             place=args.place)
     elif args.command == "dev":
         from manifoldx.cli import main as manifoldx
 

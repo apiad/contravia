@@ -537,6 +537,30 @@ class Game:
         """Where the photo camera stands: 1.5 m over the car."""
         return (self.car.x, self.car.y + collect.EYE_HEIGHT, self.car.z)
 
+    def go_near(self, p: collect.Place) -> None:
+        """Put the car on a street outside a place's box from which it frames well, trying sixteen directions at
+        a photo's distance; the nearest street to the place when none does."""
+        ground = self.ground_of(p)
+        box = collect.corners(p, ground)
+        reach = min(collect.REACH_MAX, max(40.0, 1.6 * max(p.w, p.d, p.h)))
+        best = None
+        for k in range(16):
+            a = k * math.pi / 8
+            found = self.walls.nearest_road(p.x + reach * math.cos(a), p.z + reach * math.sin(a))
+            if found is None:
+                continue
+            x, z, _ = found
+            local = ((x - p.x) * p.axis[0] + (z - p.z) * p.axis[1], -(x - p.x) * p.axis[1] + (z - p.z) * p.axis[0])
+            if abs(local[0]) < p.w / 2 + 5 and abs(local[1]) < p.d / 2 + 5:
+                continue  # inside the place, or against its wall
+            eye, target = (x, ground + collect.EYE_HEIGHT, z), (p.x, ground + p.h / 2, p.z)
+            f = collect.framing(eye, target, box, collect.start_zoom(eye, target, box),
+                                walls=self.walls.near(x, z))
+            score = (f.verdict != "good", abs(f.size - collect.ZOOM_FILL))
+            if best is None or score < best[0]:
+                best = (score, x, z)
+        self.teleport(*(best[1:] if best else (p.x, p.z)))
+
     def start_aim(self) -> bool:
         """Stop the car and the clock and point the photo camera at the spot, zoomed to frame it; False with no spot."""
         p = self.spot
@@ -695,7 +719,10 @@ class Game:
             self.physics_ms = (time.perf_counter() - t0) * 1000
             self.km += math.hypot(self.car.x - self._before.x, self.car.z - self._before.z) / 1000
         # manifoldx turns +x toward -z for a positive yaw; the game turns it toward +z.
-        place_car(self.handles, self.model, **self.driven.pose())
+        pose = self.driven.pose()
+        if self.mode == "aim":  # the photographer stepped out: the camera stands where the car's roof would be
+            pose["at"] = (pose["at"][0], pose["at"][1] - 1000.0, pose["at"][2])
+        place_car(self.handles, self.model, **pose)
         half = -self.car.yaw / 2  # the same turn as the car's, about the vertical
         ground = float(self.surface.height(np.array([self.car.x]), np.array([self.car.z]), near=self.car.y)[0])
         self.shadow.transform.pos = (self.car.x, ground + SHADOW_LIFT, self.car.z)
@@ -908,7 +935,7 @@ class Game:
 def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, size=(1280, 720),
          traffic: str | None = None, when: str | None = None, warp: float = 1.0, sky: str | None = None,
          pipelined: bool = True, with_traffic: bool = False,
-         screen: str | None = None, height: float | None = None, yaw: float = 0.0) -> None:
+         screen: str | None = None, height: float | None = None, yaw: float = 0.0, place: str | None = None) -> None:
     """Open a window on the main menu, or with `shot`, render offscreen until the city is drawn and save a PNG.
 
     screen opens a menu screen ("main", "free", "options", "pause", "photo", "map", "garage", "design") or "drive"
@@ -917,7 +944,9 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     starts with them as they are.
 
     with_traffic turns the traffic on, as a traffic file does: traffic: a JSON file of demand settings. when ("Sun 08:00", "17:30") pins the clock, 10:00 today by default,
-    and "now" runs it on the machine's clock; warp speeds it up, for tests and the dev channel. pipelined runs the systems of the next
+    and "now" runs it on the machine's clock; warp speeds it up, for tests and the dev channel. place, a collectible place's id, starts
+    the car on the street nearest it; with screen "aim" the photo camera aims at it, and with "card" it is photographed
+    and its card shows, whatever the framing. pipelined runs the systems of the next
     frame while the window draws this one; --no-pipeline is the serial path, for comparing the two.
     With screen "map", height (metres) puts the map's camera that high over `at`, turned yaw degrees from north,
     and the car stays at the Capitolio: `at` may be far from any road.
@@ -940,7 +969,19 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
         from contravia import mapview
 
         game.map = mapview.zoom(mapview.MapCam(float(at[0]), float(at[1]), 1.0, math.radians(yaw)), height)
-    if "car" in engine.state:  # a reload under contravia dev drives on
+    if place:
+        p = game.places.by_id(place)
+        game.go_near(p)
+        if screen in ("aim", "card"):
+            def aim(_=None):
+                game.spot = p
+                game.start_aim()
+                menu.show("aim")
+                if screen == "card":
+                    menu.took(game.shoot())
+
+            engine.on("startup")(aim)
+    elif "car" in engine.state:  # a reload under contravia dev drives on
         screen = "drive"
     from contravia.menu import Menu
     from contravia.settings import FreeDrive, Options
