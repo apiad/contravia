@@ -13,7 +13,7 @@ from contravia.clearance import boxes, roads_around
 from contravia.geo import CELL
 from contravia.landmarks import Landmarks, cached
 from contravia.mesh import MeshBuilder
-from contravia.rules import buildings, detail, facades, ground, roads, trees
+from contravia.rules import buildings, detail, facades, ground, roads
 from contravia.terrain import seat
 from contravia.world import World
 
@@ -53,7 +53,8 @@ def warm() -> None:
 
 
 def build(i: int, j: int):
-    """The MeshData of cell (i, j): its ground, roads, buildings, filler boxes and trees."""
+    """The MeshData of cell (i, j): its ground, roads, buildings and filler boxes. Its trees are not in it: the
+    game draws them as instances (forest.py)."""
     global SKIPPED_ROOFS
     c = landmarks().keep(i, j, city().cell(i, j))
     x0, z0 = i * CELL, j * CELL
@@ -75,7 +76,6 @@ def build(i: int, j: int):
         portals = facades.portal_walls(ring, near) if plan.portal else None
         if not buildings.box(mb, ring, style_id, base=seat(ring, terrain), plan=plan, portals=portals):
             SKIPPED_ROOFS += 1
-    trees.draw(mb, trees.cell_trees(i, j, c, terrain, near, trees.arrays_of(city(), i, j)), trees.today())
     return mb.to_meshdata(x0, z0)
 
 

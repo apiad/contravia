@@ -3,32 +3,7 @@ from datetime import date
 import numpy as np
 import pytest
 
-from contravia.rules.species import ACCENT, CROWNS, FLOWER, GREEN, LEAF, SPECIES, season, template
-
-
-@pytest.mark.parametrize("species", SPECIES)
-@pytest.mark.parametrize("crown", CROWNS)
-def test_a_template_is_small_closed_over_the_ground_and_stands_on_the_origin(species, crown):
-    t = template(species, crown)
-    assert 0 < len(t.triangles) <= 90
-    assert np.allclose(np.linalg.norm(t.normals, axis=1), 1.0)
-    assert t.positions[:, 1].min() >= -0.01
-    base = t.positions[t.positions[:, 1] < 0.01]
-    assert np.allclose(base[:, [0, 2]].mean(axis=0), 0.0, atol=0.05)
-    assert len(t.role) == len(t.rgb) == len(t.shade) == len(t.positions)
-
-
-def test_full_crowns_average_at_most_75_triangles_and_thinner_crowns_draw_less():
-    assert np.mean([len(template(s).triangles) for s in SPECIES]) <= 75
-    for s in SPECIES:
-        n = [len(template(s, c).triangles) for c in CROWNS]
-        assert n[0] >= n[1] >= n[2]
-
-
-def test_crowns_are_darker_underneath():
-    t = template("laurel")
-    leaf = t.role == LEAF
-    assert t.shade[leaf & (t.normals[:, 1] < -0.5)].mean() < t.shade[leaf & (t.normals[:, 1] > 0.5)].mean()
+from contravia.rules.species import FLOWER, GREEN, SPECIES, season
 
 
 def test_the_flamboyan_flowers_in_summer_turns_orange_late_in_the_year_and_thins_in_the_dry_season():
@@ -56,11 +31,6 @@ def test_evergreens_stay_full_and_yellow_a_little_in_april():
 def test_a_shift_moves_the_turn_by_days():
     assert season("ceiba", date(2026, 3, 25)).crown == "bare"
     assert season("ceiba", date(2026, 3, 25), shift_days=10).crown == "full"
-
-
-def test_accent_parts_exist_where_a_season_paints_them():
-    for s in ("flamboyan", "almendro"):
-        assert (template(s).role == ACCENT).any()
 
 
 class _Land:
@@ -155,16 +125,12 @@ def test_a_cell_takes_the_zone_of_its_commonest_municipio():
 
 
 def test_ceibas_draw_fewer_triangles_in_the_dry_season_and_the_far_green_turns_with_them():
-    from contravia.mesh import MeshBuilder
-    from contravia.rules.trees import Trees, draw, far_green
+    from contravia.rules.treegrammar import triangles
+    from contravia.rules.trees import far_green
 
-    n = 5
-    t = Trees(np.arange(n * 2, dtype=float).reshape(n, 2) * 30, np.zeros(n), np.full(n, SPECIES.index("ceiba"), np.int8),
-              np.ones(n), np.zeros(n), np.zeros(n, int), np.full(n, 0.5))
-    feb, jun = MeshBuilder(), MeshBuilder()
-    draw(feb, t, date(2026, 2, 15))
-    draw(jun, t, date(2026, 6, 15))
-    assert len(feb.to_meshdata(0, 0).indices) < len(jun.to_meshdata(0, 0).indices)
+    feb, jun = season("ceiba", date(2026, 2, 15)), season("ceiba", date(2026, 6, 15))
+    for lod in range(3):
+        assert triangles("ceiba", lod, feb.crown) < triangles("ceiba", lod, jun.crown)
     assert far_green(date(2026, 2, 15)) != far_green(date(2026, 6, 15))
 
 
