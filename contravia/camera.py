@@ -4,7 +4,7 @@ import math
 
 import numpy as np
 
-from contravia.car import TOP_SPEED, CarState
+from contravia.car import CAMERA_FAST, CarState
 
 EASE = 0.25  # seconds: the time constant the eye takes to catch up with where it wants to be
 
@@ -15,7 +15,7 @@ ROOM = 0.6  # metres the eye keeps under a tunnel's roof
 
 def chase(cam_pos: np.ndarray, car: CarState, dt: float, terrain=None) -> tuple[np.ndarray, np.ndarray]:
     """The camera's next eye and its target, given where the eye is now and the car."""
-    fast = min(abs(car.speed) / TOP_SPEED, 1.0)
+    fast = min(abs(car.speed) / CAMERA_FAST, 1.0)
     back, up = 7.0 + 4.0 * fast, 2.6 + 1.4 * fast
     h = np.array([math.cos(car.yaw), 0.0, math.sin(car.yaw)])
     want = np.array([car.x, car.y + up, car.z]) - h * back

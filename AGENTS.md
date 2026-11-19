@@ -70,6 +70,10 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   JSON in the config folder's `garaje/` (`contravia/garage.py`) and drives any car, bus or truck from the main menu,
   the free drive's Vehículo row or the pause. A vehicle builds on a worker thread; names are never trademarks.
   `--screen garage|design --shot` saves either screen.
+- The car is `manifoldx.vehicles` (spec `docs/superpowers/specs/2026-11-18-vehicle-physics-design.html`): a rigid body on
+  ray wheels with tyres, engine, gearbox and brakes, stepped at 120 Hz by `contravia/car.py` (`Driven`); each family's
+  numbers are in `contravia/rules/handling.py` and `tests/test_handling_targets.py` holds them to the spec's targets.
+  The Realismo option (0 easy to 100 real) sets the four assists' strengths; `Options.locked_assists` keeps some off.
 - A script of your own that builds `Game` (custom shots, probes) must run its code under
   `if __name__ == "__main__":`: the streamer starts worker processes with spawn, which re-imports the script and
   fails with "start a new process before the current process has finished its bootstrapping phase".

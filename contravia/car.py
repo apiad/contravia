@@ -1,32 +1,27 @@
-"""The car: an arcade bicycle model on the terrain, and collision with walls in 2D.
+"""The car: a manifoldx.vehicles rigid body on ray wheels, seen through the game's CarState and Controls.
 
-The bicycle model treats the car as one front and one back wheel a wheelbase apart. Turning the front
-wheel by an angle makes the car turn at speed * tan(angle) / wheelbase radians per second. That is all the
-physics the game needs: no tyre grip, no mass. On the terrain, the car's height, pitch and roll come from the
-ground under its four wheels, and gravity along the slope slows it uphill and speeds it down. The body is drawn
-on a spring toward that pose (Body, spring), the only suspension the car has.
+The physics lives in manifoldx: springs, tyres that grip and slide, engine, gearbox, brakes, walls, and the
+assists that the realism option sets (spec docs/superpowers/specs/2026-11-18-vehicle-physics-design.html). This
+module keeps the game's view of it: CarState with yaw 0 facing +x and a positive yaw turning toward +z, Controls as
+the driver's hands and feet, and settle, the pose of a footprint resting on the ground, for teleports and checks.
 """
 
 import math
 from dataclasses import dataclass, replace
 
 import numpy as np
+from manifoldx.vehicles import Vehicles
+from manifoldx.vehicles.body import matrices
 
-WHEELBASE = 2.6
-TRACK = 1.53  # metres between the left and right wheels
-G = 9.81  # m/s²
-LENGTH, WIDTH = 4.5, 1.8
-TOP_SPEED, REVERSE_SPEED = 45.0, 8.0  # m/s
-ACCEL, BRAKE = 6.0, 12.0  # m/s²
-HANDBRAKE, HANDBRAKE_TURN = 8.0, 1.6
-STEER_SLOW, STEER_FAST = 0.6, 0.12  # radians of wheel at rest and at top speed
-SUBSTEP = 0.25  # metres; the car never moves further than this between collision checks
-BUMP = 0.6  # share of speed kept after hitting a wall at a glancing angle
+WHEELBASE = 2.6  # what settle uses for a footprint; the driven car has its own from its spec
+TRACK = 1.53
+G = 9.81
+CAMERA_FAST = 45.0  # m/s: the speed at which the chase camera is at its farthest
 
 
 @dataclass
 class CarState:
-    """Where the car is: yaw 0 faces +x, and a positive yaw turns toward +z."""
+    """Where the car is: yaw 0 faces +x, and a positive yaw turns toward +z. y is the ground under it."""
 
     x: float
     z: float
@@ -35,11 +30,15 @@ class CarState:
     y: float = 0.0  # height of the ground under the car
     pitch: float = 0.0  # radians, positive with the nose up
     roll: float = 0.0  # radians, positive with the right side down
+    vy: float = 0.0  # m/s to the car's right
+    gear: int = 1
+    rpm: float = 0.0
+    telemetry: dict | None = None
 
 
 @dataclass
 class Controls:
-    """The driver's input: throttle and brake in [0, 1], steer in [-1, 1]."""
+    """The driver's input: throttle and brake in [0, 1], steer in [-1, 1] (positive toward +z), handbrake."""
 
     throttle: float
     brake: float
@@ -47,52 +46,95 @@ class Controls:
     handbrake: bool
 
 
-def _drag(speed: float) -> float:
-    """Rolling and air resistance, in m/s²: coasting from top speed stops in about 20 s."""
-    return 1.5 + 1.5 * (speed / TOP_SPEED) ** 2
+class SurfaceGround:
+    """The game's Surface or Terrain as manifoldx's Ground: heights from it, one grip everywhere."""
+
+    def __init__(self, surface, grip: float = 1.0):
+        self.surface, self._grip = surface, grip
+
+    def height(self, x, z, near=None):
+        if near is None:
+            return np.asarray(self.surface.height(x, z), float)
+        return np.asarray(self.surface.height(x, z, near=near), float)
+
+    def grip(self, x, z):
+        return np.full(np.shape(x), self._grip, float)
 
 
-def _circles(x, z, yaw):
-    """The car's body as three circles along its length, each as wide as the car."""
-    h = np.array([math.cos(yaw), math.sin(yaw)])
-    off = (LENGTH - WIDTH) / 2
-    return [np.array([x, z]) + h * k for k in (-off, 0.0, off)]
+class Driven:
+    """The player's vehicle: one manifoldx Vehicles row, stepped at 120 Hz from the game's frames."""
 
+    def __init__(self, spec, at: CarState, ground):
+        self.spec = spec
+        self.ground = ground if hasattr(ground, "grip") else SurfaceGround(ground)
+        self.fleet = Vehicles([spec])
+        self.place(at.x, at.z, at.yaw, at.y)
 
-def _hit(s: CarState, walls: np.ndarray) -> CarState:
-    """Push the car out of every wall it overlaps, and slow or turn it along the wall."""
-    if len(walls) == 0:
-        return s
-    r = WIDTH / 2
-    a, b = walls[:, 0].astype(float), walls[:, 1].astype(float)
-    ab = b - a
-    for _ in range(3):  # a corner may need a second push from the other wall
-        pushed = False
-        for c in _circles(s.x, s.z, s.yaw):
-            t = np.clip(np.einsum("ij,ij->i", c - a, ab) / np.maximum(np.einsum("ij,ij->i", ab, ab), 1e-12), 0, 1)
-            near = a + ab * t[:, None]
-            d = np.hypot(*(c - near).T)
-            k = int(np.argmin(d))
-            if d[k] >= r:
-                continue
-            n = (c - near[k]) / d[k] if d[k] > 1e-9 else np.array([-ab[k, 1], ab[k, 0]]) / np.hypot(*ab[k])
-            s = replace(s, x=s.x + n[0] * (r - d[k]), z=s.z + n[1] * (r - d[k]))
-            h = np.array([math.cos(s.yaw), math.sin(s.yaw)]) * math.copysign(1, s.speed or 1)
-            into = float(h @ n)
-            if into < 0:
-                if into > -0.7:  # glancing: turn along the wall and keep some speed
-                    tangent = h - into * n
-                    yaw = math.atan2(tangent[1], tangent[0])
-                    if s.speed < 0:
-                        yaw += math.pi
-                    s = replace(s, yaw=yaw, speed=s.speed * BUMP * math.sqrt(1 - into * into))
-                else:  # head on: stop
-                    s = replace(s, speed=0.0)
-            pushed = True
-            break
-        if not pushed:
-            break
-    return s
+    def place(self, x: float, z: float, yaw: float, y: float | None = None) -> CarState:
+        """Put the car at rest at (x, z) facing yaw, on the ground level nearest y (the ground there if None)."""
+        if y is None:
+            y = float(np.atleast_1d(self.ground.height(np.array([x]), np.array([z]), None))[0])
+        self.fleet.place(0, (x, y, z), -yaw, self.ground)
+        self.state = self._read()
+        return self.state
+
+    def launch(self, speed: float) -> None:
+        """Set the car rolling straight ahead at speed m/s, its wheels turning with it: for tests and benches."""
+        f = self.fleet
+        f.velocity[0] = matrices(f.rotation)[0][:, 0] * speed
+        f.omega[0] = speed / f.p.radius[0]
+        if speed > 0:
+            f.pick_gear(0)
+        self.state = self._read()
+
+    FIELDS = ("position", "rotation", "velocity", "angular", "omega", "slip", "compression", "ground_y", "gear",
+              "shift_timer", "rpm", "wheel_turn")
+
+    def snapshot(self) -> dict:
+        """The physics' state as plain lists, to keep across a reload of the game's code."""
+        return {k: np.asarray(getattr(self.fleet, k)[0]).tolist() for k in self.FIELDS}
+
+    def restore(self, snap: dict) -> CarState:
+        """Put back what snapshot() kept: the car goes on as it was, slide and spin included."""
+        f = self.fleet
+        for k in self.FIELDS:
+            getattr(f, k)[0] = np.asarray(snap[k])
+        f._before = (f.position.copy(), f.rotation.copy())
+        self.state = self._read()
+        return self.state
+
+    def step(self, c: Controls, dt: float, walls: np.ndarray, strengths=None) -> CarState:
+        """Advance by a frame of dt seconds under the controls, against walls (W, 2, 2), with the assists'
+        strengths (None: no assists)."""
+        controls = np.array([[c.steer, c.throttle, c.brake, float(c.handbrake)]])
+        self.fleet.advance(controls, self.ground, np.asarray(walls, float).reshape(-1, 2, 2), dt, strengths)
+        self.state = self._read()
+        return self.state
+
+    def run(self, c: Controls, seconds: float, walls, strengths=None, fps: float = 60.0) -> CarState:
+        """step at fps for seconds: for tests and the bench."""
+        for _ in range(int(round(seconds * fps))):
+            self.step(c, 1 / fps, walls, strengths)
+        return self.state
+
+    def pose(self) -> dict:
+        """What place_car needs to draw the car between the last two steps."""
+        f = self.fleet
+        at, rotation = f.model_transform(0)
+        return {"at": tuple(at), "rotation": tuple(rotation), "wheel_turn": float(f.wheel_turn[0].mean()),
+                "steer": -float(f.steer_angle[0][f.p.steered[0]].mean()), "travel": f.travel(0).tolist()}
+
+    def _read(self) -> CarState:
+        f = self.fleet
+        R = matrices(f.rotation)[0]
+        ahead, right = R[:, 0], R[:, 2]
+        v = f.velocity[0]
+        w = f.p.wheel_mask[0]
+        return CarState(x=float(f.position[0, 0]), z=float(f.position[0, 2]),
+                        yaw=math.atan2(ahead[2], ahead[0]), speed=float(v @ ahead),
+                        y=float(f.ground_y[0, w].mean()), pitch=math.asin(max(-1.0, min(1.0, ahead[1]))),
+                        roll=-math.asin(max(-1.0, min(1.0, right[1]))), vy=float(v @ right),
+                        gear=int(f.gear[0]), rpm=float(f.rpm[0]), telemetry=f.telemetry(0))
 
 
 def settle(s: CarState, terrain) -> CarState:
@@ -109,64 +151,3 @@ def settle(s: CarState, terrain) -> CarState:
     return replace(s, y=float((fl + fr + rl + rr) / 4),
                    pitch=math.atan2((fl + fr) / 2 - (rl + rr) / 2, WHEELBASE),
                    roll=math.atan2((fl + rl) / 2 - (fr + rr) / 2, TRACK))
-
-
-@dataclass
-class Body:
-    """The pose the car is drawn at: its height, pitch and roll, which follow the ground's on a spring."""
-
-    y: float
-    pitch: float
-    roll: float
-
-    @classmethod
-    def on(cls, s: CarState) -> Body:
-        """A body resting exactly on the ground pose s, as after a teleport."""
-        return cls(s.y, s.pitch, s.roll)
-
-
-SPRING = 0.08  # seconds: the time constant the body takes to follow the ground
-
-
-def spring(body: Body, s: CarState, dt: float) -> Body:
-    """The body after dt seconds following the ground pose s. The ground's pose jumps where a wheel crosses
-    from one street triangle to the next or drops off a kerb; the body eases toward it, by the same amount
-    for the same time whatever the frame rate, so a seam vanishes and a kerb reads as a bump."""
-    k = 1 - math.exp(-dt / SPRING)
-    return Body(body.y + (s.y - body.y) * k, body.pitch + (s.pitch - body.pitch) * k,
-                body.roll + (s.roll - body.roll) * k)
-
-
-def step(s: CarState, c: Controls, dt: float, walls: np.ndarray, terrain=None) -> CarState:
-    """Advance the car by dt seconds under the controls, stopping at the walls given as (W, 2, 2) segments.
-
-    With a terrain, gravity along the slope changes the speed and the car ends resting on the ground.
-    """
-    v = s.speed
-    if c.throttle > 0 and v >= -0.1:
-        v += ACCEL * c.throttle * dt
-    elif c.throttle > 0:
-        v += BRAKE * c.throttle * dt  # throttle while rolling back brakes first
-    if c.brake > 0:
-        if v > 0.1:
-            v = max(0.0, v - BRAKE * c.brake * dt)
-        else:
-            v -= ACCEL * c.brake * dt  # brake at rest backs up
-    if c.handbrake:
-        v = math.copysign(max(0.0, abs(v) - HANDBRAKE * dt), v)
-    v = math.copysign(max(0.0, abs(v) - _drag(v) * dt), v) if c.throttle == 0 and c.brake == 0 else v
-    v -= G * math.sin(s.pitch) * dt
-    v = min(TOP_SPEED, max(-REVERSE_SPEED, v))
-
-    fast = min(abs(v) / TOP_SPEED, 1.0)
-    angle = c.steer * (STEER_SLOW + (STEER_FAST - STEER_SLOW) * fast)
-    yaw_rate = v * math.tan(angle) / WHEELBASE * (HANDBRAKE_TURN if c.handbrake else 1.0)
-
-    n = max(1, math.ceil(abs(v) * dt / SUBSTEP))
-    s = replace(s, speed=v)
-    for _ in range(n):
-        yaw = s.yaw + yaw_rate * dt / n
-        dist = s.speed * dt / n
-        s = replace(s, yaw=yaw, x=s.x + math.cos(yaw) * dist, z=s.z + math.sin(yaw) * dist)
-        s = _hit(s, walls)
-    return settle(s, terrain) if terrain is not None else s

@@ -971,9 +971,9 @@ class Menu:
         if self._key(design) == self.shown:
             return
         if design is None:
-            self.game.set_vehicle(self.default_model)
+            self.game.set_vehicle(self.default_model, family="moderno")
         else:
-            self.game.set_vehicle(self.builder.now(design), design.palette())
+            self.game.set_vehicle(self.builder.now(design), design.palette(), family=design.base)
         self.shown = self._key(design)
 
     def show_design(self, design) -> None:
@@ -997,7 +997,7 @@ class Menu:
                 vehicle, self.note = None, "Así no se puede construir: vuelve atrás con Z."
                 self.target = None
             if vehicle is not None:
-                g.set_vehicle(vehicle, d.palette())
+                g.set_vehicle(vehicle, d.palette(), family=d.base)
                 self.shown = self._key(d)
         p = (d or self.chosen or designs.Design("ruso")).params()
         length = getattr(p, "length", 2.2)

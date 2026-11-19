@@ -1,46 +1,63 @@
 import math
 
 import numpy as np
+from manifoldx.vehicles import FlatGround, strengths_for
 
-from contravia.car import CarState, Controls, step
+from contravia.car import CarState, Controls, Driven
+from contravia.rules import fleet, handling
 
 NONE = np.zeros((0, 2, 2), np.float32)
 GO = Controls(throttle=1, brake=0, steer=0, handbrake=False)
+SPEC = handling.spec_for(fleet.moderno(), "moderno")
+HELP = strengths_for(30)
 
 
-def run(s, c, secs, walls=NONE):
-    for _ in range(int(secs * 60)):
-        s = step(s, c, 1 / 60, walls)
-    return s
+def driven(x=0.0, z=0.0, yaw=0.0, speed=0.0, ground=None):
+    d = Driven(SPEC, CarState(x, z, yaw, 0.0), ground or FlatGround())
+    d.run(Controls(0, 0, 0, False), 0.5, NONE, HELP)  # settle on its springs
+    if speed:
+        d.launch(speed)
+    return d
 
 
-def test_full_throttle_reaches_top_speed_and_no_more():
-    assert 44.0 < run(CarState(0, 0, 0, 0), GO, 20).speed <= 45.0
+def test_full_throttle_drives_forward():
+    d = driven()
+    s = d.run(GO, 5.0, NONE, HELP)
+    assert s.speed > 10.0 and s.x > 20.0 and abs(s.z) < 1.0
 
 
-def test_slow_turn_radius_matches_the_bicycle_model():
-    c = Controls(throttle=0, brake=0, steer=0.5, handbrake=False)
-    s = run(CarState(0, 0, 0, 5.0), c, 1.0)
-    steer = 0.5 * 0.6 * (1 - (5.0 / 45.0)) + 0.5 * 0.12 * (5.0 / 45.0)
-    expected_yaw_rate = 5.0 * math.tan(steer) / 2.6
-    assert abs(s.yaw - expected_yaw_rate * 1.0) < 0.15
+def test_the_car_turns_toward_the_wheel():
+    d = driven(speed=10.0)
+    s = d.run(Controls(throttle=0.3, brake=0, steer=0.5, handbrake=False), 1.0, NONE, HELP)
+    assert s.yaw > 0.2 and s.z > 0.5  # positive steer turns toward +z, as before
 
 
-def test_a_wall_stops_the_car_at_top_speed():
-    wall = np.array([[[20, -50], [20, 50]]], np.float32)
-    s = run(CarState(0, 0, 0, 45.0), GO, 2.0, wall)
-    assert s.x < 20.0
+def test_yaw_faces_the_game_way():
+    d = driven(yaw=math.pi / 2, speed=10.0)
+    s = d.run(Controls(0, 0, 0, False), 1.0, NONE, HELP)
+    assert s.z > 5.0 and abs(s.x) < 0.5 and abs(s.yaw - math.pi / 2) < 0.05
+
+
+def test_a_wall_stops_the_car_at_speed():
+    wall = np.array([[[30, -50], [30, 50]]], np.float32)
+    d, furthest = driven(speed=40.0), 0.0
+    for _ in range(180):
+        furthest = max(furthest, d.step(Controls(0, 0, 0, False), 1 / 60, wall, HELP).x)
+    assert furthest < 30.0 - SPEC.size[0] / 2 + 0.05  # it bounced off; it never went through
+    assert abs(d.state.speed) < 10.0
 
 
 def test_a_glancing_hit_slides_along_the_wall():
     wall = np.array([[[-100, 3], [100, 3]]], np.float32)
-    s = run(CarState(0, 0, 0.3, 20.0), Controls(0, 0, 0, False), 1.0, wall)
+    d = driven(yaw=0.3, speed=20.0)
+    s = d.run(Controls(0, 0, 0, False), 1.5, wall, HELP)
     assert s.z < 3.0 and s.x > 10.0
 
 
-def test_braking_from_rest_reverses_slowly():
-    s = run(CarState(0, 0, 0, 0), Controls(0, 1, 0, False), 5.0)
-    assert -8.0 <= s.speed < -5.0 and s.x < 0
+def test_braking_from_rest_reverses():
+    d = driven()
+    s = d.run(Controls(0, 1, 0, False), 4.0, NONE, HELP)
+    assert s.speed < -1.0 and s.x < 0 and s.gear == -1
 
 
 def _ramp(grade=0.1):
@@ -61,18 +78,17 @@ def test_on_a_ramp_the_car_pitches_and_does_not_roll():
 
 
 def test_coasting_uphill_stops_sooner_than_on_the_flat():
-    from contravia.car import settle
+    from contravia.car import SurfaceGround
 
-    none = Controls(0.0, 0.0, 0.0, False)
-    walls = np.zeros((0, 2, 2), np.float32)
+    def seconds_to_stop(terrain):
+        d = driven(speed=10.0, ground=SurfaceGround(terrain))
+        t = 0.0
+        while d.state.speed > 0.05 and t < 30:
+            d.run(Controls(0.0, 0.0, 0.0, False), 0.1, NONE, HELP)
+            t += 0.1
+        return t
 
-    def steps_to_stop(terrain):
-        s, n = settle(CarState(0.0, 0.0, 0.0, 10.0), terrain), 0
-        while s.speed > 0.05 and n < 2000:
-            s, n = step(s, none, 0.02, walls, terrain), n + 1
-        return n
-
-    assert steps_to_stop(_ramp(0.1)) < steps_to_stop(_ramp(0.0))
+    assert seconds_to_stop(_ramp(0.1)) < seconds_to_stop(_ramp(0.0))
 
 
 def test_the_camera_stays_above_the_ground_on_a_downhill():
@@ -123,32 +139,3 @@ def test_on_a_hillside_road_the_car_pitches_with_it_and_does_not_roll():
     assert abs(on_road.roll) < 1e-3 and abs(on_road.pitch - np.arctan(0.05)) < 2e-3
     off_road = settle(CarState(0.0, 60.0, 0.0, 0.0), Surface(city, t))
     assert abs(off_road.roll) > 0.1                                    # on the grass it follows the hillside
-
-
-def ride(grounds, dt):
-    """The body pose after riding over each ground pose in turn, dt seconds apart."""
-    from contravia.car import Body, spring
-
-    body = Body.on(grounds[0])
-    for g in grounds:
-        body = spring(body, g, dt)
-    return body
-
-
-def test_a_one_frame_jolt_in_the_ground_barely_moves_the_body():
-    flat, jolt = CarState(0, 0, 0, 10.0), CarState(0, 0, 0, 10.0, y=0.1, pitch=0.02, roll=math.radians(6))
-    body = ride([flat] * 10 + [jolt], 1 / 30)
-    assert abs(math.degrees(body.roll)) < 2.5 and body.y < 0.04
-
-
-def test_the_body_settles_on_a_steady_slope():
-    slope = CarState(0, 0, 0, 0.0, y=1.0, pitch=0.1, roll=0.05)
-    body = ride([CarState(0, 0, 0, 0.0)] + [slope] * 30, 1 / 30)
-    assert abs(body.y - 1.0) < 1e-3 and abs(body.pitch - 0.1) < 1e-3 and abs(body.roll - 0.05) < 1e-3
-
-
-def test_the_body_moves_alike_at_30_and_60_fps():
-    a, b = CarState(0, 0, 0, 0.0), CarState(0, 0, 0, 0.0, y=0.3, roll=0.1)
-    at30 = ride([a] + [b] * 3, 1 / 30)
-    at60 = ride([a] + [b] * 6, 1 / 60)
-    assert abs(at30.roll - at60.roll) < 0.005 and abs(at30.y - at60.y) < 0.01

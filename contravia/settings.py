@@ -73,6 +73,7 @@ class FreeDrive:
     """The rows of the free drive's screen, filled in from the command line's flags."""
 
     rows: list[Choice] = field(default_factory=list)
+    locked_assists: tuple = ()  # assists the game has not given the player yet: off at any realism
 
     @classmethod
     def from_flags(cls, at=(0.0, 0.0), when: str | None = None, force: str | None = None,
@@ -159,6 +160,7 @@ class Options:
     """The options screen's rows, saved between runs."""
 
     rows: list[Choice] = field(default_factory=list)
+    locked_assists: tuple = ()  # assists the game has not given the player yet: off at any realism
 
     @classmethod
     def load(cls) -> Options:
@@ -173,6 +175,10 @@ class Options:
                    help="Cómo se muestra la velocidad."),
             Choice("minimap", "Minimapa", [("Sí", True), ("No", False)],
                    help="El mapa redondo arriba a la derecha, que gira con el carro."),
+            Choice("realism", "Realismo",
+                   [("0 · Fácil", 0)] + [(str(v), v) for v in range(10, 100, 10)] + [("100 · Realista", 100)], 3,
+                   help="Cuánto te ayuda el carro: con 0 no se va de lado ni bloquea las ruedas; con 100 maneja "
+                        "como uno de verdad, sin ayudas."),
         ]
         opts = cls(rows)
         path = config_dir() / "settings.json"
@@ -183,6 +189,7 @@ class Options:
         for row in rows:
             if row.key in saved:
                 row.pick(tuple(saved[row.key]) if isinstance(saved[row.key], list) else saved[row.key])
+        opts.locked_assists = tuple(saved.get("locked_assists", ()))
         return opts
 
     def __getitem__(self, key: str) -> Choice:
@@ -192,4 +199,5 @@ class Options:
         """Write the chosen values to settings.json in the configuration folder."""
         path = config_dir() / "settings.json"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({r.key: r.value for r in self.rows}, indent=1))
+        values = {r.key: r.value for r in self.rows}
+        path.write_text(json.dumps({**values, "locked_assists": list(self.locked_assists)}, indent=1))

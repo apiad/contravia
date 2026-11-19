@@ -2,15 +2,18 @@ import numpy as np
 import pytest
 
 from contravia.bench import autopilot, road_path, summary
-from contravia.car import CarState, step
+from manifoldx.vehicles import FlatGround, strengths_for
+
+from contravia.car import CarState, Driven
+from contravia.rules import fleet, handling
 
 
 def test_autopilot_follows_a_square():
     path = np.array([[0, 0], [100, 0], [100, 100], [0, 100]], float)
-    s, i = CarState(0, 0, 0, 0), 0
+    d, i = Driven(handling.spec_for(fleet.moderno(), "moderno"), CarState(0, 0, 0, 0), FlatGround()), 0
     for _ in range(60 * 40):
-        c, i = autopilot(s, path, i)
-        s = step(s, c, 1 / 60, np.zeros((0, 2, 2), np.float32))
+        c, i = autopilot(d.state, path, i)
+        d.step(c, 1 / 60, np.zeros((0, 2, 2), np.float32), strengths_for(0))
     assert i == len(path) - 1
 
 

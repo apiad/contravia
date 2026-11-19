@@ -38,6 +38,22 @@ def test_options_are_saved_and_read_back(tmp_path, monkeypatch):
     assert again["units"].value == "mph" and again["view"].text == opts["view"].text
 
 
+def test_realism_is_an_option_from_easy_to_real(tmp_path, monkeypatch):
+    from contravia.settings import Options
+
+    monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path))
+    o = Options.load()
+    row = o["realism"]
+    assert row.label == "Realismo" and row.value == 30 and o.locked_assists == ()
+    assert [v for _, v in row.options] == list(range(0, 101, 10))
+    assert "Fácil" in row.options[0][0] and "Realista" in row.options[-1][0]
+    row.pick(70)
+    o.locked_assists = ("abs",)
+    o.save()
+    again = Options.load()
+    assert again["realism"].value == 70 and again.locked_assists == ("abs",)
+
+
 def test_clock_pauses_and_resumes_where_it_was():
     c = Clock(at=parse_at("2026-02-10 12:00"), warp=3600.0)
     c.pause()
