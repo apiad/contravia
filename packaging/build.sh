@@ -19,7 +19,7 @@ PBS=20260807
 VERSION=${VERSION:-$(git -C "$REPO" rev-parse --short HEAD)}
 mkdir -p "$OUT" "$WORK"
 
-# The province sources: all 16 and the coast, each one the version this game reads, or no package.
+# The province sources: all 16, the coast and the cover, each one the version this game reads, or no package.
 SRC=$(realpath -m "${CUBA_SRC:-$REPO/data/cuba-src}")
 uv run --project "$REPO" --frozen --quiet python -c '
 import sys
@@ -33,11 +33,15 @@ for name, slug in PROVINCES:
         source.load(path)
     except (OSError, ValueError) as e:
         bad.append(f"  {name}: {e}")
-from contravia import coast
+from contravia import coast, cover
 try:
     coast.load(Path(sys.argv[1]) / coast.NAME)
 except (OSError, ValueError) as e:
     bad.append(f"  the coast: {e}; write it with: contravia coast <cuba-latest.osm.pbf> --out {sys.argv[1]}")
+try:
+    cover.load(Path(sys.argv[1]) / cover.NAME)
+except (OSError, ValueError) as e:
+    bad.append(f"  the cover: {e}; write it with: contravia cover --out {sys.argv[1]}")
 if bad:
     sys.exit(f"{sys.argv[1]}: {len(bad)} of {len(PROVINCES)} province sources missing or stale; "
              "pack them with: contravia source <cuba-latest.osm.pbf> --dem DIR --out " + sys.argv[1] + "\n" + "\n".join(bad))

@@ -218,10 +218,11 @@ class Build:
         self.p, self._running = len(self.provinces), {}
         start = time.perf_counter()
         (self.out / "index.npz").unlink(missing_ok=True)
-        from contravia import coast
+        from contravia import coast, cover
 
-        if (self.source / coast.NAME).exists():  # the map's coast, which the index cuts per node
-            shutil.copyfile(self.source / coast.NAME, self.out / coast.NAME)
+        for name in (coast.NAME, cover.NAME):  # the map's coast and cover, which the index cuts per node
+            if (self.source / name).exists():
+                shutil.copyfile(self.source / name, self.out / name)
         island = index(self.out)
         self._ref_spent += ISLAND[2]
         self._spent += time.perf_counter() - start

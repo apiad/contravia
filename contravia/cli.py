@@ -50,6 +50,10 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("pbf")
     p.add_argument("--out", default="data/cuba", help="the built island (its index is rewritten on the next load) or data/cuba-src")
 
+    p = sub.add_parser("cover", help="write what covers the land (ESA WorldCover 2021) over the coast into a built island or the sources")
+    p.add_argument("--out", default="data/cuba", help="the folder holding coast.src; cover.src is written beside it")
+    p.add_argument("--cache", default="~/.cache/worldcover", help="where the tiles are downloaded; each is deleted once read")
+
     p = sub.add_parser("build", help="build the city from the compact source into the player's home, as the first run does")
     p.add_argument("--source", default="data/cuba-src", help="folder of the province sources")
     p.add_argument("--home", help="where to build; the per-user data folder by default")
@@ -144,6 +148,16 @@ def main(argv: list[str] | None = None) -> None:
 
         land, report = coast.read(args.pbf)
         report["bytes"] = coast.save(land, Path(args.out) / coast.NAME)
+        print(json.dumps(report))
+    elif args.command == "cover":
+        import json
+        import os
+        from pathlib import Path
+
+        from contravia import coast, cover
+
+        grid, report = cover.build(coast.load(Path(args.out) / coast.NAME), os.path.expanduser(args.cache))
+        report["bytes"] = cover.save(grid, Path(args.out) / cover.NAME)
         print(json.dumps(report))
     elif args.command == "build":
         if args.window or args.shot:

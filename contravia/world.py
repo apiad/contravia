@@ -19,14 +19,14 @@ from pathlib import Path
 
 import numpy as np
 
-from contravia import coast
+from contravia import coast, cover
 from contravia.citydata import Cell, CityData
 from contravia.geo import CELL, PROVINCES, cell_of
 from contravia.quadtree import Tree
 
 OPEN = 2  # provinces kept in memory at once: the car's and the one across a border
 BARE = 0.01  # the quadtree's weight of a cell of bare land: drawn, but light
-SUMMARY_VERSION = 2  # 2: each summary keeps its land, cut from the coast (contravia.coast)
+SUMMARY_VERSION = 3  # 2: each summary keeps its land, cut from the coast (contravia.coast); 3: its cover
 
 
 def _keys(cells: np.ndarray) -> np.ndarray:
@@ -313,6 +313,8 @@ class World:
                 s = summarize([(i, j, self.cell(i, j)) for i, j in cells.tolist()], L, a, b, self.tree.origin)
                 if self._prepared and leaf[0] > L and "land" in (up := self.summary(*leaf)):  # inside a leaf
                     s["land"] = np.frombuffer(coast.below(up["land"].tobytes(), L, a, b, self.tree.origin), np.uint8)
+                if self._prepared and leaf[0] > L and "cover" in (up := self.summary(*leaf)):
+                    s["cover"] = cover.below(up["cover"], leaf, key)
             else:
                 kids = [self.summary(L - 1, 2 * a + da, 2 * b + db) if self.exists(L - 1, 2 * a + da, 2 * b + db)
                         else None for da in (0, 1) for db in (0, 1)]
@@ -377,6 +379,10 @@ def index(folder) -> dict:
     if land is not None:
         for key, wkb in coast.lands(land, set(world._summaries), set(tree.leaves), tree.origin).items():
             world._summaries[key]["land"] = np.frombuffer(wkb, np.uint8)
+    if (folder / cover.NAME).exists():  # what covers each square, for the map's colours
+        grid = cover.load(folder / cover.NAME)
+        for (L, a, b), s in world._summaries.items():
+            s["cover"] = cover.shares(grid, L, a, b, tree.origin)
     (folder / coast.SHELF_FILE).unlink(missing_ok=True)
     if land is not None:
         np.save(folder / coast.SHELF_FILE, coast.shelf(land))
