@@ -71,9 +71,9 @@ ol li,ul li{margin:4px 0}
 </style>
 </head>
 <body>
-<div class="chrome"><span class="tab">Mapa: mar, costa y suelo</span><span class="pill">spec · borrador</span><span class="pill opt">2026-11-19</span><span class="pill opt">#47</span><span class="pill opt">amplía 2026-11-18-city-map-design</span></div>
+<div class="chrome"><span class="tab">Mapa: mar, costa y suelo</span><span class="pill">spec · aprobada</span><span class="pill opt">2026-11-19</span><span class="pill opt">#47</span><span class="pill opt">amplía 2026-11-18-city-map-design</span></div>
 <main>
-<p class="lede">Visto desde arriba, el mapa de Cuba tiene que ser una isla con su forma real, rodeada de mar azul hasta el horizonte, con montañas que se lean y colores que distingan ciudad, monte, caña y ciénaga. Esta spec cambia tres cosas: un océano que llega a todas partes, la costa de OpenStreetMap en vez de la que salía de las alturas, y un suelo continuo con relieve y cobertura en vez de cuadros planos.</p>
+<p class="lede">Visto desde arriba, el mapa de Cuba tiene que ser un atlas en relieve estilizado: una isla con su forma real, rodeada de mar azul hasta el horizonte, con montañas que se lean y colores que distingan ciudad, monte, caña y ciénaga. Esta spec cambia tres cosas: un océano que llega a todas partes, la costa de OpenStreetMap en vez de la que salía de las alturas, y un suelo continuo con relieve y cobertura en vez de cuadros planos.</p>
 
 <h2><span class="n">01</span>Qué entrega</h2>
 <ul>
@@ -82,6 +82,7 @@ ol li,ul li{margin:4px 0}
   <li>El suelo de los resúmenes como una malla continua con las alturas del terreno, normales de la pendiente y un sombreado de relieve. Hoy son 16 × 16 cuadros planos con la normal hacia arriba.</li>
   <li>Color por cobertura del suelo: ciudad, bosque, cultivo, pasto, manglar y ciénaga, arena, agua interior. Hoy todo es el verde de <code>GROUND</code> mezclado con un poco de árbol.</li>
   <li>Una franja de agua clara junto a la costa, para que los cayos y los bajos se vean.</li>
+  <li>Montañas exageradas en altura cuanto más sube la cámara, con tintas de atlas, para que la Sierra Maestra y el Escambray se lean desde la isla entera.</li>
 </ul>
 <p>Lo que ya entrega el paso 1 de la spec del mapa (#84) no cambia: la pantalla, la cámara, «Manejar aquí». Las vías por función, las formas de los asentamientos y los emblemas siguen siendo los pasos 2 a 4 de esa spec. Este trabajo va antes que ellos, porque es lo que hoy se ve roto.</p>
 <div class="stats">
@@ -99,13 +100,17 @@ ol li,ul li{margin:4px 0}
 <tr><td>Este trabajo va antes que los pasos 2 a 4 de la spec del mapa.<span class="tag">maintainer</span></td><td>Lo que se ve roto hoy es la isla en bloques y sin mar; las vías y las formas se dibujan encima de este suelo.</td></tr>
 <tr><td>La costa sale de <code>natural=coastline</code> de OSM, no del relieve.<span class="tag agent">agente</span></td><td>El relieve está a 90 m fuera de La Habana y GLO-30 mide la copa de los manglares, así que su costa sale corrida en la ciénaga y pierde los cayos chicos. La de OSM es la línea que conoce cualquiera que mire un mapa de Cuba, y ya está en <code>cuba-latest.osm.pbf</code>.</td></tr>
 <tr><td>Las celdas cercanas, las que se manejan, siguen con la costa del relieve.<span class="tag agent">agente</span></td><td>El Malecón y la bahía ya se ven bien de cerca, y la costa de OSM en las celdas tocaría la superficie de las ruedas. Las pruebas miden cuánto se separan las dos costas en La Habana; si pasa del lado de un cuadro de nivel 1 (25 m), abro una issue aparte.</td></tr>
-<tr><td>La cobertura sale de ESA WorldCover 2021, a 10 m, reducida a 100 m.<span class="tag agent">agente</span> Ver pregunta 1.</td><td>Cubre toda la isla igual. El landuse de OSM en el campo cubano está a parches, y el mapa pintaría mejor una provincia que otra, contra la regla de que cada capa cubre todo. Son unos 8 tiles de 3° (el de La Habana pesa 27 MB) y la licencia CC BY 4.0 pide el crédito en los créditos del juego.</td></tr>
+<tr><td>La cobertura sale de ESA WorldCover 2021, a 10 m, reducida a 100 m.<span class="tag">maintainer</span></td><td>Cubre toda la isla igual. El landuse de OSM en el campo cubano está a parches, y el mapa pintaría mejor una provincia que otra, contra la regla de que cada capa cubre todo. Son unos 8 tiles de 3° (el de La Habana pesa 27 MB) y la licencia CC BY 4.0 pide el crédito en los créditos del juego.</td></tr>
 <tr><td>Un solo océano fijo, de un tamaño mayor que el plano lejano más lejano del mapa, con un hueco donde está el agua con huecos de la provincia cargada.<span class="tag agent">agente</span></td><td>No hay que moverlo ni rehacerlo cada cuadro, y nunca se monta sobre el agua de los túneles.</td></tr>
 <tr><td>En el modo mapa el océano baja con la altura de la cámara: <code>WATER_Y − 2 · metros por píxel</code>.<span class="tag agent">agente</span></td><td>Es la regla de capas de la spec del mapa aplicada al agua. Con 0,1 m entre el agua y la tierra de la costa, desde 1 000 km la profundidad no las separa y parpadean. Mover una sola capa, el océano, cuesta un <code>Transform</code> por cuadro.</td></tr>
 <tr><td>La tierra de un resumen nunca queda por debajo de <code>WATER_Y + 0,2 m</code> dentro de la costa.<span class="tag agent">agente</span></td><td>Hoy el suelo del resumen está 0,3 m por debajo del terreno, y en la costa eso lo mete bajo el agua. Así no hace falta que el relieve diga «tierra» donde la costa de OSM dice tierra.</td></tr>
 <tr><td>La tolerancia de la costa en un nodo de nivel L es su lado entre 1 024: <code>CELL · 2^L / 1024</code>.<span class="tag agent">agente</span></td><td>Un nodo se dibuja con a lo sumo unos mil píxeles de ancho, así que el error queda por debajo de un píxel: 12,5 m en el nivel 6, 100 m en el 9, 1,6 km en el 13. El error de cuadro de la spec del mapa (lado / 16) daría 102 km en el nivel 13, demasiado grueso para una costa.</td></tr>
-<tr><td>Los bajos son una franja fija de 800 m de agua clara alrededor de la tierra.<span class="tag agent">agente</span> Ver pregunta 2.</td><td>No pide datos nuevos y ya deja ver los cayos. La batimetría real (el golfo de Batabanó) queda para después.</td></tr>
+<tr><td>Los bajos son una franja fija de 800 m de agua clara alrededor de la tierra.<span class="tag">maintainer</span></td><td>No pide datos nuevos y ya deja ver los cayos. La batimetría real (el golfo de Batabanó) queda para después.</td></tr>
 <tr><td>El sombreado de relieve va horneado en el color de los vértices, más fuerte cuanto más alto el nivel.<span class="tag agent">agente</span></td><td>Con el sol del juego a mediodía las montañas no se leen desde 500 km. Una luz fija del noroeste, de 0 en el nivel 3 a 35 % desde el nivel 9, no cuesta nada al dibujar.</td></tr>
+<tr><td>El mapa es un atlas a relieve estilizado, no una foto.<span class="tag">maintainer</span></td><td>Lo pediste así. La paleta va en pocos tonos planos de atlas, no en texturas, y el relieve se exagera para que la isla se lea como un mapa en relieve.</td></tr>
+<tr><td>Las montañas se exageran en altura, más cuanto más sube la cámara.<span class="tag">maintainer</span></td><td>Desde 1 000 km el Turquino (1 974 m) no se ve. Un factor <code>k</code> de 1 por debajo de 10 km de altura que sube hasta 20 a 1 000 km lo vuelve una sierra que se lee.</td></tr>
+<tr><td>La exageración es una escala vertical en la matriz de vista de la cámara de manifoldx, alrededor del nivel del mar.<span class="tag agent">agente</span></td><td>Una sola escala para toda la escena: celdas, resúmenes y agua suben juntos y no se abren costuras entre niveles del quadtree. Hornearla por nivel en cada resumen las abriría. Es un límite del motor, y la regla del repo dice que se arregla en manifoldx.</td></tr>
+<tr><td>Desde la etapa ciudad el color mezcla la cobertura con tintas hipsométricas: verde en lo bajo, ocre y pardo en lo alto.<span class="tag agent">agente</span></td><td>Es el código de color de los atlas en relieve, y junto con la exageración hace que las sierras se lean de lejos. Las cifras exactas se ajustan con capturas que tú revisas.</td></tr>
 </tbody>
 </table>
 
@@ -175,6 +180,15 @@ ol li,ul li{margin:4px 0}
   <li>Sombreado: el color de cada vértice se multiplica por <code>1 − s · (1 − n·l)</code>, con <code>l</code> una luz fija del noroeste a 45° y <code>s</code> de 0 en el nivel 3 a 0,35 desde el nivel 9.</li>
 </ul>
 
+<h3>Relieve exagerado</h3>
+<ul>
+  <li>manifoldx gana <code>Camera.vertical_scale</code> (1 por defecto). La matriz de vista multiplica la altura del mundo por ese factor alrededor de <code>y = 0</code>, que en Contravía es el nivel del mar. El recorte por frustum escala igual las cajas de los objetos, para que una montaña estirada no desaparezca en el borde de la pantalla.</li>
+  <li><code>mapview.exaggeration(h)</code> da el factor para una altura de cámara: 1 hasta 10 km y luego sube con el logaritmo de la altura hasta 20 a 1 000 km. <code>Game.update</code> lo pone en la cámara en el modo mapa y lo vuelve a 1 al manejar.</li>
+  <li>Las normales no se escalan. La luz del juego ve el relieve real, y el sombreado horneado del noroeste se calcula sobre las pendientes exageradas del nivel, para que la sombra siga a la forma que se ve.</li>
+  <li>El agua queda en el mar y no se mueve, porque la escala es alrededor de <code>y = 0</code>. Las cajas de edificios se estiran también, pero desde la etapa ciudad la spec del mapa ya las cambia por formas, y a 10 km todavía valen 1.</li>
+  <li>La curva de <code>k</code> se ajusta con capturas de la etapa isla, de occidente y de la Sierra Maestra, que revisas tú.</li>
+</ul>
+
 <h2><span class="n">07</span>Antes y después <span class="try">try it</span></h2>
 <p>Una isla de muestra, inventada para este dibujo, con dos cayos. El control mueve el nivel del quadtree. «Hoy» marca tierra cada casilla cuyo centro cae en tierra, sobre el gris del cielo. «Propuesta» dibuja la costa simplificada a la tolerancia del nivel, los bajos, el mar y la cobertura.</p>
 <div class="bar">
@@ -201,6 +215,11 @@ ol li,ul li{margin:4px 0}
 <ul>
   <li><code>cover.src</code>, <code>rules/cover.py</code>, la mezcla de colores y el sombreado horneado.</li>
   <li>El crédito de ESA WorldCover en los créditos del juego.</li>
+</ul></div>
+<div class="step"><h3>PR 4 · El relieve exagerado</h3><p class="who">un PR en manifoldx y uno en Contravía</p>
+<ul>
+  <li>manifoldx: <code>Camera.vertical_scale</code> en la matriz de vista y en el recorte, con su prueba y un benchmark que muestra que no cuesta.</li>
+  <li>Contravía: <code>mapview.exaggeration</code>, las tintas hipsométricas y el sombreado sobre la pendiente exagerada.</li>
 </ul></div>
 
 <h2><span class="n">09</span>Pruebas</h2>
@@ -230,16 +249,16 @@ ol li,ul li{margin:4px 0}
   <li>Las vías por función, los asentamientos y los emblemas (pasos 2 a 4 de la spec del mapa).</li>
   <li>La costa de OSM en las celdas que se manejan.</li>
   <li>La batimetría real y el oleaje.</li>
-  <li>Exagerar la altura del relieve en la etapa isla.</li>
+  <li>Nubes, frentes y tormentas sobre el mapa, en el mismo estilo de atlas. Esperan a que el clima cubra toda la isla y no solo La Habana (#100).</li>
   <li>Las franjas raras de la esquina en <code>08-trinidad</code>: es otro fallo, y va en su propia issue.</li>
   <li>Ríos y embalses dibujados como líneas. El agua interior de WorldCover sale solo como color.</li>
 </ul>
 
-<h2><span class="n">11</span>Preguntas</h2>
+<h2><span class="n">11</span>Preguntas respondidas</h2>
 <ol>
-  <li>¿Cobertura de ESA WorldCover, que es pareja en toda la isla pero es un dato nuevo con crédito obligatorio, o solo el landuse de OSM, que ya tenemos pero está a parches en el campo? Recomiendo WorldCover.</li>
-  <li>¿Basta con la franja fija de 800 m para los bajos, o quieres después la batimetría real (GEBCO), que pinta el golfo de Batabanó y los Jardines del Rey como son?</li>
-  <li>¿Quieres que la etapa isla exagere la altura del relieve (Sierra Maestra, Escambray), o basta con el sombreado?</li>
+  <li>Cobertura: ESA WorldCover.</li>
+  <li>Bajos: la franja fija de 800 m. La batimetría real queda para después.</li>
+  <li>Relieve: exagerado, como un atlas en relieve estilizado (sección 06).</li>
 </ol>
 </main>
 <script>
