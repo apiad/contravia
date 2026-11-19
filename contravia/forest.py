@@ -175,7 +175,9 @@ class Forest:
         from manifoldx.components import Material, Mesh, Tint, Transform
 
         t = stand.t
-        key = np.stack([t.species[idx], stand.variant[idx], stand.lod[idx]], axis=1)
+        # only near trees come in variants: far ones share one mesh per species, which halves their draw calls
+        variant = np.where(stand.lod[idx] == 0, stand.variant[idx], 0)
+        key = np.stack([t.species[idx], variant, stand.lod[idx]], axis=1)
         crowns = stand.crown[idx]
         for crown in np.unique(crowns):
             for k in np.unique(key[crowns == crown], axis=0):

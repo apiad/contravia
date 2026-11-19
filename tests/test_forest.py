@@ -60,6 +60,7 @@ def test_trees_are_instances_that_change_level_of_detail_with_the_camera(monkeyp
     assert list(forest.stands[(0, 0)].lod) == [2, 0, 2]
     stand = forest.stands[(0, 0)]
     shared = forest._meshes[("laurel", int(stand.variant[1]), "full", 0, "wood")]
+    assert all(k[1] == 0 for k in forest._meshes if k[3] > 0)  # far trees share variant 0
     assert engine.store._components["Mesh"][stand.ents[1, 0], 0] == shared._geometry_id  # one mesh, many instances
     assert forest.counts() == {"trees": 3, "lod0": 1, "lod1": 0, "lod2": 2}
     forest.update(set(), (0.0, 5.0, 0.0))  # the streamer drops the cell: its trees linger a while
