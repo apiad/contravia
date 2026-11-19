@@ -17,7 +17,7 @@ from contravia.citydata import Cell
 from contravia.geo import CELL
 from contravia.mesh import MeshBuilder, signed_area
 from contravia.rules import facades
-from contravia.rules.ground import GROUND, SEA, relief
+from contravia.rules.ground import GROUND, SEA, WATER_Y, relief
 from contravia.rules.roads import ROAD
 from contravia.rules.trees import TREE_EVERY, far_green, today
 
@@ -27,6 +27,7 @@ BELOW = 0.3  # a summary's ground sits this far below a cell's, so a cell drawn 
 ROAD_CAP = 1000  # segments a summary mesh draws, widest first
 BOX = (0.78, 0.76, 0.72)  # the colour of a square prepared before summaries kept colours
 TYPES = list(facades.TYPES)
+LIFT = 0.2  # metres: with relief, a summary's land never stands lower than this over the water
 
 
 def min_width(L: int) -> float:
@@ -151,40 +152,133 @@ def _facade(type_area, storeys: float, width: float, key) -> list | None:
     return [(0, 0, kind, seed), (bays, 0, kind, seed), (bays, up, kind, seed), (0, up, kind, seed)]
 
 
+def _land(s: dict, x0: float, z0: float, sq: float, terrain, sea: bool):
+    """The node's land, a shapely geometry: the coast's part the index kept in the summary; without one (data
+    prepared before the coast, or flat data), every square that holds anything or, with relief, whose centre
+    stands at SEA or higher, as before."""
+    import shapely
+
+    if "land" in s:
+        wkb = np.asarray(s["land"], np.uint8).tobytes()
+        return shapely.from_wkb(wkb) if wkb else shapely.Polygon()
+    gx, gz = np.meshgrid(x0 + (np.arange(GRID) + 0.5) * sq, z0 + (np.arange(GRID) + 0.5) * sq)
+    high = (terrain.height(gx.ravel(), gz.ravel()).reshape(GRID, GRID) >= SEA if sea
+            else np.zeros((GRID, GRID), bool))
+    rows, cols = np.nonzero((s["built"] > 0) | (s["green"] > 0) | high)
+    return shapely.union_all(shapely.box(x0 + cols * sq, z0 + rows * sq, x0 + (cols + 1) * sq, z0 + (rows + 1) * sq))
+
+
+def _triangles(geom) -> np.ndarray:
+    """(T, 3, 2) triangles covering the polygons in geom (lines and points it holds are left out)."""
+    import shapely
+
+    parts = shapely.get_parts(geom)
+    parts = parts[shapely.get_type_id(parts) == 3]
+    if not len(parts):
+        return np.zeros((0, 3, 2))
+    tris = shapely.constrained_delaunay_triangles(parts)
+    return shapely.get_coordinates(tris).reshape(-1, 4, 2)[:, :3]
+
+
+def _heights(xz, terrain, sea: bool) -> np.ndarray:
+    """The ground's height at points xz: BELOW under the terrain, and with relief never lower than LIFT over
+    the water."""
+    if terrain is None:
+        return np.full(len(xz), -BELOW)
+    y = terrain.height(xz[:, 0], xz[:, 1]) - BELOW
+    return np.maximum(y, WATER_Y + LIFT) if sea else y
+
+
+def _normals(xz, terrain, step: float) -> np.ndarray:
+    """Unit normals of the terrain at points xz, its slope measured step metres either side."""
+    if terrain is None:
+        return np.tile((0.0, 1.0, 0.0), (len(xz), 1))
+    x, z = xz[:, 0], xz[:, 1]
+    dx = (terrain.height(x + step, z) - terrain.height(x - step, z)) / (2 * step)
+    dz = (terrain.height(x, z + step) - terrain.height(x, z - step)) / (2 * step)
+    n = np.stack([-dx, np.ones_like(dx), -dz], axis=1)
+    return n / np.linalg.norm(n, axis=1, keepdims=True)
+
+
+def _ground(mb, land, x0, z0, sq, side, terrain, colours, sea) -> None:
+    """The ground over land: each of the GRID x GRID squares inside it as two triangles, those it crosses cut
+    along the coast, each coloured as its square; and a skirt side / 64 deep down the node's edges under land."""
+    import shapely
+
+    if land.is_empty:
+        return
+    r, c = np.divmod(np.arange(GRID * GRID), GRID)
+    tiles = shapely.box(x0 + c * sq, z0 + r * sq, x0 + (c + 1) * sq, z0 + (r + 1) * sq)
+    shapely.prepare(land)
+    inside = shapely.contains(land, tiles)
+    cross = ~inside & shapely.intersects(land, tiles)
+    tris, owner = [], []
+    k = np.nonzero(inside)[0]
+    if len(k):
+        a = np.stack([x0 + c[k] * sq, z0 + r[k] * sq], 1)
+        b, d, e = a + (sq, 0), a + (sq, sq), a + (0, sq)
+        tris += [np.stack([a, b, d], 1), np.stack([a, d, e], 1)]
+        owner += [k, k]
+    for j in np.nonzero(cross)[0]:
+        t = _triangles(shapely.intersection(tiles[j], land))
+        tris.append(t)
+        owner.append(np.full(len(t), j))
+    t = np.concatenate(tris).reshape(-1, 2)
+    owner = np.concatenate(owner)
+    pos = np.c_[t[:, 0], _heights(t, terrain, sea), t[:, 1]]
+    colour = np.repeat(colours.reshape(-1, 3)[owner], 3, axis=0)
+    mb.add(pos, _normals(t, terrain, sq / 2), colour, np.arange(len(t)).reshape(-1, 3))
+    edge = shapely.segmentize(shapely.intersection(shapely.box(x0, z0, x0 + side, z0 + side).boundary, land), sq)
+    for line in shapely.get_parts(shapely.line_merge(edge) if not edge.is_empty else edge):
+        p = shapely.get_coordinates(line)
+        if len(p) < 2:
+            continue
+        top = _heights(p, terrain, sea)
+        a, b = np.arange(len(p) - 1), np.arange(1, len(p))
+        quads = np.stack([np.c_[p[a, 0], top[a], p[a, 1]], np.c_[p[b, 0], top[b], p[b, 1]],
+                          np.c_[p[b, 0], top[b] - side / 64, p[b, 1]], np.c_[p[a, 0], top[a] - side / 64, p[a, 1]]], 1)
+        d = p[b] - p[a]
+        out = np.c_[d[:, 1], np.zeros(len(d)), -d[:, 0]]  # sideways: the skirt is seen from either side
+        out /= np.maximum(np.linalg.norm(out, axis=1, keepdims=True), 1e-9)
+        mb.add(quads.reshape(-1, 3), np.repeat(out, 4, axis=0), GROUND,
+               (np.arange(len(quads))[:, None, None] * 4 + np.array([[0, 1, 2], [0, 2, 3]])).reshape(-1, 3))
+
+
 def summary_mesh(s: dict, L: int, a: int, b: int, origin, terrain=None) -> MeshData:
-    """At most one box and one ground patch per square, and the summary's widest roads, as one MeshData."""
+    """The node's land as one continuous ground, at most one box per square and the summary's widest roads,
+    as one MeshData.
+
+    The ground is a GRID x GRID grid of squares at the terrain's height, clipped by the node's land (the coast
+    the index kept in the summary, see contravia.coast), lit by the slope and hemmed by a skirt along the node's
+    edges, so a neighbour drawn at another level shows no crack between them."""
     x0, z0 = _corner(L, a, b, origin)
     side = (1 << L) * CELL
     sq = side / GRID
     mb = MeshBuilder()
     built, height, green = s["built"], s["height"], s["green"]
     color, storeys, types = _get(s, "color"), _get(s, "storeys"), _get(s, "types")
-    gx, gz = np.meshgrid(x0 + (np.arange(GRID) + 0.5) * sq, z0 + (np.arange(GRID) + 0.5) * sq)
-    land = (terrain.height(gx.ravel(), gz.ravel()).reshape(GRID, GRID) >= SEA if terrain is not None and relief(terrain)
-            else built < 0)
-    rows, cols = np.nonzero((built > 0) | (green > 0) | land)  # every square of land shows its ground
+    sea = terrain is not None and relief(terrain)
+    leaf_share = np.minimum(green * 60.0 / (sq * sq), 1.0)  # a tree shades about 60 m²
+    leaves = far_green(today())
+    colours = np.add(np.multiply.outer(1 - leaf_share, GROUND), np.multiply.outer(leaf_share, leaves))  # (GRID, GRID, 3)
+    land = _land(s, x0, z0, sq, terrain, sea)
+    _ground(mb, land, x0, z0, sq, side, terrain, colours, sea)
+    rows, cols = np.nonzero(built > 0)
     cx, cz = x0 + (cols + 0.5) * sq, z0 + (rows + 0.5) * sq
     ys = terrain.height(cx, cz) if terrain is not None else np.zeros(len(cx))
-    leaf_share = np.minimum(green[rows, cols] * 60.0 / (sq * sq), 1.0)  # a tree shades about 60 m²
-    leaves = far_green(today())
-    for r, c, x, z, y, g in zip(rows, cols, cx, cz, ys, leaf_share, strict=True):
-        h = sq / 2
-        colour = tuple(np.add(np.multiply(GROUND, 1 - g), np.multiply(leaves, g)))
-        mb.add([(x - h, y - BELOW, z - h), (x + h, y - BELOW, z - h), (x + h, y - BELOW, z + h),
-                (x - h, y - BELOW, z + h)], [(0, 1, 0)] * 4, colour, [(0, 1, 2), (0, 2, 3)])
-        if built[r, c] > 0:
-            w = min(np.sqrt(built[r, c]), 0.9 * sq) / 2
-            top = y + height[r, c]
-            tone = tuple(color[r, c]) if color[r, c].any() else BOX
-            corners = [(x - w, z - w), (x + w, z - w), (x + w, z + w), (x - w, z + w)]
-            facade = _facade(types[r, c], storeys[r, c], 2 * w, (L, a, b, r, c))
-            for k in range(4):
-                (ax, az), (bx, bz) = corners[k], corners[(k + 1) % 4]
-                n = (np.sign(bz - az), 0.0, -np.sign(bx - ax))
-                mb.add([(ax, y, az), (bx, y, bz), (bx, top, bz), (ax, top, az)], [n] * 4, tone,
-                       [(0, 1, 2), (0, 2, 3)], facade)
-            roof = tuple(np.multiply(facades.ROOF, 0.95))
-            mb.add([(cx_, top, cz_) for cx_, cz_ in corners], [(0, 1, 0)] * 4, roof, [(0, 1, 2), (0, 2, 3)])
+    for r, c, x, z, y in zip(rows, cols, cx, cz, ys, strict=True):
+        w = min(np.sqrt(built[r, c]), 0.9 * sq) / 2
+        top = y + height[r, c]
+        tone = tuple(color[r, c]) if color[r, c].any() else BOX
+        corners = [(x - w, z - w), (x + w, z - w), (x + w, z + w), (x - w, z + w)]
+        facade = _facade(types[r, c], storeys[r, c], 2 * w, (L, a, b, r, c))
+        for k in range(4):
+            (ax, az), (bx, bz) = corners[k], corners[(k + 1) % 4]
+            n = (np.sign(bz - az), 0.0, -np.sign(bx - ax))
+            mb.add([(ax, y, az), (bx, y, bz), (bx, top, bz), (ax, top, az)], [n] * 4, tone,
+                   [(0, 1, 2), (0, 2, 3)], facade)
+        roof = tuple(np.multiply(facades.ROOF, 0.95))
+        mb.add([(cx_, top, cz_) for cx_, cz_ in corners], [(0, 1, 0)] * 4, roof, [(0, 1, 2), (0, 2, 3)])
     roads = np.asarray(s["roads"], float)
     if len(roads):
         length = np.hypot(roads[:, 2] - roads[:, 0], roads[:, 3] - roads[:, 1])
@@ -196,6 +290,8 @@ def summary_mesh(s: dict, L: int, a: int, b: int, origin, terrain=None) -> MeshD
         left = np.stack([-d[:, 1], d[:, 0]], axis=1) * half[:, None]
         mid = (a_ + b_) / 2
         y = terrain.height(mid[:, 0], mid[:, 1]) if terrain is not None else np.zeros(len(mid))
+        if sea:  # over the ground, which never stands lower than LIFT over the water
+            y = np.maximum(y, WATER_Y + LIFT + BELOW)
         quads = np.stack([a_ + left, b_ + left, b_ - left, a_ - left], axis=1)  # (K, 4, 2)
         pos = np.concatenate([quads, np.repeat(y[:, None, None], 4, axis=1)], axis=2)[:, :, [0, 2, 1]]
         n = len(roads)

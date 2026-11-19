@@ -45,6 +45,8 @@ SEA_TILE = 1000.0  # metres: the side of the squares the sea is laid in when it 
 OCEAN = 30_000_000.0  # metres: the side of the ocean, centred on the Capitolio, past the map's farthest far plane
 OCEAN_TILE = 1_000_000.0  # metres: the ocean is laid in squares no larger than this, so clipping stays exact
 MAP_SINK = 2.0  # screen pixels the water sinks below sea level in the map, so the coast never flickers on it
+SHALLOW = (0.16, 0.42, 0.45)
+HIDDEN_Y = -1e4  # metres: where the shallows wait while driving, far under everything
 WATER = (0.10, 0.24, 0.32)
 FLAT_BASE_Y = -1.0  # with flat data: below every streamed ground, which always wins over it
 SHADOW = (5.0, 2.3)  # metres: the dark ellipse under the car, along and across it
@@ -105,6 +107,7 @@ class Game:
         self.o = np.zeros(3)  # the engine's origin as (x, 0, z)
         self._sea = relief(self.terrain)
         self.base = self._spawn_base()
+        self.shelf = self._spawn_shelf()
         self.shadow = self._spawn_shadow()
         self.model = kept(engine.state, "player car", "CarParams()", lambda: build_car(CarParams()))
         self.handles = spawn_car(engine, self.model)
@@ -268,6 +271,34 @@ class Game:
                                        "indices": m.indices}),
                                  Material(StandardMaterial("#ffffff", roughness=0.95, vertex_colors=True)),
                                  Transform(pos=(0.0, BASE_Y if sea else FLAT_BASE_Y, 0.0)))
+
+    def _spawn_shelf(self):
+        """The shallows around the island (contravia.coast.shelf, written by the index), if the data has them:
+        one mesh, shown only in the map, between the sunken sea and the land. While driving the relief draws
+        the shore and the water over the tunnels has holes, so they wait far below."""
+        from manifoldx.components import Material, Mesh, Transform
+        from manifoldx.resources import StandardMaterial
+
+        from contravia import coast
+
+        path = self.city.folder / coast.SHELF_FILE if self.city.folder is not None else None
+        if path is None or not path.exists():
+            return None
+        t = np.load(path).reshape(-1, 2).astype(np.float64)
+        if not len(t):
+            return None
+        pos = np.c_[t[:, 0], np.zeros(len(t)), t[:, 1]].astype(np.float32)
+        return self.engine.spawn(Mesh({"positions": pos, "normals": np.tile(np.float32([0, 1, 0]), (len(t), 1)),
+                                       "colors": np.tile(np.float32(SHALLOW), (len(t), 1)),
+                                       "indices": np.arange(len(t), dtype=np.uint32)}),
+                                 Material(StandardMaterial("#ffffff", roughness=0.95, vertex_colors=True)),
+                                 Transform(pos=(0.0, HIDDEN_Y, 0.0)))
+
+    def _shelf_y(self) -> float:
+        """The shallows' height: half way between the sunken sea and sea level in the map, hidden while driving."""
+        if self.mode != "map" or not self.map:
+            return HIDDEN_Y
+        return (BASE_Y + self._water_y()) / 2
 
     def _water_y(self) -> float:
         """The sea's height: WATER_Y while driving; in the map, MAP_SINK screen pixels lower, so that from high
@@ -574,6 +605,8 @@ class Game:
             self.base.transform.pos = (float(self.eye[0]), FLAT_BASE_Y, float(self.eye[2]))
         else:
             self.base.transform.pos = (0.0, self._water_y(), 0.0)
+        if self.shelf is not None:
+            self.shelf.transform.pos = (0.0, self._shelf_y(), 0.0)
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
         self.hud.show(self.mode == "drive")
         if self.mode == "drive":

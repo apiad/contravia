@@ -13,17 +13,20 @@ the car in. A World made from one CityData (tests, a single province) is that pr
 """
 
 import json
+import shutil
 from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
 
+from contravia import coast
 from contravia.citydata import Cell, CityData
 from contravia.geo import CELL, PROVINCES, cell_of
 from contravia.quadtree import Tree
 
 OPEN = 2  # provinces kept in memory at once: the car's and the one across a border
 BARE = 0.01  # the quadtree's weight of a cell of bare land: drawn, but light
+SUMMARY_VERSION = 2  # 2: each summary keeps its land, cut from the coast (contravia.coast)
 
 
 def _keys(cells: np.ndarray) -> np.ndarray:
@@ -44,6 +47,17 @@ def _land_cells(terrain) -> list[tuple[int, int]]:
     i = np.floor((terrain.origin[0] + c * terrain.step[0]) / CELL).astype(np.int64)
     j = np.floor((terrain.origin[1] + r * terrain.step[1]) / CELL).astype(np.int64)
     return [tuple(k) for k in np.unique(np.stack([i, j], axis=1), axis=0).tolist()]
+
+
+def _coast_cells(land) -> list[tuple[int, int]]:
+    """The cells along the coast and every cell of a small island, so a cay the relief misses has nodes."""
+    import shapely
+
+    edge = shapely.get_coordinates(shapely.segmentize(shapely.boundary(land), CELL / 2))
+    parts = shapely.get_parts(land)
+    small = parts[shapely.area(parts) < 4 * CELL * CELL]
+    points = np.concatenate([edge, shapely.get_coordinates(shapely.point_on_surface(small)).reshape(-1, 2)])
+    return [tuple(k) for k in np.unique(cell_of(points), axis=0).tolist()] if len(points) else []
 
 
 def _weights(data: CityData) -> dict:
@@ -135,7 +149,7 @@ class World:
         """A folder of provinces (with its index, written now if missing), or one province's data file."""
         path = Path(data)
         if path.is_dir():
-            if not (path / "index.npz").exists():
+            if not (path / "index.npz").exists() or _summary_version(path) < SUMMARY_VERSION:
                 index(path)
             return cls(folder=path)
         return cls(CityData.load(path))
@@ -284,6 +298,8 @@ class World:
             if leaf is not None and leaf[0] >= L:
                 cells = self.tree.cells_in(L, a, b, self._features)  # bare land adds nothing to a summary
                 s = summarize([(i, j, self.cell(i, j)) for i, j in cells.tolist()], L, a, b, self.tree.origin)
+                if self._prepared and leaf[0] > L and "land" in (up := self.summary(*leaf)):  # inside a leaf
+                    s["land"] = np.frombuffer(coast.below(up["land"].tobytes(), L, a, b, self.tree.origin), np.uint8)
             else:
                 kids = [self.summary(L - 1, 2 * a + da, 2 * b + db) if self.exists(L - 1, 2 * a + da, 2 * b + db)
                         else None for da in (0, 1) for db in (0, 1)]
@@ -319,11 +335,20 @@ def index(folder) -> dict:
         del data
     if not names:
         raise FileNotFoundError(f"{folder}: no province built")
+    land = None
+    if (folder / coast.NAME).exists():
+        land = coast.load(folder / coast.NAME)
+    if land is not None and land.is_empty:  # an extract with no coastline: the land as before
+        land = None
+    if land is not None:
+        for key in _coast_cells(land):
+            weights.setdefault(key, BARE)
     tree = Tree.build(weights)
     cells = np.array(sorted(weights), np.int64).reshape(-1, 2)
     off = np.concatenate([[0], np.cumsum([len(k) for k in region_keys])]).astype(np.int64)
     leaves = np.array(list(tree.leaves), np.int64).reshape(-1, 3)
-    np.savez(folder / "index.npz", info=np.array(json.dumps({"names": names, "files": files, "top": top})),
+    info = {"names": names, "files": files, "top": top, "summary_version": SUMMARY_VERSION, "coast": land is not None}
+    np.savez(folder / "index.npz", info=np.array(json.dumps(info)),
              region_offsets=off, region_keys=np.concatenate(region_keys), grids=np.array(grids, float),
              origin=np.array(tree.origin), leaves=leaves, weights=np.array(list(tree.leaves.values()), float),
              cells=cells.astype(np.int32),
@@ -336,9 +361,22 @@ def index(folder) -> dict:
     world = World(folder=folder)
     world._prepared, world.open_max = False, 4
     world.summary(LEVELS, 0, 0)
+    if land is not None:
+        for key, wkb in coast.lands(land, set(world._summaries), set(tree.leaves), tree.origin).items():
+            world._summaries[key]["land"] = np.frombuffer(wkb, np.uint8)
+    (folder / coast.SHELF_FILE).unlink(missing_ok=True)
+    if land is not None:
+        np.save(folder / coast.SHELF_FILE, coast.shelf(land))
     out = folder / "summary"
-    out.mkdir(exist_ok=True)
+    shutil.rmtree(out, ignore_errors=True)  # summaries of an older version would stay beside the new ones
+    out.mkdir()
     for (L, a, b), s in world._summaries.items():
         np.savez(out / f"{L}_{a}_{b}.npz", **s)
     done = world._summaries
     return {"provinces": len(names), "cells": len(cells), "leaves": len(tree.leaves), "summaries": len(done)}
+
+
+def _summary_version(folder: Path) -> int:
+    """The summary format of the index in folder; 1 for an index written before it was recorded."""
+    with np.load(folder / "index.npz") as f:
+        return int(json.loads(str(f["info"])).get("summary_version", 1))

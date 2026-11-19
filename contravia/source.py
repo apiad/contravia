@@ -4,6 +4,7 @@ extract and the cleaned terrain, in one zstd file (<slug>.src). The first run bu
 The terrain is kept in decimetres as int16 (Pico Turquino, 1974 m, stays well under 3276 m), so the built city's heights are
 those of the measured build to within 5 cm."""
 
+import json
 import pickle
 from compression import zstd
 from pathlib import Path
@@ -20,11 +21,16 @@ LEVEL = 19  # zstd level: packing is done once, unpacking stays fast at any leve
 def pack(pbf, dem, out, provinces=None) -> dict:
     """Write out/<slug>.src for each province (all by default): its part of the extract and its cleaned relief
     from the GLO-30 tiles in dem (downloaded there if missing). Returns {name: sizes in bytes}."""
+    from contravia import coast
     from contravia.geo import PROVINCES
     from contravia.prepare import TERRAIN_STRIDE, province_boxes
     from contravia.terrain import read_terrain
 
     boxes, sizes = province_boxes(pbf), {}
+    if not provinces:  # the whole island: its coast too, which every province's map shares
+        land, report = coast.read(pbf)
+        sizes["coast"] = {"bytes": coast.save(land, Path(out) / coast.NAME), **report}
+        print(f"coast: {json.dumps(sizes['coast'])}", flush=True)
     for name, slug in PROVINCES:
         if provinces and name not in provinces and slug not in provinces:
             continue
