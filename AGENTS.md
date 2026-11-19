@@ -117,6 +117,11 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   is written outside the repo from EcuRed and OSM and reviewed by hand; replace it whole, never edit it here.
   `contravia/collect.py` loads it into world metres by cell, finds the places near a point and judges how a camera
   frames a place's box.
+  While driving, the nearest place without a photo that is in reach and in sight shows at the bottom (`hud.set_spot`);
+  F aims a camera over the car at it (menu `aim`), SPACE judges the framing, and a good one saves
+  `fotos/<id>.png` and `coleccion.json` in the config folder (`contravia/album.py`) and shows the place's card.
+  `contravia play --place ID` starts on a street that frames it; `--screen aim` or `--screen card` with `--shot`
+  saves those screens.
 - The game grows in layers, and every layer covers the whole city. Never detail one district ahead of the rest.
 - Same inputs, same city: every random draw is seeded from an OSM id or a block centroid.
 - `data/` is never committed: no OSM extract, no npz.

@@ -612,7 +612,7 @@ class Game:
         o = self.o
         cam = Camera(position=tuple(np.asarray(eye) - o), target=tuple(np.asarray(target) - o),
                      fov=collect.fov_for(a["zoom"]), near=0.5, far=FAR)
-        texture = self.engine.render_to_texture(cam, PHOTO_SIZE, live=False, fog=True)
+        texture = self.engine.render_to_texture(cam, PHOTO_SIZE, live=False)
         now = self.clock.now()
         when = f"{DAY_NAMES[now.weekday()].lower()} {now:%H:%M}"
         weather = {state: label.lower() for label, state in WEATHER}.get(self.weather_state, "")
@@ -977,8 +977,6 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
                 game.spot = p
                 game.start_aim()
                 menu.show("aim")
-                if screen == "card":
-                    menu.took(game.shoot())
 
             engine.on("startup")(aim)
     elif "car" in engine.state:  # a reload under contravia dev drives on
@@ -1012,6 +1010,10 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     while n < frames or (game.waiting() and time.monotonic() - t0 < 300):
         img = engine.render_frame(supersample=1)
         n += 1
+    if place and screen == "card":  # photographed once the city is drawn, as a player would
+        menu.took(game.shoot())
+        for _ in range(4):  # the photo renders, is read back and saved, and the card draws
+            img = engine.render_frame(supersample=1)
     Image.fromarray(img).save(shot)
     game.streamer.close()
     game.detail.close()
