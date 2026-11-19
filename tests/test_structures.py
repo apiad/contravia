@@ -174,3 +174,62 @@ def test_a_ramp_out_of_a_tunnel_goes_on_through_a_junction_without_a_step():
     assert y[0] < -3.0                                               # it leaves the tunnel deep
     assert (np.abs(np.diff(y)) / 2.0 <= GRADE + 0.03).all()           # and climbs no steeper than the grade
     assert y[-1] > -0.5                                              # back on the ground further on
+
+
+def _twin_tunnel():
+    """An avenue east-west whose two one-way carriageways, 8 m apart, run through a tunnel between x = -100 and
+    100, and a street north-south that crosses over the tunnel just inside its west mouth, as at Línea."""
+    j = [(-400, 596), (-100, 596), (100, 596), (400, 596), (400, 604), (100, 604), (-100, 604), (-400, 604),
+         (-92, 450), (-92, 750)]
+    edges = [(0, 1), (1, 2), (2, 3), (4, 5), (5, 6), (6, 7), (8, 9), (9, 8)]
+    a = dict(make_graph(j, edges).a)
+    a["g_layer"] = np.array([-1 if (f, t) in ((1, 2), (5, 6)) else 0 for f, t in edges], np.int8)
+    return a
+
+
+def _drive_along(city, t, x0, x1, z, speed=16.0):
+    """Drive contravia.car.Driven along the line z from x0 to x1 against the structures' walls at its height:
+    (wall contacts, the largest change of a wheel's ground height from one frame to the next, lowest height,
+    the car at the end)."""
+    from contravia.car import Controls, Driven
+    from contravia.rules import fleet, handling
+    from contravia.walls import Walls
+
+    w = Walls.__new__(Walls)
+    w.city, w._cache, w._pending = city, {}, {}
+    w._build = lambda i, j: np.zeros((0, 2, 2))
+    w._pool = type("P", (), {"submit": lambda *a: None})()
+    s = Surface(city, t)
+    east = x1 > x0
+    d = Driven(handling.spec_for(fleet.moderno(), "moderno"),
+               CarState(x0, z, 0.0 if east else np.pi, 0.0, y=float(s.height(x0, z)[0])), s)
+    d.launch(speed)
+    hits, step, low = 0, 0.0, np.inf
+    before = d.fleet.ground_y[0].copy()
+    for _ in range(int(abs(x1 - x0) / speed * 60 * 1.5)):
+        c = d.state
+        if (c.x >= x1) if east else (c.x <= x1):
+            break
+        yaw = (c.yaw - (0.0 if east else np.pi) + np.pi) % (2 * np.pi) - np.pi
+        lateral = (c.z - z) if east else (z - c.z)
+        steer = float(np.clip(-0.15 * lateral - 1.0 * yaw, -1, 1)) * (1 if east else -1)
+        d.step(Controls(float(np.clip((speed - c.speed) * 0.3, 0, 1)), 0.0, steer, False), 1 / 60, w.near(c.x, c.z, c.y))
+        hits += float(d.fleet.impulse[0]) > 0
+        step = max(step, float(np.abs(d.fleet.ground_y[0] - before).max()))
+        before = d.fleet.ground_y[0].copy()
+        low = min(low, d.state.y)
+    return hits, step, low, d.state
+
+
+def test_a_car_drives_into_and_out_of_a_tunnel_both_ways_without_touching_a_wall():
+    t = Terrain.flat()
+    city, (ribbons, owner, axes, _, _, chains), _ = _city(t, _twin_tunnel())
+    tubes = [k for k in range(len(axes)) if chains[owner[k]].layer < 0]
+    assert len(tubes) == 2                       # each carriageway goes into its own tube, as on the ground
+    assert ribbons[tubes[0]].intersection(ribbons[tubes[1]]).area < 0.5      # and the two do not overlap
+    for x0, x1, z in ((-330.0, 330.0, 596.0), (330.0, -330.0, 604.0)):
+        hits, step, low, end = _drive_along(city, t, x0, x1, z)
+        assert hits == 0                         # in through one mouth and out through the other, no wall
+        assert step < 0.05                       # and no wheel steps more than a few cm in a frame
+        assert low < -6.0                        # it went down into the tunnel
+        assert abs(end.x - x1) < 5.0 and abs(end.y) < 0.5   # and came back up on the far side
