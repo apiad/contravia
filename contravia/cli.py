@@ -157,7 +157,6 @@ def main(argv: list[str] | None = None) -> None:
         print(json.dumps(report))
     elif args.command == "cover":
         import json
-        import os
         from pathlib import Path
 
         from contravia import coast, cover
@@ -171,7 +170,6 @@ def main(argv: list[str] | None = None) -> None:
 
             code = window(args.source, args.home, shot=args.shot)
             if code:  # stopped mid-step: the pool's threads would hold the exit until their step ends
-                import os
                 import sys
 
                 sys.stdout.flush()
@@ -210,7 +208,6 @@ def main(argv: list[str] | None = None) -> None:
 
         sys.exit(walls_check(args.data))
     elif args.command == "climate":
-        import os
 
         from contravia.climate import main as climate
 
