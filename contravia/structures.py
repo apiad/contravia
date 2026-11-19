@@ -124,13 +124,18 @@ def build(ribbons, owner, axes, chains, prof, terrain, lower_tree=None, rings=()
     for k in range(len(axes)):
         levels.setdefault(chains[owner[k]].layer, []).append(ribbons[k])
     levels = {L: (rs, built_tree(rs)) for L, rs in levels.items()}
+    tips = np.array([q[i] for q in axes for i in (0, -1)]).reshape(-1, 2)
+    tip_tree = shapely.STRtree(shapely.points(tips))
 
     def junction(item):
         poly, node = item
         out = _Out()
         layer = node[0] if isinstance(node, tuple) else 0
+        # the bridges and tunnels that leave from this junction meet it at its mouth: no wall across them
+        mouths = [ribbons[int(i) // 2] for i in tip_tree.query(poly, predicate="dwithin", distance=1.0)
+                  if chains[owner[int(i) // 2]].layer != layer]
         if hj is not None and node in hj:
-            _ring(out, poly, float(hj[node]), layer, levels.get(layer), terrain, sea)
+            _ring(out, poly, float(hj[node]), layer, levels.get(layer), terrain, sea, mouths)
         return out
 
     outs += pmap(junction, list(zip(rings, rnode)), chunk=64)
@@ -171,11 +176,12 @@ def _twin(q, others, oprof, w):
     return out
 
 
-def _ring(out, poly, y, layer, same, terrain, sea):
+def _ring(out, poly, y, layer, same, terrain, sea, mouths=()):
     """A junction's dress: on a bridge a parapet along its free edges and a deck under it; in a tunnel, or sunk
     below the ground, walls along its free edges and a roof where its streets would have one, or a cut in the
-    ground, and a hole in the sea where it runs low. Its free edges are those no street of its level meets; same
-    holds that level's ribbons and an STRtree of them, or None."""
+    ground, and a hole in the sea where it runs low. Its free edges are those no street of its level meets, nor a
+    bridge or tunnel that leaves from it (mouths, their ribbons); same holds that level's ribbons and an STRtree
+    of them, or None."""
     fence = poly.buffer(WALL_PAD, join_style="mitre")
     if not isinstance(fence, shapely.Polygon) or fence.is_empty:
         return
@@ -186,7 +192,8 @@ def _ring(out, poly, y, layer, same, terrain, sea):
         return
     mid = (a + b) / 2
     near = [] if same is None else same[1].query(poly, predicate="dwithin", distance=1.0)
-    joined = shapely.union_all([same[0][i].buffer(0.01) for i in near]) if len(near) else None
+    meet = [same[0][i] for i in near] + list(mouths)
+    joined = shapely.union_all([m.buffer(0.01) for m in meet]) if meet else None
     free = np.ones(len(a), bool) if joined is None else ~shapely.contains_xy(joined, mid[:, 0], mid[:, 1])
     flat = _triangles(fence)
     ya, yy = np.full(len(a), y), np.full(len(flat), y)
