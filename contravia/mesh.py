@@ -69,6 +69,7 @@ class MeshBuilder:
 
 def signed_area(ring: np.ndarray) -> float:
     """Shoelace area of a ring in the (x, z) plane; positive when its points turn counter-clockwise."""
+    ring = ring - ring[0]  # far from the origin the products cancel and a small ring's area rounds to 0
     x, z = ring[:, 0], ring[:, 1]
     return 0.5 * float(np.dot(x, np.roll(z, -1)) - np.dot(z, np.roll(x, -1)))
 

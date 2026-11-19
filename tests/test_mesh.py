@@ -37,3 +37,9 @@ def test_meshdata_offsets_by_the_cell_corner():
     md = mb.to_meshdata(200, 400)
     assert md.positions[:, [0, 2]].tolist() == [[0, 0], [10, 0], [0, 10]]
     assert md.indices.dtype == np.uint32 and md.positions.dtype == np.float32
+
+
+def test_a_small_ring_far_from_the_origin_keeps_its_area():
+    t = np.linspace(0, 2 * np.pi, 24, endpoint=False)
+    ring = np.stack([8e5 + 0.01 * np.cos(t), 3e5 + 0.01 * np.sin(t)], axis=1)  # a lantern cap in Guantánamo
+    assert np.isclose(area(ring, triangulate(ring)), area(ring - ring[0], triangulate(ring - ring[0])))
