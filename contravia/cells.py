@@ -40,6 +40,18 @@ def landmarks() -> Landmarks:
     return _landmarks
 
 
+def warm() -> None:
+    """What a builder loads once, run when it starts while the game is still loading: the world, its landmarks and
+    the parks lookup of the focused province, which its first cell would otherwise wait for."""
+    from contravia import parks
+
+    w = city()
+    landmarks()
+    a = w.province(w.names.index(w.focused)).a
+    if "park_kind" in a and len(a["park_kind"]):
+        parks._lookup(a)
+
+
 def build(i: int, j: int):
     """The MeshData of cell (i, j): its ground, roads, buildings, filler boxes and trees."""
     global SKIPPED_ROOFS
