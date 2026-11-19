@@ -5,15 +5,26 @@ per person per day and the modal split from the city's sustainable mobility plan
 vehicle, the share of shared taxis, buses and freight are assumptions. The hour curves have the peaks reported
 for Havana (7–9 and 16–18); the rest of their shape, and the day totals, are assumptions too.
 
+The demand gives how many vehicles are moving; the mix splits them over the fleet's ten kinds, and the family
+shares split a kind over its families (fleet spec section 05). Havana has one row of the mix until the streets carry
+place classes. A near vehicle's look (kind, family, variant and colourway) is drawn from those shares by a seeded
+hash, so the same street at the same minute draws the same vehicles.
+
 Change any of them with TrafficConfig.updated(...) while the game runs, and the flow layer follows.
 """
 
 import dataclasses
+import functools
+import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-KINDS = ("car", "taxi", "bus", "moto", "truck")
+import numpy as np
+
+from contravia.rules.fleet import FAMILIES, KINDS, variant
+
+MODES = ("car", "taxi", "bus", "moto", "truck")  # what the demand estimate counts trips of
 DAY_TYPES = ("weekday", "friday", "saturday", "sunday")
 
 # Percent of a day's trips starting in each hour, 00–01 first. Normalised when a config is made.
@@ -31,6 +42,19 @@ DAYS = {"weekday": 1.00, "friday": 1.05, "saturday": 0.80, "sunday": 0.60}
 MODAL_SPLIT = {"walk": 0.462, "public": 0.436, "car": 0.060, "moto": 0.032, "bike": 0.011}
 OCCUPANCY = {"car": 1.5, "moto": 1.2, "taxi": 4.0}
 ATTRACT = {"Plaza de la Revolución": 1.5, "La Lisa": 1.3}
+# Percent of the vehicles on Havana's streets by kind: the spec's `havana` row.
+MIX = {"car": 26, "taxi": 12, "bus": 6, "truck": 8, "moto": 30, "tricycle": 7, "bicitaxi": 3, "bike": 6,
+       "police": 1.5, "fire": 0.5}
+# Percent of a kind by family in Havana: the spec's "Inside a kind", an era's share split evenly over its families.
+FAMILY_SHARE = {
+    "almendron": 25, "ruso": 20, "moscovita": 20, "moderno": 17.5, "huevito": 17.5,  # 1950s 25 · 80s 40 · modern 35
+    "compartido": 75, "estatal": 25,
+    "metroguagua": 80, "guagua_vieja": 20, "interprovincial": 0,
+    "furgon": 40, "camion_80": 30, "cisterna": 15, "volquete": 15, "pasajeros": 0,
+    "moto_electrica": 85, "moto_dos_tiempos": 15,
+    "triciclo_carga": 50, "triciclo_pasajeros": 50,
+    "bicitaxi": 100, "bicicleta": 100, "policia": 100, "bomberos": 100,
+}
 
 
 def _normalised(values: dict) -> dict:
@@ -53,6 +77,8 @@ class TrafficConfig:
     hours: dict = field(default_factory=lambda: {k: tuple(v) for k, v in HOURS.items()})
     days: dict = field(default_factory=lambda: dict(DAYS))
     attract: dict = field(default_factory=lambda: dict(ATTRACT))
+    mix: dict = field(default_factory=lambda: dict(MIX))
+    families: dict = field(default_factory=lambda: dict(FAMILY_SHARE))
     level: float = 1.0
 
     def __post_init__(self):
@@ -63,7 +89,13 @@ class TrafficConfig:
                 raise ValueError(f"{name} must be a number ≥ 0, got {value!r}")
         if self.trip_minutes == 0:
             raise ValueError("trip_minutes must be more than 0")
-        for name in ("modal_split", "occupancy", "days", "attract"):
+        for name, known in (("mix", KINDS), ("families", FAMILIES)):
+            unknown = sorted(set(getattr(self, name)) - set(known))
+            if unknown:
+                raise ValueError(f"{name} has no {', '.join(unknown)}; it takes {', '.join(known)}")
+        if sum(self.mix.values()) <= 0:
+            raise ValueError("mix needs a share above 0")
+        for name in ("modal_split", "occupancy", "days", "attract", "mix", "families"):
             if any(not isinstance(v, (int, float)) or v < 0 for v in getattr(self, name).values()):
                 raise ValueError(f"{name} values must be numbers ≥ 0")
         if any(self.occupancy.get(k, 0) <= 0 for k in OCCUPANCY):
@@ -81,7 +113,7 @@ class TrafficConfig:
         object.__setattr__(self, "hours", hours)
         object.__setattr__(self, "modal_split", _normalised(self.modal_split))
 
-    def updated(self, **changes) -> "TrafficConfig":
+    def updated(self, **changes) -> TrafficConfig:
         """A copy with these settings changed. Dict settings merge key by key; an unknown name is an error."""
         names = {f.name for f in dataclasses.fields(self)}
         unknown = sorted(set(changes) - names)
@@ -111,7 +143,7 @@ def day_type(when: datetime) -> str:
 
 
 def _base_trips(cfg: TrafficConfig) -> dict:
-    """Vehicle trips in a day whose total factor is 1, by kind."""
+    """Vehicle trips in a day whose total factor is 1, by mode of the demand estimate."""
     people = cfg.population * cfg.trips_per_person
     split, occ = cfg.modal_split, cfg.occupancy
     trips = {
@@ -121,11 +153,11 @@ def _base_trips(cfg: TrafficConfig) -> dict:
         "moto": people * split.get("moto", 0) / occ["moto"],
     }
     trips["truck"] = cfg.freight_share * sum(trips.values())
-    return {k: trips[k] for k in KINDS}
+    return {k: trips[k] for k in MODES}
 
 
 def vehicle_trips(cfg: TrafficConfig, day: str) -> dict:
-    """Vehicle trips in a day of this type, by kind."""
+    """Vehicle trips in a day of this type, by mode of the demand estimate."""
     return {k: v * cfg.days[day] for k, v in _base_trips(cfg).items()}
 
 
@@ -150,7 +182,54 @@ def hour_share(cfg: TrafficConfig, when: datetime) -> float:
 
 
 def moving(cfg: TrafficConfig, when: datetime) -> dict:
-    """Vehicles on the streets at `when`, by kind: trips starting per hour times the hours a trip lasts."""
-    base = _base_trips(cfg)
-    per_hour = hour_share(cfg, when)
-    return {k: base[k] * per_hour * cfg.trip_minutes / 60 * cfg.level for k in KINDS}
+    """Vehicles on the streets at `when`, by kind: trips starting per hour times the hours a trip lasts, split by the mix."""
+    total = sum(_base_trips(cfg).values()) * hour_share(cfg, when) * cfg.trip_minutes / 60 * cfg.level
+    mix = sum(cfg.mix.values())
+    return {k: total * cfg.mix.get(k, 0) / mix for k in KINDS}
+
+
+@functools.cache
+def looks() -> tuple[tuple[str, str, int, int], ...]:
+    """Every look the traffic can draw, as (kind, family, variant, colourway), kind after kind in KINDS order."""
+    out = []
+    for kind in KINDS:
+        for family in (f for f in FAMILIES.values() if f.kind == kind):
+            for k in range(family.variants):
+                out += [(kind, family.name, k, j) for j in range(len(variant(kind, family.name, k).colourways))]
+    return tuple(out)
+
+
+def look_kinds() -> np.ndarray:
+    """The KINDS index of every look."""
+    return np.array([KINDS.index(look[0]) for look in looks()], np.int64)
+
+
+def look_shares(cfg: TrafficConfig) -> np.ndarray:
+    """The probability of each look: its kind's share of the mix, its family's share of the kind, then even."""
+    return _shares(tuple(sorted(cfg.mix.items())), tuple(sorted(cfg.families.items())))
+
+
+@functools.cache
+def _shares(mix_items: tuple, family_items: tuple) -> np.ndarray:
+    every, mix_of, share = looks(), dict(mix_items), dict(family_items)
+    mix = sum(mix_of.values())
+    per_kind = {kind: sum(share.get(f.name, 0) for f in FAMILIES.values() if f.kind == kind) for kind in KINDS}
+    counts = {}
+    for kind, family, _k, _j in every:
+        counts[family] = counts.get(family, 0) + 1
+    p = np.zeros(len(every))
+    for i, (kind, family, _k, _j) in enumerate(every):
+        if per_kind[kind] > 0:
+            p[i] = mix_of.get(kind, 0) / mix * share.get(family, 0) / per_kind[kind] / counts[family]
+    return p / p.sum()
+
+
+def _hash(*parts) -> int:
+    """A stable 64-bit seed from numbers, the same on every machine."""
+    return int.from_bytes(hashlib.sha256(":".join(map(str, parts)).encode()).digest()[:8], "big")
+
+
+def pick(cfg: TrafficConfig, edge: int, when: datetime, n: int) -> np.ndarray:
+    """The looks of `n` vehicles entering `edge` at `when`'s minute: a seeded hash against the look shares."""
+    u = np.random.default_rng(_hash(edge, when.strftime("%Y-%m-%d %H:%M"))).random(n)
+    return np.minimum(np.searchsorted(np.cumsum(look_shares(cfg)), u, side="right"), len(looks()) - 1).astype(np.int64)

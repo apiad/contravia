@@ -1,125 +1,113 @@
-"""How traffic is drawn: five kinds of vehicle, each one mesh, each a pool of entities moved as arrays.
+"""How traffic is drawn: one mesh per look of the fleet, each a pool of entities moved as arrays.
 
-The sedan and the old American car (the shared taxi) are manifoldx's parametric car with other proportions, the
-motorbike its cycle builder; the bus and the truck, which it cannot make, are coloured boxes. Its outside pieces are merged into one vertex-coloured mesh and
-simplified, so hundreds can be drawn. At start the game spawns a fixed pool of each kind; every frame the
-cars' positions are written into the pool as arrays, and the slots no car uses wait far below the ground.
+A look is a variant of a family of `contravia/rules/fleet.py` in one of its colourways (`rules.traffic.looks`). Its
+mesh is manifoldx's `Vehicle.merged`: the outside pieces merged into one vertex-coloured mesh. It is not decimated:
+a grid decimation smears the normals and bleeds the wheels' and the chrome's colours into the body, and the engine's
+frustum culling keeps the cost to the cars in view. Building every look takes minutes, so the meshes are kept on disk under the user's cache
+folder, stamped with the code that builds them, and built again on several threads only when that code changes.
+
+At start the game spawns a pool of each look, sized by its share of Havana's mix; every frame the cars' positions are
+written into the pools as arrays. A car takes a slot of its own look and, when its look's pool is full, a free slot
+of another look of the same kind. The slots no car uses wait far below the ground.
 """
 
-import functools
+import hashlib
+import math
+import os
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import numpy as np
 
-from contravia.kept import kept, source
-from contravia.rules.traffic import KINDS
+from contravia.kept import kept
+from contravia.rules.traffic import TrafficConfig, look_kinds, look_shares, looks
 
 PARKED = -1000.0  # the height of unused slots
-POOL = {"car": 800, "taxi": 400, "moto": 400, "bus": 60, "truck": 200}
-SLOT = 10_000  # a slot's number is kind · SLOT + its index in the pool
-PARAMS = {
-    "car": {},
-    "taxi": {"length": 5.0, "width": 1.95, "height": 1.5, "wheelbase": 3.0, "front_overhang": 0.95},
-}
-PAINT = {"car": "#8a2b22", "taxi": "#2f5d8c", "bus": "#c9a227", "moto": "#303236", "truck": "#d6d3c8"}
-INSIDE = {"interior", "carpet", "dash", "seat", "liner"}  # pieces never seen from the street
-GRID = 28  # decimation cells along the longest side
+NEAR = 400  # the most cars the near traffic is expected to hold at once
+SLOT = 10_000  # a slot's number is look · SLOT + its index in the pool
+KEYS = ("positions", "normals", "colors", "indices")
 
 
-def _rgb(hex_colour: str) -> np.ndarray:
-    h = hex_colour.lstrip("#")
-    return np.array([int(h[k:k + 2], 16) / 255 for k in (0, 2, 4)])
+def pool_sizes(near: int = NEAR) -> dict[int, int]:
+    """Slots per look: its share of `near` cars with half again to spare, and at least one."""
+    return {i: math.ceil(1.5 * p * near) + 1 for i, p in enumerate(look_shares(TrafficConfig())) if p > 0}
 
 
-def _rotate(q, v):
-    x, y, z, w = q
-    u = np.array([x, y, z])
-    return v + 2 * np.cross(u, np.cross(u, v) + w * v)
+def _shape(kind: str, family: str, k: int) -> list[dict]:
+    """The meshes of every colourway of one variant, centred on the origin with the nose at +x."""
+    from contravia.rules.fleet import variant
+
+    v = variant(kind, family, k)
+    built = v.build()
+    out = []
+    for palette in v.colourways:
+        geo = built.merged(palette=palette).to_geometry()
+        out.append({key: geo[key] for key in KEYS})
+    return out
 
 
-# Kinds the parametric car cannot make, as boxes: (size x, y, z), centre x, y, z, colour. Nose at +x.
-BOXES = {
-    "bus": [((12.0, 2.3, 2.5), (0.0, 1.55, 0.0), "#c9a227"),  # body
-            ((11.0, 0.9, 2.52), (0.2, 2.0, 0.0), "#1d2226"),  # window band
-            ((0.1, 1.1, 2.0), (6.0, 1.9, 0.0), "#1d2226"),  # windscreen
-            ((1.0, 1.0, 2.6), (3.6, 0.5, 0.0), "#141414"), ((1.0, 1.0, 2.6), (-3.8, 0.5, 0.0), "#141414")],
-    "truck": [((2.2, 2.4, 2.4), (2.9, 1.6, 0.0), "#7a2a20"),  # cab
-              ((0.1, 0.9, 2.0), (4.0, 2.2, 0.0), "#1d2226"),  # windscreen
-              ((5.6, 2.6, 2.5), (-1.2, 1.9, 0.0), "#d6d3c8"),  # cargo box
-              ((1.0, 1.0, 2.5), (2.9, 0.5, 0.0), "#141414"), ((1.0, 1.0, 2.5), (-2.8, 0.5, 0.0), "#141414")],
-}
+def _stamp() -> str:
+    """What the meshes are built from: this file, the fleet's rules and manifoldx's version."""
+    from importlib.metadata import version
+
+    from contravia.rules import fleet
+
+    h = hashlib.sha256(version("manifold-gfx").encode())
+    for path in (__file__, fleet.__file__):
+        h.update(Path(path).read_bytes())
+    return h.hexdigest()[:16]
 
 
-def _boxes(kind: str) -> dict:
-    from manifoldx.modeling.mesh import Mesh
-
-    pos, faces, cols, norms, base = [], [], [], [], 0
-    for size, centre, colour in BOXES[kind]:
-        b = Mesh.box(*size).translate(centre).recompute_normals()
-        pos.append(b.positions)
-        norms.append(b.normals)
-        faces.append(np.asarray(b.faces) + base)
-        cols.append(np.tile(_rgb(colour), (len(b.positions), 1)))
-        base += len(b.positions)
-    return {"positions": np.vstack(pos).astype(np.float32), "normals": np.vstack(norms).astype(np.float32),
-            "colors": np.vstack(cols).astype(np.float32), "indices": np.vstack(faces).astype(np.uint32).ravel()}
+def cache_dir() -> Path:
+    """Where built meshes are kept: $XDG_CACHE_HOME/contravia, else ~/.cache/contravia."""
+    return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "contravia"
 
 
-@functools.cache
-def merged(kind: str) -> dict:
-    """One mesh for a kind: positions, normals, colors and indices, centred on the origin, nose at +x."""
-    from manifoldx.modeling.assets.car import PALETTE, CarParams, build_car
-
-    if kind in BOXES:
-        return _boxes(kind)
-    from manifoldx.modeling.mesh import Mesh
-
-    if kind == "moto":  # a car's builder cannot make a motorbike: manifoldx's cycle builder can
-        from manifoldx.modeling.assets import build_cycle, motorcycle
-
-        car = build_cycle(motorcycle())
-    else:
-        car = build_car(CarParams(**PARAMS[kind]))
-    palette = {**car.palette, "paint": (PAINT[kind], *PALETTE["paint"][1:])}
-    pose = car.pose()
-    pos, faces, cols, base = [], [], [], 0
-    for part in car.parts:
-        at, q = pose[part.name]
-        for mat, mesh in part.pieces.items():
-            if mat in INSIDE:
-                continue
-            p = _rotate(np.asarray(q, float), np.asarray(mesh.positions, float)) + at
-            pos.append(p)
-            faces.append(np.asarray(mesh.faces) + base)
-            cols.append(np.tile(_rgb(palette[mat][0]), (len(p), 1)))
-            base += len(p)
-    whole = Mesh(np.vstack(pos), np.vstack(faces), colors=np.vstack(cols))
-    span = np.ptp(whole.positions, axis=0).max()
-    small = whole.decimate(grid=GRID).recompute_normals() if span > 0 else whole
-    p = np.asarray(small.positions, np.float64)
-    colours = _nearest_colours(p, whole.positions, np.vstack(cols))  # decimate keeps no colours
-    p[:, [0, 2]] -= (p[:, [0, 2]].max(0) + p[:, [0, 2]].min(0)) / 2
-    return {"positions": p.astype(np.float32), "normals": np.asarray(small.normals, np.float32),
-            "colors": colours.astype(np.float32), "indices": np.asarray(small.faces, np.uint32).ravel()}
-
-
-def _nearest_colours(points: np.ndarray, source: np.ndarray, colours: np.ndarray) -> np.ndarray:
-    """The colour of the nearest source vertex for each point, in chunks to bound memory."""
-    out = np.empty((len(points), 3))
-    for k in range(0, len(points), 512):
-        d = ((points[k:k + 512, None, :] - source[None, :, :]) ** 2).sum(-1)
-        out[k:k + 512] = colours[np.argmin(d, axis=1)]
+def meshes() -> list[dict]:
+    """The mesh of every look, in looks() order: read from the cache, or built on all cores and cached."""
+    path = cache_dir() / f"traffic-{_stamp()}.npz"
+    every = looks()
+    if path.exists():
+        with np.load(path) as f:
+            return [{key: f[f"{i}/{key}"] for key in KEYS} for i in range(len(every))]
+    variants = list(dict.fromkeys((kind, family, k) for kind, family, k, _j in every))
+    with ThreadPoolExecutor(os.cpu_count()) as pool:
+        shapes = dict(zip(variants, pool.map(lambda v: _shape(*v), variants)))
+    out = [shapes[(kind, family, k)][j] for kind, family, k, j in every]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    for old in path.parent.glob("traffic-*.npz"):
+        old.unlink()
+    tmp = path.with_suffix(".tmp.npz")
+    np.savez(tmp, **{f"{i}/{key}": m[key] for i, m in enumerate(out) for key in KEYS})
+    tmp.replace(path)
     return out
 
 
 def slots(pool: dict) -> np.ndarray:
-    """The slot numbers of a pool, kind after kind in KINDS order."""
-    return np.concatenate([KINDS.index(k) * SLOT + np.arange(pool.get(k, 0)) for k in KINDS]).astype(np.int64)
+    """The slot numbers of a pool, look after look."""
+    return np.concatenate([i * SLOT + np.arange(n) for i, n in sorted(pool.items())]).astype(np.int64)
 
 
-def slot_transforms(slot_k, xyz, heading, pitch, kind) -> tuple[np.ndarray, np.ndarray, int]:
+def _match(car_group, row_group, row_order) -> tuple[np.ndarray, np.ndarray]:
+    """Pair the r-th car of each group with the r-th row of that group, rows taken in row_order.
+
+    Returns the paired cars' and rows' indices; cars beyond their group's rows are left out.
+    """
+    rows = np.lexsort((row_order, row_group))
+    g_rows = row_group[rows]
+    cars = np.argsort(car_group, kind="stable")
+    g_cars = car_group[cars]
+    rank = np.arange(len(cars)) - np.searchsorted(g_cars, g_cars)
+    start = np.searchsorted(g_rows, g_cars)
+    ok = rank < np.searchsorted(g_rows, g_cars, side="right") - start
+    return cars[ok], rows[start[ok] + rank[ok]]
+
+
+def slot_transforms(slot_k, xyz, heading, pitch, look) -> tuple[np.ndarray, np.ndarray, int]:
     """Positions (R, 3) and quaternions (R, 4, xyzw) for the R slots in `slot_k`, and how many cars had no slot.
 
-    Car c of kind k goes to the slot of kind k with index equal to c's rank among the cars of that kind.
+    Car c of look l goes to the slot of look l with index equal to c's rank among the cars of that look; the cars a
+    full pool leaves out take the free slots of the other looks of their kind, in slot order.
     heading is atan2(dz, dx) of travel; manifoldx turns +x toward -z for a positive yaw, so yaw = -heading.
     """
     slot_k = np.asarray(slot_k, np.int64)
@@ -128,20 +116,22 @@ def slot_transforms(slot_k, xyz, heading, pitch, kind) -> tuple[np.ndarray, np.n
     pos[:, 1] = PARKED
     rot = np.zeros((R, 4))
     rot[:, 3] = 1.0
-    s_kind, s_idx = slot_k // SLOT, slot_k % SLOT
-    kind = np.asarray(kind, np.int64)
-    overflow = 0
+    look = np.asarray(look, np.int64)
     a, p = -np.asarray(heading, float) / 2, np.asarray(pitch, float) / 2
     q = np.stack([np.sin(a) * np.sin(p), np.sin(a) * np.cos(p), np.cos(a) * np.sin(p), np.cos(a) * np.cos(p)], 1)
-    for k in range(len(KINDS)):
-        cars = np.flatnonzero(kind == k)
-        rows = np.flatnonzero(s_kind == k)
-        rows = rows[np.argsort(s_idx[rows])]
-        n = min(len(cars), len(rows))
-        overflow += len(cars) - n
-        pos[rows[:n]] = xyz[cars[:n]]
-        rot[rows[:n]] = q[cars[:n]]
-    return pos, rot, overflow
+    s_look = slot_k // SLOT
+    cars, rows = _match(look, s_look, slot_k)
+    left = np.ones(len(look), bool)
+    left[cars] = False
+    free = np.ones(R, bool)
+    free[rows] = False
+    kinds = look_kinds()
+    more_cars, more_rows = _match(kinds[look[left]], kinds[s_look[free]], slot_k[free])
+    cars = np.r_[cars, np.flatnonzero(left)[more_cars]]
+    rows = np.r_[rows, np.flatnonzero(free)[more_rows]]
+    pos[rows] = xyz[cars]
+    rot[rows] = q[cars]
+    return pos, rot, len(look) - len(cars)
 
 
 class Fleet:
@@ -154,22 +144,20 @@ class Fleet:
         from manifoldx.types import Float
 
         class Slot(Component):
-            k: Float  # kind · SLOT + index in its pool
+            k: Float  # look · SLOT + index in its pool
 
-        self.Slot, self.pool = Slot, {**POOL, **(pool or {})}
+        self.Slot, self.pool = Slot, {**pool_sizes(), **(pool or {})}
         self.overflow = 0
-        self._next = None  # (xyz, heading, pitch, kind) to draw on the next frame
-        for kind in KINDS:
-            n = self.pool[kind]
+        self._next = None  # (xyz, heading, pitch, look) to draw on the next frame
+        every = kept(engine.state, "traffic looks", _stamp(), meshes)
+        for i, n in sorted(self.pool.items()):
             if not n:
                 continue
-            m = kept(engine.state, f"vehicle {kind}", source(__file__), functools.partial(merged, kind))
             pos = np.zeros((n, 3))
             pos[:, 1] = PARKED
-            engine.spawn(Mesh({"positions": m["positions"], "normals": m["normals"], "colors": m["colors"],
-                               "indices": m["indices"]}),
-                         Material(StandardMaterial("#ffffff", roughness=0.6, vertex_colors=True)),
-                         Transform(pos=pos), Slot(k=(KINDS.index(kind) * SLOT + np.arange(n)).astype(float)), n=n)
+            engine.spawn(Mesh(dict(every[i])), Material(StandardMaterial("#ffffff", roughness=0.6, vertex_colors=True)),
+                         Transform(pos=pos),
+                         Slot(k=(i * SLOT + np.arange(n)).astype(float)), n=n)
 
         def move(q: mx.Query[Transform, Slot], dt: float):
             if self._next is None:
@@ -181,7 +169,8 @@ class Fleet:
 
         engine.system(move)
 
-    def draw(self, xyz, heading, pitch, kind) -> None:
+    def draw(self, xyz, heading, pitch, look) -> None:
         """Show these cars from the next frame on."""
         self._next = (np.asarray(xyz, float), np.asarray(heading, float), np.asarray(pitch, float),
-                      np.asarray(kind, np.int64))
+                      np.asarray(look, np.int64))
+

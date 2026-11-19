@@ -1,7 +1,7 @@
 """The car layer: cars near the player, driving on their lanes.
 
 Each car is a row in a few arrays, never an object: the edge it is on, how far along it its front is (s), its
-lane (0 is the rightmost), speed, kind, the edge it takes next, and how long it has waited at a junction.
+lane (0 is the rightmost), speed, look (and so kind), the edge it takes next, and how long it has waited at a junction.
 
 Every frame each car finds what is ahead of it in its lane (another car, a stop line, the player) and
 accelerates by the intelligent driver model: toward the street's free speed, keeping a gap that grows with
@@ -14,10 +14,12 @@ so a junction never locks up.
 import numpy as np
 
 from contravia.graph import CLASSES, Graph
-from contravia.rules.traffic import KINDS
+from contravia.rules.traffic import KINDS, look_kinds
 
-LENGTH = {"car": 4.5, "taxi": 5.0, "moto": 2.0, "bus": 12.0, "truck": 8.0}
-WIDTH = {"car": 1.8, "taxi": 1.95, "moto": 0.8, "bus": 2.5, "truck": 2.5}
+LENGTH = {"car": 4.5, "taxi": 5.0, "bus": 12.0, "truck": 8.0, "moto": 2.0, "tricycle": 2.8, "bicitaxi": 2.6,
+          "bike": 1.8, "police": 4.5, "fire": 8.6}
+WIDTH = {"car": 1.8, "taxi": 1.95, "bus": 2.5, "truck": 2.5, "moto": 0.8, "tricycle": 1.2, "bicitaxi": 1.1,
+         "bike": 0.6, "police": 1.8, "fire": 2.5}
 ACCEL, BRAKE, S0, HEADWAY = 1.5, 2.0, 2.0, 1.2  # intelligent driver model: m/s², m/s², m, s
 LANE_WIDTH = 3.0  # metres, at most; narrower when the street is narrow
 WIDTHS = {"motorway": 14.0, "trunk": 10.0, "primary": 10.0, "secondary": 8.0, "tertiary": 6.0,
@@ -94,13 +96,14 @@ class Cars:
             self.into_node[j] = np.flatnonzero(self.to == j)
             self.out_of_node[j] = np.flatnonzero(a["g_from"] == j)
         self.kind_len = np.array([LENGTH[k] for k in KINDS])
+        self.look_kind = look_kinds()
 
     def _clear(self) -> None:
         self.edge = np.zeros(0, np.int64)
         self.s = np.zeros(0)
         self.lane = np.zeros(0, np.int64)
         self.v = np.zeros(0)
-        self.kind = np.zeros(0, np.int64)
+        self.look = np.zeros(0, np.int64)  # an index into rules.traffic.looks()
         self.next_edge = np.zeros(0, np.int64)
         self.wait = np.zeros(0)
         self.stopped = np.zeros(0, bool)
@@ -108,6 +111,10 @@ class Cars:
 
     def __len__(self) -> int:
         return len(self.edge)
+
+    @property
+    def kind(self) -> np.ndarray:
+        return self.look_kind[self.look]
 
     @property
     def length(self) -> np.ndarray:
@@ -132,7 +139,7 @@ class Cars:
         lane = np.where(ok & (cross < -0.5), lanes - 1, lane)
         return lane
 
-    def add(self, edges, s, v, kinds) -> None:
+    def add(self, edges, s, v, looks) -> None:
         """Add cars on these edges at these distances and speeds; their next edge and lane are drawn."""
         edges = np.asarray(edges, np.int64)
         nxt = self._draw_next(edges)
@@ -140,7 +147,7 @@ class Cars:
         self.s = np.r_[self.s, np.asarray(s, float)]
         self.lane = np.r_[self.lane, self._lane_for(edges, nxt)]
         self.v = np.r_[self.v, np.asarray(v, float)]
-        self.kind = np.r_[self.kind, np.asarray(kinds, np.int64)]
+        self.look = np.r_[self.look, np.asarray(looks, np.int64)]
         self.next_edge = np.r_[self.next_edge, nxt]
         self.wait = np.r_[self.wait, np.zeros(len(edges))]
         self.stopped = np.r_[self.stopped, np.zeros(len(edges), bool)]
@@ -149,7 +156,7 @@ class Cars:
     def remove(self, mask) -> None:
         """Drop the cars where mask is True."""
         keep = ~np.asarray(mask, bool)
-        for name in ("edge", "s", "lane", "v", "kind", "next_edge", "wait", "stopped", "cleared"):
+        for name in ("edge", "s", "lane", "v", "look", "next_edge", "wait", "stopped", "cleared"):
             setattr(self, name, getattr(self, name)[keep])
 
     def offsets(self) -> np.ndarray:
@@ -316,7 +323,7 @@ class TrafficLayer:
         self.inbox = deque()
         self.counts = {"spawned": 0, "removed": 0}
         self.closed_until: dict[int, object] = {}  # edge -> datetime when its accident clears
-        self.stored: dict[int, list] = {}  # edge -> [(s, lane, kind)] of accident cars while the edge is away
+        self.stored: dict[int, list] = {}  # edge -> [(s, lane, look)] of accident cars while the edge is away
         self.kind_width = np.array([WIDTH[k] for k in KINDS])
         self._rng = np.random.default_rng(seed + 1)
         self.debt = 0.0  # vehicles owed to the flow by rounding (never handed over as a negative count)
@@ -346,14 +353,10 @@ class TrafficLayer:
                      + self.carry.sum() + self.waiting.sum() + transit
                      + sum(len(v) for v in self.stored.values()) + self.debt)
 
-    def _kinds(self, edge: int, k: int) -> np.ndarray:
-        from contravia.rules.traffic import KINDS, moving
+    def _looks(self, edge: int, k: int) -> np.ndarray:
+        from contravia.rules.traffic import pick
 
-        when = self.runner.clock.now()
-        share = np.array([v for v in moving(self.runner.flow.config, when).values()], float)
-        p = share / share.sum() if share.sum() > 0 else np.full(len(KINDS), 1 / len(KINDS))
-        rng = np.random.default_rng(edge * 1_000_003 + when.hour * 60 + when.minute)
-        return rng.choice(len(KINDS), size=k, p=p)
+        return pick(self.runner.flow.config, edge, self.runner.clock.now(), k)
 
     def _enter(self, edges, n, queue, speed) -> None:
         for e, ne, qe, ve in zip(edges.tolist(), n.tolist(), queue.tolist(), speed.tolist()):
@@ -380,7 +383,7 @@ class TrafficLayer:
             s_free = (np.arange(free) + 0.5) * room / max(free, 1)
             s = np.clip(np.r_[s_queue, s_free], 0.0, length)
             v = np.r_[np.zeros(q), np.full(free, ve)]
-            self.cars.add(np.full(k, e), s, v, self._kinds(e, k))
+            self.cars.add(np.full(k, e), s, v, self._looks(e, k))
             self.counts["spawned"] += k
 
     def _arrive(self, edges, k) -> None:
@@ -392,7 +395,7 @@ class TrafficLayer:
             if on.any() and self.cars.s[on].min() < SPACING_QUEUE:
                 continue  # no room at the start yet
             self.waiting[e] -= 1
-            self.cars.add([e], [0.0], [self.cars.vfree[e] * 0.5], self._kinds(e, 1))
+            self.cars.add([e], [0.0], [self.cars.vfree[e] * 0.5], self._looks(e, 1))
             self.counts["spawned"] += 1
 
     def _settle(self, counts: np.ndarray) -> np.ndarray:
@@ -438,7 +441,7 @@ class TrafficLayer:
             for i in np.flatnonzero(crashed).tolist():  # accident cars wait here, out of the flow, until it clears
                 e = int(self.cars.edge[i])
                 self.stored.setdefault(e, []).append((float(self.cars.s[i]), int(self.cars.lane[i]),
-                                                      int(self.cars.kind[i])))
+                                                      int(self.cars.look[i])))
             self.cars.remove(crashed)
             on = np.isin(self.cars.edge, leaving)
             counts = (np.bincount(self.cars.edge[on], minlength=E)[leaving] + self.carry[leaving]
