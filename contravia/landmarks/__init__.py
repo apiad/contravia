@@ -13,12 +13,22 @@ import numpy as np
 
 from contravia.citydata import Cell, CityData
 from contravia.geo import CELL, cell_of
-from contravia.landmarks import capitolio, focsa, gran_teatro, habana_libre, malecon, morro, nacional, plaza
+from contravia.landmarks import (
+    capitolio,
+    focsa,
+    generic,
+    gran_teatro,
+    habana_libre,
+    malecon,
+    morro,
+    nacional,
+    plaza,
+)
 from contravia.landmarks.shapes import inside
 from contravia.mesh import MeshBuilder
 
 SERVICE = 4.0  # metres: the width of a service road, the narrowest road prepare keeps
-MODULES = (capitolio, gran_teatro, morro, nacional, focsa, habana_libre, plaza, malecon)
+MODULES = (capitolio, gran_teatro, morro, nacional, focsa, habana_libre, plaza, malecon, generic)
 
 
 class Landmarks:
@@ -28,6 +38,7 @@ class Landmarks:
         mb = MeshBuilder()
         self.names, self.replaces, self.clear = [], set(), []
         self.bounds: dict[str, tuple[np.ndarray, np.ndarray]] = {}  # NAME: the (min, max) corners of its mesh
+        self.place_boxes: dict[str, tuple[np.ndarray, np.ndarray]] = {}  # place id: its generic piece's corners
         rings = []
         for module in MODULES:
             mark = mb.mark()
@@ -38,6 +49,7 @@ class Landmarks:
             if (b := mb.bounds_since(mark)) is not None:
                 self.bounds[module.NAME] = b
             self.replaces |= piece.replaces
+            self.place_boxes |= piece.boxes
             self.clear += [np.asarray(r, float) for r in piece.clear]
             rings += piece.walls
         self.mesh = mb.to_meshdata(0.0, 0.0) if self.names else None

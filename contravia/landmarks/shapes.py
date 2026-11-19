@@ -18,6 +18,7 @@ class Piece:
     replaces: set = field(default_factory=set)  # OSM building ids it stands in for
     clear: list = field(default_factory=list)  # rings where no OSM building, filler box or tree is kept
     walls: list = field(default_factory=list)  # rings the car hits
+    boxes: dict = field(default_factory=dict)  # collectible place id: the (min, max) corners of its piece
 
 
 def prism(mb, ring, y0: float, y1: float, color, roof: bool = True) -> None:

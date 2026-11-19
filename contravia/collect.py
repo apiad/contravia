@@ -113,15 +113,17 @@ class Places:
     def by_id(self, pid: str) -> Place:
         return self._ids[pid]
 
-    def with_meshes(self, bounds: dict) -> Places:
-        """The same places, with the box of each modelled landmark (MODELLED) set to its mesh's (Landmarks.bounds).
+    def with_meshes(self, bounds: dict, boxes: dict | None = None) -> Places:
+        """The same places, with the box of each modelled landmark (MODELLED) set to its mesh's (Landmarks.bounds)
+        and of each point-only place to its generic piece's (boxes, Landmarks.place_boxes).
 
         The box stays axis-aligned, so a landmark turned on the grid gets a box a little larger than itself."""
         new = Places([])
         swap = {}
-        for name, pid in MODELLED.items():
-            if name in bounds and pid in self._ids:
-                lo, hi = (np.asarray(v, float) for v in bounds[name])
+        pairs = [(pid, bounds[name]) for name, pid in MODELLED.items() if name in bounds]
+        for pid, corners in pairs + list((boxes or {}).items()):
+            if pid in self._ids:
+                lo, hi = (np.asarray(v, float) for v in corners)
                 old = self._ids[pid]
                 swap[pid] = Place(**{**old.__dict__, "x": float(lo[0] + hi[0]) / 2, "z": float(lo[2] + hi[2]) / 2,
                                      "w": float(hi[0] - lo[0]), "d": float(hi[2] - lo[2]),
