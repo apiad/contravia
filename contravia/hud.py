@@ -19,7 +19,7 @@ import math
 
 import numpy as np
 
-from contravia import ui
+from contravia import placemarks, ui
 
 MINIMAP_SIZE = 256  # pixels of the texture
 MINIMAP_SHOWN = 190  # pixels across on screen
@@ -29,6 +29,10 @@ MINIMAP_MOVE = 2.0  # metres the car moves before the minimap renders again, abo
 MINIMAP_TURN = 1.5  # degrees the car turns before the minimap renders again
 MINIMAP_IDLE = 60  # most frames between two renders, so the traffic around a still car moves on
 RIM = 8  # pixels of the minimap's cream rim
+MINIMAP_METRES = MINIMAP_HEIGHT * math.tan(math.radians(30.0))  # ground metres from the minimap's centre to its edge
+MINIMAP_MARKS = 12  # most places the minimap shows at once
+MARK_PX = 18  # pixels across a place's icon on the minimap
+OFF = (-1000, -1000)  # offset that puts an unused icon outside the window
 MARGIN = 24  # pixels between the HUD and the window's edges
 STATS_LINES = 9  # lines of the F1 panel
 STATS_EVERY = 10  # frames between two refreshes of its text
@@ -108,6 +112,8 @@ class Hud:
         self._area, self._area_t, self._area_a = "", 0.0, None
         self._address = None
         self._spot = ""  # the name of the place the photo hint shows, or "" with no hint
+        self.places, self.has = None, lambda pid: False  # the collectible places and whether one is photographed
+        self.marks = []  # (panel, image) of the minimap's place icons, the unused ones at OFF
         self._clock_text, self._weather, self._lit, self._gear, self._speed = None, None, None, None, None
         self.panels, self.minimap = [], []
         self.stats_panel, self.stats_lines, self.stats_on = None, [], False
@@ -139,7 +145,12 @@ class Hud:
                      style_overrides={**CLEAR, "width": 22, "height": 22})
         self.north = Panel([Image(ui.north(26), style_overrides={"width": 26})], anchor="top-right",
                            offset=north_offset(0.0, side, 26), style_overrides={**CLEAR, "width": 26, "height": 26})
-        self.minimap = [rim, disc, car, self.north]
+        self.marks = []
+        for _ in range(MINIMAP_MARKS):
+            image = Image(placemarks.icon("lugar", False, MARK_PX), style_overrides={"width": MARK_PX})
+            self.marks.append((Panel([image], anchor="top-right", offset=OFF,
+                                     style_overrides={**CLEAR, "width": MARK_PX, "height": MARK_PX}), image))
+        self.minimap = [rim, disc, *(m for m, _ in self.marks), car, self.north]
         # Bottom left: the municipio, with the logo's red shadow, and the city under it.
         big = {"font": ui.TITLE, "font_size": 46}
         self.area_shadow = Text("", style_overrides={**big, "fg": ui.alpha(ui.RED, 0)})
@@ -349,3 +360,24 @@ class Hud:
         self.camera.up = np.array([math.cos(car.yaw), 0.0, math.sin(car.yaw)], np.float32)
         self.camera.set_pose(position=tuple(here + (0.0, MINIMAP_HEIGHT, 0.0)), target=tuple(here))
         self.engine.refresh_texture(self.texture)
+        self._place_marks(car)
+
+    def set_places(self, places, has) -> None:
+        """The collectible places the minimap marks, and has(id), whether one is photographed."""
+        self.places, self.has = places, has
+
+    def _place_marks(self, car) -> None:
+        """Put an icon on the minimap for each place inside its circle, the nearest first, and hide the rest."""
+        found = [] if self.places is None else placemarks.on_minimap(self.places, car.x, car.z, car.yaw,
+                                                                     MINIMAP_METRES, MINIMAP_SHOWN / 2)
+        found.sort(key=lambda f: math.hypot(f[1], f[2]))
+        centre = MARGIN + MINIMAP_SHOWN / 2 - MARK_PX / 2
+        for k, (panel, image) in enumerate(self.marks):
+            if k >= len(found):
+                panel.offset = OFF
+                continue
+            p, right, down = found[k]
+            svg = placemarks.icon(p.type, self.has(p.id), MARK_PX)
+            if image.svg != svg:
+                image.svg = svg
+            panel.offset = (round(centre - right), round(centre + down))

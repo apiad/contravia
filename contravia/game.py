@@ -130,6 +130,7 @@ class Game:
         # The collectible places, the player's collection, and the place the photo hint offers (contravia/collect.py).
         self.places = collect.Places.load().with_meshes(self.walls.landmarks.bounds)
         self.album = Album.load({p.id: p.province for p in self.places})
+        self.hud.set_places(self.places, self.album.has)
         self.spot, self._spot_at = None, 0.0
         self.aim = None  # while aiming at a place: {"place", "ground", "yaw", "pitch", "zoom"} (start_aim)
         self._photo_pending = None  # (PNG path, future of its pixels) between a shot and its saving
