@@ -130,6 +130,8 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   (`Menu.view_card`) or driving there (`Game.drive_to`).
   «Álbum» in the pause and the main menu tallies them by province and kind (`album.tally`) and pages through a
   province's cards; `--screen album` or `--screen province` (of `--place`, else La Habana) with `--shot` saves them.
+  A place OSM has only as a point (`landmarks.generic.is_point`: its type's default box) of a type that is not a
+  building gets a generic piece seeded from its id, off the streets, and its box becomes the piece's.
 - The game grows in layers, and every layer covers the whole city. Never detail one district ahead of the rest.
 - Same inputs, same city: every random draw is seeded from an OSM id or a block centroid.
 - `data/` is never committed: no OSM extract, no npz.

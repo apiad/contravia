@@ -2,7 +2,7 @@ import numpy as np
 
 from contravia.citydata import CityData
 from contravia.geo import cell_of
-from contravia.landmarks import MODULES, Landmarks, capitolio, inside, plaza
+from contravia.landmarks import MODULES, Landmarks, capitolio, generic, inside, plaza
 from contravia.walls import Walls
 
 
@@ -78,7 +78,7 @@ def test_every_landmark_builds_when_its_footprints_are_there():
            plaza.TOWER, plaza.BASE, plaza.MINCOM]
     rings = [(i, square((k * 300.0, 2000.0), 30)) for k, i in enumerate(ids)]
     lm = Landmarks(city_with(rings))
-    assert lm.names == [m.NAME for m in MODULES]
+    assert lm.names == [m.NAME for m in MODULES if m is not generic]  # no point-only place in these cells
     assert len(lm.mesh.indices) > 0 and np.isfinite(lm.mesh.positions).all()
 
 
@@ -132,3 +132,64 @@ def test_each_landmark_knows_the_box_of_its_own_mesh():
     cap = p[(np.abs(p[:, 0]) < 150) & (np.abs(p[:, 2] - 2000.0) < 150)]
     assert np.allclose(lo, cap.min(axis=0), atol=1e-3) and np.allclose(hi, cap.max(axis=0), atol=1e-3)
     assert set(collect.MODELLED) <= set(lm.bounds)
+
+
+def test_a_point_place_is_one_with_its_types_default_box_and_not_a_building():
+    from types import SimpleNamespace as P
+
+    from contravia.landmarks.generic import is_point
+
+    assert is_point(P(type="monumento", w=8.0, d=8.0, h=10.0))
+    assert not is_point(P(type="monumento", w=120.0, d=52.0, h=10.0))  # an outline in OSM
+    assert not is_point(P(type="museo", w=25.0, d=30.0, h=12.0))  # the city draws its building
+
+
+def test_spot_moves_a_piece_off_the_street_and_faces_along_it():
+    import numpy as np
+
+    from contravia.landmarks.generic import KERB, spot
+
+    roads = np.array([[-100.0, 0.0, 100.0, 0.0, 10.0]])  # a 10 m street along x through the point
+    _, z, along = spot(0.0, 0.0, roads, 2.5)
+    assert abs(z) >= 5 + KERB + 2.5 and abs(along[0]) == 1.0
+    assert spot(0.0, 40.0, roads, 2.5)[:2] == (0.0, 40.0)  # room where it is
+    assert spot(0.0, 0.0, np.array([[-100.0, 0.0, 100.0, 0.0, 200.0]]), 2.5) is None
+
+
+def test_each_type_gets_a_piece_and_the_title_names_a_monuments_form():
+    import random
+
+    import numpy as np
+
+    from contravia.landmarks import generic
+    from contravia.mesh import MeshBuilder
+
+    for kind, (build, r) in generic.BUILD.items():
+        mb = MeshBuilder()
+        mark = mb.mark()
+        ring = build(mb, np.array([10.0, 20.0]), np.array([1.0, 0.0]), 3.0, random.Random(kind))
+        lo, hi = mb.bounds_since(mark)
+        assert lo[1] == 3.0 and hi[1] > 4.0 and np.hypot(*(ring - (10.0, 20.0)).T).max() <= r + 0.01, kind
+    assert generic.form("Obelisco de Marianao", random.Random(0)) == "obelisk"
+    assert generic.form("Busto de Martí", random.Random(0)) == "bust"
+
+
+def test_place_puts_a_piece_on_each_point_place_in_the_citys_cells_with_its_box():
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    from contravia import collect, geo
+    from contravia.landmarks import generic
+    from contravia.mesh import MeshBuilder
+
+    neptuno = collect.Places.load().by_id("L0557")
+    cell = [int(v) for v in geo.cell_of([neptuno.x, neptuno.z])]
+    flat = SimpleNamespace(height=lambda x, z: np.zeros(np.shape(x)))
+    city = SimpleNamespace(cells=lambda: np.array([cell]), a={"roads": np.zeros((0, 5), np.float32)}, terrain=flat)
+    piece = generic.place(city, MeshBuilder())
+    assert "L0557" in piece.boxes and len(piece.walls) == len(piece.boxes) == len(piece.clear)
+    lo, hi = piece.boxes["L0557"]
+    assert lo[0] < neptuno.x < hi[0] and hi[1] - lo[1] < 3.0  # a fountain, on the point: no street in the way
+    moved = collect.Places.load().with_meshes({}, piece.boxes).by_id("L0557")
+    assert moved.w == hi[0] - lo[0] and moved.base == lo[1]

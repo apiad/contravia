@@ -131,7 +131,7 @@ class Game:
         self.driver = Driver()
         self.hud = Hud(engine)
         # The collectible places, the player's collection, and the place the photo hint offers (contravia/collect.py).
-        self.places = collect.Places.load().with_meshes(self.walls.landmarks.bounds)
+        self.places = collect.Places.load().with_meshes(self.walls.landmarks.bounds, self.walls.landmarks.place_boxes)
         self.album = Album.load({p.id: p.province for p in self.places})
         self.hud.set_places(self.places, self.album.has)
         self.spot, self._spot_at = None, 0.0
