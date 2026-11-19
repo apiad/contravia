@@ -87,14 +87,14 @@ pre{font:12.5px/1.5 var(--font-mono);background:var(--raised);border:1px solid v
 
 <h2><span class="n">01</span>Tareas</h2>
 
-<details class="task" id="task-1" data-state="pending"><summary><span class="st">pendiente</span><b>1. La lista en el repo</b><span class="files">contravia/places.json, tests/test_places.py</span></summary>
+<details class="task" id="task-1" data-state="done"><summary><span class="st">pendiente</span><b>1. La lista en el repo</b><span class="files">contravia/places.json, tests/test_places.py</span></summary>
 <ol>
 <li><code>contravia/places.json</code> es la salida de <code>cards/build.py</code> del spike, copiada tal cual: una lista de objetos con <code>id</code>, <code>title</code>, <code>type</code>, <code>province</code>, <code>municipio</code>, <code>text</code>, <code>photo_target</code>, <code>lat</code>, <code>lon</code>, <code>box</code> (<code>w</code>, <code>d</code>, <code>h</code> en metros y <code>yaw_deg</code>, ángulo del lado <code>w</code> medido desde el este hacia el norte) y <code>scores</code> (<code>h</code>, <code>c</code>, <code>v</code> de 0 a 5, <code>total</code> sobre 15 y <code>tier</code>).</li>
 <li>Pruebas sobre el archivo: ids únicos; título, tipo y texto no vacíos; <code>w</code>, <code>d</code> y <code>h</code> positivos; <code>yaw_deg</code> en [0, 180); el centro dentro de <code>geo.CUBA_BOX</code>; la provincia es uno de los nombres de <code>geo.PROVINCES</code>; las notas en su rango y el nivel uno de los cuatro.</li>
 </ol>
 <div class="verify"><b>Verificar:</b> <code>python -m pytest tests/test_places.py -q</code> pasa.</div></details>
 
-<details class="task" id="task-2" data-state="pending"><summary><span class="st">pendiente</span><b>2. Los lugares en metros, por celda</b><span class="files">contravia/collect.py, tests/test_collect.py</span></summary>
+<details class="task" id="task-2" data-state="done"><summary><span class="st">pendiente</span><b>2. Los lugares en metros, por celda</b><span class="files">contravia/collect.py, tests/test_collect.py</span></summary>
 <ol>
 <li>Pruebas: un lugar sobre <code>geo.ORIGIN</code> queda en (0, 0); el eje del lado <code>w</code> de un lugar con <code>yaw_deg</code> 0 apunta a +x y con 90 a −z (el norte); <code>near</code> devuelve los lugares a menos de R metros y ninguno más allá, y solo mira las celdas que el círculo toca (se comprueba contando las celdas consultadas); <code>corners</code> da 8 esquinas, con la base a la altura que se le pasa.</li>
 <li><code>Place</code>, un dataclass congelado con los campos del archivo más <code>x</code>, <code>z</code> (de <code>geo.to_local</code>) y <code>axis</code>, el vector unitario (ux, uz) del lado <code>w</code> en el mundo. El eje se calcula proyectando con <code>to_local</code> el centro y un punto a 20 m en la dirección de <code>yaw_deg</code>, así que incluye la convergencia de meridianos de la proyección (unos 3° en Baracoa).</li>
@@ -103,10 +103,10 @@ pre{font:12.5px/1.5 var(--font-mono);background:var(--raised);border:1px solid v
 </ol>
 <div class="verify"><b>Verificar:</b> <code>python -m pytest tests/test_collect.py -q</code> pasa.</div></details>
 
-<details class="task" id="task-3" data-state="pending"><summary><span class="st">pendiente</span><b>3. La medida del encuadre</b><span class="files">contravia/collect.py, tests/test_collect.py</span></summary>
+<details class="task" id="task-3" data-state="done"><summary><span class="st">pendiente</span><b>3. La medida del encuadre</b><span class="files">contravia/collect.py, tests/test_collect.py</span></summary>
 <ol>
 <li>Pruebas: una cámara a 1,5 m del suelo mirando de frente a una caja de 20 × 20 × 20 m da <code>far</code> a 400 m, <code>good</code> a 50 m y <code>near</code> a 8 m; con zoom 3 la de 400 m sigue lejos y la de 150 m pasa a <code>good</code>; una caja girada 90° vista desde el este da lo mismo que su gemela sin girar vista desde el sur; una caja detrás de la cámara da <code>off</code>; una caja a un lado, con el centro fuera del 60 % central, da <code>off</code>.</li>
-<li><code>project(eye, target, points, zoom=1.0, aspect=16/9)</code>: puntos del mundo a coordenadas normalizadas de pantalla en [−1, 1], con <code>mapview.FOV_DEG</code> dividido por el zoom y el eje y hacia arriba; marca los puntos detrás de la cámara.</li>
+<li><code>project(eye, target, points, zoom=1.0, aspect=16/9)</code>: puntos del mundo a coordenadas normalizadas de pantalla en [−1, 1], con el campo de <code>mapview.FOV_DEG</code> estrechado por el zoom (la tangente del medio ángulo se divide por él) y el eje y hacia arriba; marca los puntos detrás de la cámara.</li>
 <li><code>framing(eye, target, corners, zoom=1.0, aspect=16/9) -> Framing</code>, con <code>size</code> (la mayor de las dos fracciones del cuadro que ocupa el rectángulo de las esquinas proyectadas), <code>centre</code> (dónde cae el centro de la caja), <code>inside</code> (la fracción del área de ese rectángulo dentro del cuadro) y <code>verdict</code>, en este orden: <code>off</code> si alguna esquina queda detrás de la cámara; <code>near</code> si <code>size</code> &gt; 0,9, aunque la caja se salga del cuadro; <code>off</code> si el centro cae fuera del 60 % central o <code>inside</code> &lt; 0,8; <code>far</code> si <code>size</code> &lt; 0,3; si no, <code>good</code>. Los umbrales son constantes con nombre, que el paso 2 ajusta jugando.</li>
 <li>La condición «a la vista» (rayos contra edificios y terreno) es del paso 2, que tiene las paredes de la celda; aquí no entra.</li>
 </ol>
