@@ -16,7 +16,7 @@ import math
 import textwrap
 from typing import ClassVar
 
-from contravia import collect, garage, mapview, placemarks, ui
+from contravia import album, collect, garage, mapview, placemarks, ui
 from contravia.hud import DAY_NAMES
 from contravia.rules import designs, fleet
 from contravia.settings import WEATHER_ICON, FreeDrive, Options
@@ -137,6 +137,7 @@ class ListScreen(Screen):
     title: str = ""
     hints: ClassVar[list] = [("↑↓", "Elegir"), ("ENTER", "Aceptar"), ("ESC", "Volver")]
     top = 270  # where the first option stands
+    row_h = ROW_H
     logo = False
 
     def items(self) -> list[tuple[str, str, object]]:
@@ -160,9 +161,9 @@ class ListScreen(Screen):
         elif self.title:
             self.panels.append(Panel([_text(self.title.upper(), ui.TITLE, 50, ui.PAPER)], anchor="top-left",
                                      offset=(60, 40), style_overrides=CLEAR))
-        self.stripe = Panel([Image(ui.stripe(360, ROW_H), style_overrides={"width": 360, "height": ROW_H})],
+        self.stripe = Panel([Image(ui.stripe(360, self.row_h), style_overrides={"width": 360, "height": self.row_h})],
                             anchor="top-left", offset=(58, self.top),
-                            style_overrides={**CLEAR, "width": 360, "height": ROW_H})
+                            style_overrides={**CLEAR, "width": 360, "height": self.row_h})
         self.mark = Panel([Image(ui.bar(10, 5, ui.RED), style_overrides={"width": 10, "height": 5})],
                           anchor="top-left", offset=(42, self.top + 28), style_overrides={**CLEAR, "width": 10, "height": 5})
         self.panels += [self.stripe, self.mark]
@@ -174,12 +175,12 @@ class ListScreen(Screen):
             self.titles.append(t)
             self.lines.append(sub)
             rows.append(Row([t] + ([sub] if sub else []), (lambda k=k: self.click(k)),
-                            style_overrides={**CLEAR, "padding": "6 0 0 20", "gap": 0, "width": 420, "height": ROW_H}))
+                            style_overrides={**CLEAR, "padding": "6 0 0 20", "gap": 0, "width": 420, "height": self.row_h}))
         self.panels.append(Panel(rows, anchor="top-left", offset=(56, self.top),
                                  style_overrides={**CLEAR, "gap": 0}))
         self.note = _text("", ui.BOLD, 16, ui.YELLOW)
         self.note_t = 0.0
-        self.panels.append(Panel([self.note], anchor="top-left", offset=(78, self.top + len(self.options) * ROW_H + 8),
+        self.panels.append(Panel([self.note], anchor="top-left", offset=(78, self.top + len(self.options) * self.row_h + 8),
                                  style_overrides={**CLEAR, "width": 600, "height": 26}))
         self.panels += self.extra(width)
         self.panels.append(_hints(width, self.hints, self.right_hint()))
@@ -204,9 +205,9 @@ class ListScreen(Screen):
             t.style_overrides = {**t.style_overrides, "fg": fg}
             if sub is not None:
                 sub.style_overrides = {**sub.style_overrides, "fg": ui.INK if on else (ui.PAPER if action else ui.GREY)}
-        y = self.top + self.index * ROW_H
+        y = self.top + self.index * self.row_h
         self.stripe.offset = (58, y)
-        self.mark.offset = (42, y + ROW_H // 2 - 4)
+        self.mark.offset = (42, y + self.row_h // 2 - 4)
 
     def click(self, k: int) -> None:
         self.select(k)
@@ -234,7 +235,8 @@ class ListScreen(Screen):
 
 class MainScreen(ListScreen):
     logo = True
-    top = 226
+    top = 214
+    row_h = 64  # seven options above the hints
 
     def items(self):
         m = self.menu
@@ -242,6 +244,7 @@ class MainScreen(ListScreen):
                 ("Modo libre", "Maneja donde quieras, cuando quieras", lambda: m.show("free")),
                 ("Mapa de Cuba", "Explora la isla desde el aire", lambda: m.show("map")),
                 ("Garaje", "Todos los vehículos de Cuba, a tu gusto", lambda: m.show("garage")),
+                ("Álbum", "Tus fotos de los lugares de Cuba", lambda: m.show("album")),
                 ("Opciones", "", lambda: m.show("options")),
                 ("Salir", "", m.quit)]
 
@@ -268,6 +271,7 @@ class PauseScreen(ListScreen):
     def items(self):
         m = self.menu
         return [("Seguir", "", m.resume), ("Mapa", "", lambda: m.show("map")),
+                ("Álbum", "", lambda: m.show("album")),
                 ("Cambiar vehículo", "", lambda: m.show("garage")), ("Modo foto", "", lambda: m.show("photo")),
                 ("Opciones", "", lambda: m.show("options")), ("Menú principal", "", m.to_menu)]
 
@@ -697,6 +701,150 @@ class MapScreen(Screen):
         g.map = cam
 
 
+TILE_W, TILE_H, TILE_GAP = 250, 92, 14  # a province's tile in the album
+PHOTO_W, PHOTO_H, PHOTO_GAP = 200, 112, 14  # a place's photo in a province's page
+PAGE_COLS, PAGE_ROWS = 5, 3
+
+
+def _tile(children, x, y, w, h):
+    from manifoldx.gui import Panel
+
+    return Panel(children, anchor="top-left", offset=(x, y),
+                 style_overrides={"padding": "8 12", "gap": 4, "width": w, "height": h, "bg": ui.alpha(ui.INK, 0.92),
+                                  "border": 3, "border_color": "#00000000"})
+
+
+def _dim(width):
+    from manifoldx.gui import Panel
+
+    return Panel([], anchor="top-left", style_overrides={"bg": ui.alpha("#000000", 0.82), "width": int(width),
+                                                          "height": ui.DESIGN_H})
+
+
+class AlbumScreen(Screen):
+    """The album: a tile per province with how many of its places the player has photographed, and on the right
+    the total and the count by kind of place. The arrows choose a province, ENTER opens its page, Escape goes
+    back to the pause or the main menu."""
+
+    COLS = 4
+    back_to = "main"
+
+    def build(self, width):
+        from manifoldx.gui import Image, Panel
+
+        if self.menu.current_before in ("pause", "main"):
+            self.back_to = self.menu.current_before
+        g = self.menu.game
+        self.rows = album.tally(g.places, g.album.has, lambda p: p.province)
+        self.index = getattr(self, "index", 0)
+        self.panels = [_dim(width), Panel([_text("ÁLBUM", ui.TITLE, 50, ui.PAPER)], anchor="top-left",
+                                          offset=(60, 40), style_overrides=CLEAR)]
+        self.tiles = []
+        for k, (name, got, total) in enumerate(self.rows):
+            x, y = 60 + (k % self.COLS) * (TILE_W + TILE_GAP), 130 + (k // self.COLS) * (TILE_H + TILE_GAP)
+            bar = Image(ui.progress(TILE_W - 30, 6, got / total), style_overrides={"width": TILE_W - 30, "height": 6})
+            tile = _tile([_text(name.upper(), ui.TITLE, 20, ui.PAPER),
+                          _text(f"{got} / {total}", ui.BOLD, 16, ui.YELLOW if got else ui.GREY), bar],
+                         x, y, TILE_W, TILE_H)
+            self.tiles.append(tile)
+        self.panels += self.tiles
+        have = sum(r[1] for r in self.rows)
+        kinds = album.tally(g.places, g.album.has, lambda p: placemarks.glyph(p.type))
+        lines = [_text(f"{have} de {len(g.places)} lugares", ui.TITLE, 24, ui.PAPER),
+                 _text("POR TIPO", ui.BOLD, 13, ui.GREY)]
+        for kind, got, total in kinds:
+            lines.append(Panel([Image(placemarks.icon(kind, bool(got), 20), style_overrides={"width": 20}),
+                                _text(f"{KIND_NAMES[kind]}  {got} / {total}", ui.BOLD, 15, ui.PAPER)],
+                               style_overrides={**CLEAR, "direction": "h", "gap": 8}))
+        self.panels.append(Panel(lines, anchor="top-right", offset=(56, 130),
+                                 style_overrides={"gap": 6, "padding": "14 18", "bg": ui.alpha(ui.INK, 0.92)}))
+        self.panels.append(_hints(width, [("←↑↓→", "Elegir"), ("ENTER", "Ver"), ("ESC", "Volver")]))
+        self.select(self.index)
+
+    def select(self, k):
+        self.index = k
+        for j, tile in enumerate(self.tiles):
+            tile.style_overrides = {**tile.style_overrides, "border_color": ui.YELLOW if j == k else "#00000000"}
+
+    def key(self, k):
+        if k in ("left", "right", "up", "down"):
+            self.select(album.grid_step(self.index, k, self.COLS, len(self.rows)))
+        elif k == "enter":
+            self.menu.province = self.rows[self.index][0]
+            self.menu.screens.pop("province", None)
+            self.menu.show("province")
+        elif k == "back":
+            if self.back_to == "pause":
+                self.menu.show("pause")
+            else:
+                self.menu.to_menu()
+
+
+class ProvinceScreen(Screen):
+    """A province's page of the album: its places in a grid, the photographed first, each with its photo or a
+    grey gap with its kind and municipio, and its title under it. ENTER shows the card, Escape the album."""
+
+    def build(self, width):
+        from manifoldx.gui import Image, Panel
+
+        g = self.menu.game
+        self.places = sorted((p for p in g.places if p.province == self.menu.province),
+                             key=lambda p: (not g.album.has(p.id), p.title))
+        self.index = getattr(self, "index", 0)
+        per = PAGE_COLS * PAGE_ROWS
+        self.page = self.index // per
+        got = sum(g.album.has(p.id) for p in self.places)
+        pages = (len(self.places) + per - 1) // per
+        self.panels = [_dim(width), Panel([_text(self.menu.province.upper(), ui.TITLE, 44, ui.PAPER),
+                                           _text(f"{got} / {len(self.places)} · página {self.page + 1} de {pages}",
+                                                 ui.BOLD, 15, ui.YELLOW)],
+                                          anchor="top-left", offset=(60, 34), style_overrides={**CLEAR, "gap": 2})]
+        self.tiles = []
+        for k, p in enumerate(self.places[self.page * per:(self.page + 1) * per]):
+            x = 60 + (k % PAGE_COLS) * (PHOTO_W + PHOTO_GAP)
+            y = 128 + (k // PAGE_COLS) * (PHOTO_H + 54)
+            if g.album.has(p.id):
+                face = Image(ui.photo(g.album.photo_path(p.id), PHOTO_W, PHOTO_H),
+                             style_overrides={"width": PHOTO_W, "height": PHOTO_H})
+            else:
+                face = Panel([Image(placemarks.icon(p.type, False, 28), style_overrides={"width": 28}),
+                              _text(p.type.replace("_", " "), ui.BOLD, 13, ui.PAPER),
+                              _text(p.municipio, ui.BOLD, 12, ui.GREY)],
+                             style_overrides={"padding": "14 12", "gap": 4, "bg": "#3a3a3a",
+                                              "width": PHOTO_W, "height": PHOTO_H})
+            title = p.title if len(p.title) <= 26 else p.title[:25] + "…"
+            tile = Panel([face, _text(title, ui.BOLD, 13, ui.PAPER)], anchor="top-left", offset=(x, y),
+                         style_overrides={"padding": 3, "gap": 4, "bg": "#00000000", "border": 3,
+                                          "border_color": "#00000000"})
+            self.tiles.append(tile)
+        self.panels += self.tiles
+        self.panels.append(_hints(width, [("←↑↓→", "Elegir"), ("ENTER", "Ficha"), ("ESC", "Álbum")]))
+        self.select(self.index)
+
+    def select(self, k):
+        per = PAGE_COLS * PAGE_ROWS
+        self.index = k
+        if k // per != self.page:  # another page: build it
+            self.menu.show("province")
+            return
+        for j, tile in enumerate(self.tiles):
+            on = j == k % per
+            tile.style_overrides = {**tile.style_overrides, "border_color": ui.YELLOW if on else "#00000000"}
+
+    def key(self, k):
+        if k in ("left", "right", "up", "down"):
+            self.select(album.grid_step(self.index, k, PAGE_COLS, len(self.places)))
+        elif k == "enter" and self.places:
+            self.menu.view_card(self.places[self.index], back="province")
+        elif k == "back":
+            self.menu.show("album")
+
+
+KIND_NAMES = {"iglesia": "Iglesias", "fortaleza": "Fortalezas", "playa": "Playas y agua", "museo": "Museos y edificios",
+              "monumento": "Monumentos", "plaza": "Plazas y parques", "teatro": "Teatros y estadios",
+              "estacion": "Estaciones y obras", "naturaleza": "Naturaleza", "lugar": "Otros"}
+
+
 OPTION_TEXT = {None: "Ninguno", True: "Sí", False: "No", "round_pod": "Redondos en el guardafango", "round": "Redondos",
                "rect": "Rectangulares", "almond": "Almendra", "bar": "Barra", "mesh": "Rejilla", "skin": "De carrocería",
                "chrome_bar": "Cromo", "blade": "Lámina", "rubber": "Goma", "pill": "Píldora", "fin": "En la aleta",
@@ -995,7 +1143,7 @@ class DesignScreen(RowsScreen):
 
 
 SCREENS = {"main": MainScreen, "free": FreeScreen, "options": OptionsScreen, "pause": PauseScreen,
-           "photo": PhotoScreen, "aim": AimScreen, "card": CardScreen, "map": MapScreen, "garage": GarageScreen, "design": DesignScreen}
+           "photo": PhotoScreen, "aim": AimScreen, "card": CardScreen, "map": MapScreen, "album": AlbumScreen, "province": ProvinceScreen, "garage": GarageScreen, "design": DesignScreen}
 KEY_NAMES = set(KEYS)
 
 
@@ -1010,6 +1158,7 @@ class Menu:
         self.builder = garage.Builder()
         self.default_model = game.model
         self.chosen, self.design, self.target, self.shown = None, None, None, None
+        self.province = ""  # the province whose album page shows
         self.card = None  # the last photographed place's card: {"place", "texture", "meta", "count"}
         self.undo, self.saved, self.note = [], False, ""
         self.designs = garage.load_designs()
@@ -1212,9 +1361,9 @@ class Menu:
         self.screens.pop("card", None)
         self.show("card")
 
-    def view_card(self, place) -> None:
-        """A place's card from the map: its photo if it has one, how many of its province the player has, and
-        when the photo was taken. ENTER or Escape goes back to the map."""
+    def view_card(self, place, back: str = "map") -> None:
+        """A place's card from the map or the album: its photo if it has one, how many of its province the player
+        has, and when the photo was taken. ENTER or Escape goes back to the screen `back`."""
         g = self.game
         total = sum(p.province == place.province for p in g.places)
         when = ()
@@ -1224,7 +1373,7 @@ class Menu:
             texture = ui.photo(g.album.photo_path(place.id), 480, 270)
         else:
             texture = ui.no_photo(480, 270)
-        self.card = {"place": place, "texture": texture, "back": "map", "meta": " · ".join(
+        self.card = {"place": place, "texture": texture, "back": back, "meta": " · ".join(
             x for x in (place.type.replace("_", " "), place.municipio, *when) if x),
             "count": f"{g.album.count(place.province)} de {total} en {place.province}"}
         self.screens.pop("card", None)
