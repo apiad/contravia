@@ -130,9 +130,10 @@ def _lamp(q, d, y) -> tuple[list, list]:
     return body, heads
 
 
-def build(ribbons, owner, axes, chains, terrain, a):
-    """(tris (T, 3, 3), paint (T,), cell keys (T, 2), walls (W, 6), wall keys (W, 2)) of every median."""
-    from contravia.streets import _level, cut, densify, length, tangents
+def build(ribbons, owner, axes, chains, prof, a):
+    """(tris (T, 3, 3), paint (T,), cell keys (T, 2), walls (W, 6), wall keys (W, 2)) of every median, standing on
+    its ribbon's centreline profile prof[k] (arclengths, heights) from contravia.streets.heights."""
+    from contravia.streets import arclen, cut, densify, length, tangents
     from contravia.structures import CONCRETE, KERB_TOP, LAMPS, PAVING, POLE
 
     which = kinds(a, chains)
@@ -151,8 +152,7 @@ def build(ribbons, owner, axes, chains, terrain, a):
         if L < 2 * GAP + 4.0:
             continue
         p = densify(cut(q, GAP, L - GAP), STEP)
-        e = chains[owner[k]]
-        y = _level(terrain, p, np.full(len(p), e.w / 2))
+        y = np.interp(GAP + arclen(p), *prof[k])
         if kind == "kerb":
             add(_strip(p, y, KERB_W / 2, KERB_H), KERB_TOP)
             s = np.concatenate([[0], np.cumsum(np.hypot(*np.diff(p, axis=0).T))])

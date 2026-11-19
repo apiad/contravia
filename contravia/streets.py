@@ -14,8 +14,9 @@ and draws it after:
    its clusters, and steps 2 and 3 run again until none is left.
 4. pieces: a ribbon per edge between its trims, its width easing into the street it continues, and one
    polygon per junction that meets its ribbons exactly.
-5. mesh: one height per junction, ribbons level across that ease into their junctions' heights, the pieces
-   cut per cell and triangulated, plus the edges where the road stands clear of the ground, for skirts.
+5. mesh: a plane per junction fitted to the ground under it, ribbons that follow the ground and ease into
+   their junctions' planes, the pieces cut per cell and triangulated, plus the edges where the road stands
+   clear of the ground, for skirts.
 
 The work runs on a thread pool: this Python has no GIL. Shapely prepares a geometry lazily the first time a
 predicate needs it, which is not safe from several threads at once, so every shared tree is built and
@@ -50,9 +51,10 @@ GAP = 25.0  # m²: a hole between a junction and its neighbours smaller than thi
 SELF_LOOP = 80.0  # metres: a loop shorter than this from a junction back to itself is a U-turn inside it
 WALL_GAP = 2.0  # metres of a service road left out on each side of a landmark wall it crosses
 ROUNDS = 8  # at most this many rounds of network and trims
-LIFT = 0.15  # metres above the ground, as contravia.rules.roads
+LIFT = 0.05  # metres above the ground; contravia.rules.roads keeps 0.15 for data without a street surface
 EASE = 20.0  # metres over which a ribbon's height eases into its junction's
-SAMPLE = 8.0  # metres between the boundary points a ribbon is triangulated on; a junction is flat
+SAMPLE = 8.0  # metres between the boundary points a ribbon is triangulated on; a junction is a plane
+FIT = 4.0  # metres between the ground points a junction's plane is fitted to
 CLEAR = 0.2  # metres: an edge of the road this far above the ground gets a skirt
 MARK = 0.15  # metres: half the width of a painted line
 MARK_LIFT = 0.02  # metres above the asphalt
@@ -113,6 +115,14 @@ def tangents(p):
     """The unit direction of polyline p at each of its points."""
     d = np.vstack([p[1] - p[0], p[2:] - p[:-2], p[-1] - p[-2]]) if len(p) > 2 else np.repeat([p[-1] - p[0]], len(p), 0)
     return unit(d)
+
+
+def left_normals(p, s):
+    """The unit normal to the left, (-tz, tx), of the segment of polyline p at each arclength s: the normal
+    offset() puts a ribbon's end on, so a point across an end is told apart exactly."""
+    d = unit(np.diff(p, axis=0))
+    i = np.clip(np.searchsorted(arclen(p), s, side="right") - 1, 0, len(d) - 1)
+    return np.stack([-d[i, 1], d[i, 0]], axis=1)
 
 
 def cut(p, a, b):
@@ -812,52 +822,113 @@ def _ease(x):
     return 1 - x * x * (3 - 2 * x)
 
 
+def _follow(terrain, p, half):
+    """The road's centre heights and cross slopes at centre points p (N, 2) with half widths half (N,).
+
+    Across, the road is the straight line between the ground under its kerbs, LIFT over it, raised where the
+    ground under the centre stands higher than that line (a crown), so the ground never shows through; its
+    slope is metres up per metre toward the left, the side of (-tz, tx) for the tangent (tx, tz)."""
+    t = tangents(p)
+    side = np.stack([-t[:, 1], t[:, 0]], axis=1) * np.asarray(half)[..., None]
+    left, centre, right = (terrain.height(q[:, 0], q[:, 1]) for q in (p + side, p, p - side))
+    mean = (left + right) / 2
+    return mean + np.maximum(centre - mean, 0) + LIFT, (left - right) / (2 * np.asarray(half, float))
+
+
+class Plane:
+    """A junction's surface: y = y0 + gx (x - x0) + gz (z - z0)."""
+
+    __slots__ = ("gx", "gz", "x0", "y0", "z0")
+
+    def __init__(self, x0, z0, y0, gx=0.0, gz=0.0):
+        self.x0, self.z0, self.y0, self.gx, self.gz = float(x0), float(z0), float(y0), float(gx), float(gz)
+
+    def __call__(self, xz):
+        xz = np.asarray(xz, float).reshape(-1, 2)
+        return self.y0 + self.gx * (xz[:, 0] - self.x0) + self.gz * (xz[:, 1] - self.z0)
+
+
+def _junction_plane(poly, terrain):
+    """The plane that fits the ground under junction poly best (least squares over points FIT metres apart on
+    its edge and inside it), raised to stand LIFT over the highest of those points above it."""
+    pts = shapely.get_coordinates(poly.segmentize(FIT))
+    x0, z0, x1, z1 = poly.bounds
+    gx, gz = np.meshgrid(np.arange(x0, x1, FIT), np.arange(z0, z1, FIT))
+    grid = np.stack([gx.ravel(), gz.ravel()], axis=1)
+    pts = np.vstack([pts, grid[shapely.contains_xy(poly, grid[:, 0], grid[:, 1])]])
+    g = terrain.height(pts[:, 0], pts[:, 1]).astype(float)
+    c = pts.mean(axis=0)
+    d = pts - c
+    if len(pts) >= 3 and np.linalg.matrix_rank(d) == 2:
+        a = np.c_[np.ones(len(d)), d]
+        # the normal equations written out: numpy.linalg.lstsq calls LAPACK, slower than this 3x3 solve
+        y0, sx, sz = np.linalg.solve(a.T @ a, a.T @ g)
+    else:
+        y0, sx, sz = float(g.mean()), 0.0, 0.0
+    plane = Plane(c[0], c[1], y0, sx, sz)
+    plane.y0 += float((g - plane(pts)).max()) + LIFT
+    return plane
+
+
+class _Drawn:
+    """The ground as the cells draw it (contravia.rules.ground.drawn), with a Terrain's height()."""
+
+    def __init__(self, terrain):
+        self.terrain = terrain
+
+    def height(self, x, z, near=None):
+        from contravia.rules.ground import drawn
+
+        return drawn(self.terrain, x, z)
+
+
 def heights(ribbons, owner, axes, rings, rnode, chains, terrain):
-    """One height per junction and a height profile per ribbon.
+    """A plane per ground junction, a height per bridge or tunnel junction, and a height profile and a cross
+    slope per ribbon.
 
-    A junction is flat at the highest ground under it plus LIFT, and never below the ribbons that meet it.
-    A ribbon is level across: at each point of its centreline, the highest ground under its kerbs and centre
-    plus LIFT, raised near each end so it meets its junction's height exactly and eases away from it over
-    EASE metres (half the ribbon when it is shorter). Bridges and tunnels then take their own profiles
-    (structure_profile), and the ground streets they leave from ramp up or down to meet them (_ramp_to).
-    Returns (junction heights, [(arclengths, heights)])."""
+    The ground here is the ground as the cells draw it, which the streets must clear (_Drawn).
+    A ground junction lies on the plane that fits the ground under it, raised so that ground stands LIFT under
+    it (_junction_plane). A ribbon follows the ground: at each point of its centreline, LIFT over the line
+    across between the ground under its kerbs, tilted with it (_follow). Within EASE metres of a junction (half
+    the ribbon when it is shorter) the ribbon takes on what that junction's plane differs from it by at its end,
+    in height and in cross slope, so it meets the plane exactly there without following it away from the
+    junction, where the ground may curve away from the plane. Bridges and tunnels then take their own profiles (structure_profile), level across, and the ground
+    streets they leave from ramp up or down to meet them (_ramp_to), level across too.
+    Returns (junction heights: the plane's height at its fitted centre, or the flat height, [(arclengths,
+    heights)] along each centreline, [cross slopes at those arclengths], {junction: Plane}). A point of ribbon
+    k at arclength s and distance u to the left of its centreline stands at heights + u * cross slope."""
     layer = [chains[owner[k]].layer for k in range(len(axes))]
-
-    def junction(poly):
-        pts = shapely.get_coordinates(poly.segmentize(SAMPLE))
-        x0, z0, x1, z1 = poly.bounds
-        gx, gz = np.meshgrid(np.arange(x0, x1, SAMPLE), np.arange(z0, z1, SAMPLE))
-        grid = np.stack([gx.ravel(), gz.ravel()], axis=1)
-        pts = np.vstack([pts, grid[shapely.contains_xy(poly, grid[:, 0], grid[:, 1])]])
-        return float(terrain.height(pts[:, 0], pts[:, 1]).max()) + LIFT
-
-    hj = dict(zip(rnode, pmap(junction, rings, chunk=64)))
+    ground_rings = [(r, n) for r, n in zip(rings, rnode) if not isinstance(n, tuple)]
+    seen = _Drawn(terrain)
+    planes = dict(zip([n for _, n in ground_rings], pmap(lambda rn: _junction_plane(rn[0], seen),
+                                                          ground_rings, chunk=64)))
+    hj = {n: planes[n].y0 if n in planes else 0.0 for n in rnode}
+    ring_of = {n: r for r, n in ground_rings}
 
     def base(k):
         q = densify(axes[k], SAMPLE)
-        return arclen(q), _level(terrain, q, np.full(len(q), chains[owner[k]].w / 2))
-
-    profiles = pmap(base, range(len(axes)), chunk=64)
-    for k, (s, h) in enumerate(profiles):
+        # the arclength along the centreline itself, where mesh() looks a point up, not along the chords
+        s = np.linspace(0.0, arclen(axes[k])[-1], len(q))
         e = chains[owner[k]]
         if layer[k]:
-            continue
-        for node, y in ((e.f, h[0]), (e.t, h[-1])):
-            if node in hj:
-                hj[node] = max(hj[node], float(y))
-    out = []
-    for k, (s, h) in enumerate(profiles):
-        e = chains[owner[k]]
+            return s, _level(terrain, q, np.full(len(q), e.w / 2)), np.zeros(len(q))
+        h, tilt = _follow(seen, q, np.full(len(q), e.w / 2))
         span = min(EASE, s[-1] / 2) or 1.0
-        h = h.copy()
-        if not layer[k]:
-            if e.f in hj:
-                h += (hj[e.f] - h[0]) * _ease(s / span)
-            if e.t in hj:
-                h += (hj[e.t] - h[-1]) * _ease((s[-1] - s) / span)
-        out.append((s, h))
+        left = left_normals(axes[k], s)
+        lift, turn = np.zeros(len(q)), np.zeros(len(q))
+        for node, w, i in ((e.f, _ease(s / span), 0), (e.t, _ease((s[-1] - s) / span), -1)):
+            if node in planes and ring_of[node].distance(shapely.Point(q[i])) < 1.0:  # an end at its junction:
+                # what the plane differs by there, faded out along the ribbon
+                pl = planes[node]
+                lift += (float(pl(q[i])[0]) - h[i]) * w
+                turn += (pl.gx * left[i, 0] + pl.gz * left[i, 1] - tilt[i]) * w
+        return s, h + lift, tilt + turn
+
+    done = pmap(base, range(len(axes)), chunk=64)
+    out = [(s, h) for s, h, _ in done]
+    tilts = [t for _, _, t in done]
     if not any(layer):
-        return hj, out
+        return hj, out, tilts, planes
     ground = [k for k in range(len(axes)) if not layer[k]]
     gring = [i for i, n in enumerate(rnode) if not isinstance(n, tuple)]
     near = _Ends(ground, axes, [chains[owner[k]].w for k in ground], [rings[i] for i in gring],
@@ -880,12 +951,14 @@ def heights(ribbons, owner, axes, rings, rnode, chains, terrain):
                     s2, h2 = out[k2]
                     v = float(np.interp(LineString(axes[k2]).project(shapely.Point(xz[p_])), s2, h2))
                 else:
-                    v = hj[rnode[gring[g_ - len(below)]]]
+                    n = rnode[gring[g_ - len(below)]]
+                    v = float(planes[n](xz[p_])[0]) if n in planes else hj[n]
                 y[p_] = v if np.isnan(y[p_]) else max(y[p_], v)
             return y
 
         for k in [k for k in range(len(axes)) if layer[k] == L]:
             out[k] = structure_profile(axes[k], chains[owner[k]].w, L, terrain, y_lower)
+            tilts[k] = np.zeros(len(out[k][0]))
         for i, n in enumerate(rnode):  # a junction on a bridge or in a tunnel: at its streets' mean end height
             if isinstance(n, tuple) and n[0] == L:
                 ys = [out[k][1][0 if chains[owner[k]].f == n[1] else -1] for k in range(len(axes))
@@ -893,10 +966,10 @@ def heights(ribbons, owner, axes, rings, rnode, chains, terrain):
                 if ys:
                     hj[n] = float(np.mean(ys))
         for k in [k for k in range(len(axes)) if layer[k] == L]:
-            s, h = out[k]
+            h = out[k][1]
             for end, y in ((axes[k][0], h[0]), (axes[k][-1], h[-1])):
-                _ramp_to(end, float(y), L > 0, near, hj, out)
-    return hj, out
+                _ramp_to(end, float(y), L > 0, near, hj, out, tilts, planes)
+    return hj, out, tilts, planes
 
 
 def structure_profile(axis, width, layer, terrain, y_lower):
@@ -978,16 +1051,18 @@ class _Ends:
         return out
 
 
-def _ramp_to(point, y, up, near, hj, out):
+def _ramp_to(point, y, up, near, hj, out, tilts, planes):
     """The ground streets that end at a bridge's or tunnel's end `point` climb (up) or go down to its height y
     at GRADE, easing back to their own profile before their far end; a ground junction there takes y.
 
     A street too short to get back to its own height carries the ramp through the junction at its far end:
     that junction takes the height the ramp reaches there, the street going most straight on from it carries
-    the ramp on in turn, and the other streets meeting it ease to its new height."""
+    the ramp on in turn, and the other streets meeting it ease to its new height. Every junction it sets is
+    flat, and a street it changes comes level across where it changed it (tilts), as the bridge or tunnel is."""
     nodes, streets = near.at(point)
     for node in nodes:
         hj[node] = y
+        planes.pop(node, None)
     todo, seen = [(k, at_start, y) for k, at_start in streets], set()
     while todo:
         k, at_start, y0 = todo.pop()
@@ -1003,10 +1078,13 @@ def _ramp_to(point, y, up, near, hj, out):
         if abs(left) < CARRY or far not in hj:
             fade = np.clip((s[-1] - dist) / min(EASE, s[-1] / 2 or 1.0), 0, 1)
             out[k] = (s, h + gap * fade)
+            tilts[k] = tilts[k] * (1 - _ease(dist / (min(EASE, s[-1] / 2) or 1.0)))
             continue
         out[k] = (s, h + gap)
+        tilts[k] = np.zeros_like(tilts[k])
         y1 = float(want[-1] if at_start else want[0])
         hj[far] = y1
+        planes.pop(far, None)
         on = near.straight_on(k, not at_start, far)
         for k2, start2 in near.meeting.get(far, ()):
             if k2 == k or k2 in seen:
@@ -1016,7 +1094,9 @@ def _ramp_to(point, y, up, near, hj, out):
                 continue
             s2, h2 = out[k2]
             d2 = s2 if start2 else s2[-1] - s2
-            out[k2] = (s2, h2 + (y1 - float(h2[0] if start2 else h2[-1])) * _ease(d2 / (min(EASE, s2[-1] / 2) or 1.0)))
+            w2 = _ease(d2 / (min(EASE, s2[-1] / 2) or 1.0))
+            out[k2] = (s2, h2 + (y1 - float(h2[0] if start2 else h2[-1])) * w2)
+            tilts[k2] = tilts[k2] * (1 - w2)
 
 
 def _on(tris, xz, fallback):
@@ -1093,23 +1173,30 @@ def mesh(ribbons, owner, axes, rings, rnode, chains, terrain, keep=None):
     (M, 3, 3) and the cell of each (M, 2)).
 
     Each piece is cut by the cells it crosses and each part triangulated on its boundary points, spaced at most
-    SAMPLE metres apart along a ribbon. A point of a junction takes its height; a point of a ribbon takes the height of its
-    profile at the point of the centreline beside it, so the ribbon is level across. A skirt edge is a stretch
+    SAMPLE metres apart along a ribbon. A point of a junction takes its plane's height (or its flat height on a
+    bridge, in a tunnel or where a ramp set it); a point of a ribbon takes the height of its profile at the point of
+    the centreline beside it plus its distance to the left times the cross slope there. A skirt edge is a stretch
     of a piece's boundary no other piece touches, where the road stands more than CLEAR above the ground, and
     not on a bridge or in a tunnel, which contravia.structures dresses instead. A dict `keep` gets the junction
-    heights and the ribbons' profiles as "hj" and "prof"."""
-    hj, prof = heights(ribbons, owner, axes, rings, rnode, chains, terrain)
+    heights, the ribbons' profiles, the junctions' planes and the ribbons' cross slopes as "hj", "prof", "planes"
+    and "tilts"."""
+    hj, prof, tilts, planes = heights(ribbons, owner, axes, rings, rnode, chains, terrain)
     if keep is not None:
-        keep["hj"], keep["prof"] = hj, prof
+        keep["hj"], keep["prof"], keep["planes"], keep["tilts"] = hj, prof, planes, tilts
     pieces_ = list(ribbons) + list(rings)
     nr = len(ribbons)
     lines = [LineString(q) for q in axes]
 
     def y_of(k, xz):
         if k >= nr:
-            return np.full(len(xz), hj[rnode[k - nr]])
+            n = rnode[k - nr]
+            return planes[n](xz) if n in planes else np.full(len(xz), hj[n])
         s, h = prof[k]
-        return np.interp(shapely.line_locate_point(lines[k], shapely.points(xz)), s, h)
+        at = shapely.line_locate_point(lines[k], shapely.points(xz))
+        q = axes[k]
+        foot = np.stack([np.interp(at, arclen(q), q[:, 0]), np.interp(at, arclen(q), q[:, 1])], axis=1)
+        u = np.einsum("ij,ij->i", xz - foot, left_normals(q, at))
+        return np.interp(at, s, h) + u * np.interp(at, s, tilts[k])
 
     def cut_cells(k):
         poly = shapely.orient_polygons(pieces_[k].segmentize(SAMPLE) if k < nr else pieces_[k])
@@ -1183,10 +1270,10 @@ def add_to(city, widths) -> dict:
     ground += [r for r, n in zip(rings, rnode) if not isinstance(n, tuple)]
     st, paint, skeys, walls, wkeys, cuts, ckeys, roofs, rkeys, holes = structures.build(
         ribbons, owner, axes, chains, keep["prof"], city.terrain, built_tree(ground) if ground else None,
-        rings, rnode, keep["hj"])
+        rings, rnode, {n: y for n, y in keep["hj"].items() if n not in keep["planes"]}, keep["tilts"])
     from contravia import medians
 
-    mt, mp, mk, mw, mwk = medians.build(ribbons, owner, axes, chains, city.terrain, city.a)
+    mt, mp, mk, mw, mwk = medians.build(ribbons, owner, axes, chains, keep["prof"], city.a)
     st, paint, skeys = np.concatenate([st, mt]), np.concatenate([paint, mp.astype(paint.dtype)]), np.concatenate([skeys, mk])
     walls, wkeys = np.concatenate([walls, mw.astype(walls.dtype)]), np.concatenate([wkeys, mwk])
     city.add_kind("struct_tris", st, skeys)

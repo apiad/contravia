@@ -81,11 +81,13 @@ def _xyz(xz, y):
     return np.c_[xz[:, 0], y, xz[:, 1]]
 
 
-def build(ribbons, owner, axes, chains, prof, terrain, lower_tree=None, rings=(), rnode=(), hj=None):
+def build(ribbons, owner, axes, chains, prof, terrain, lower_tree=None, rings=(), rnode=(), hj=None, tilts=None):
     """The structures of every bridge, tunnel and cut: (tris (T, 3, 3), paint (T,), their cells (T, 2), walls
     (W, 6) as ax, az, bx, bz, lowest, highest, their cells, cuts (C, 3, 2), their cells, roofs (R, 3, 3), their
     cells, sea holes (H, 3, 2)). lower_tree is an STRtree of the ground pieces, where no pier may stand; rings,
-    rnode and hj are the junction pieces, their names (a tuple on a bridge or in a tunnel) and their heights."""
+    rnode and hj are the junction pieces, their names (a tuple on a bridge or in a tunnel) and their heights; tilts
+    are the ribbons' cross slopes (contravia.streets.heights), so a street tilted with a hillside is not taken for
+    one sunk below the ground beside it."""
     from contravia.streets import built_tree, densify, offset, pmap
 
     sea = relief(terrain)
@@ -114,7 +116,8 @@ def build(ribbons, owner, axes, chains, prof, terrain, lower_tree=None, rings=()
             _bridge(out, q, sq, y, left, right, terrain, lower_tree)
         gl, gr = terrain.height(left[:, 0], left[:, 1]), terrain.height(right[:, 0], right[:, 1])
         ground = np.maximum(gl, gr)
-        if e.layer <= 0 and (y < ground - BELOW).any():
+        tilt = np.interp(sq, s0, tilts[k]) * half if tilts is not None else 0.0
+        if e.layer <= 0 and ((y + tilt < gl - BELOW) | (y - tilt < gr - BELOW)).any():
             covered = (e.layer < 0) & ((np.minimum(gl, gr) - y >= ROOF + COVER) | (ground < SEA))
             _below(out, q, y, left, right, gl, gr, covered, sea, twin, offset(q, e.w / 2))
         return out
