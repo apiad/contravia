@@ -47,7 +47,7 @@ def warm() -> None:
 
     w = city()
     landmarks()
-    a = w.province(w.names.index(w.focused())).a
+    a = w.province(w.names.index(w.focused)).a
     if "park_kind" in a and len(a["park_kind"]):
         parks._lookup(a)
 
