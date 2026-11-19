@@ -34,6 +34,7 @@ REFRESH = 10.0  # metres the player moves before the circle is worked out again
 ARRIVING = 3.0  # seconds: a moving car this close in time to the junction is about to enter it
 BOX = 6.0  # metres: a car this far into an edge leaving the junction is still inside it
 SPACING_QUEUE = 7.0  # metres between queued cars placed from the flow
+HEIGHT_STEP = 2.0  # metres between the road heights kept along each edge
 
 
 class Cars:
@@ -97,6 +98,20 @@ class Cars:
             self.out_of_node[j] = np.flatnonzero(a["g_from"] == j)
         self.kind_len = np.array([LENGTH[k] for k in KINDS])
         self.look_kind = look_kinds()
+        self._index_heights(graph)
+
+    def _index_heights(self, graph: Graph) -> None:
+        """The road's height every HEIGHT_STEP metres along each edge (and at its end), from the graph's profile,
+        so world() reads a car's height by index instead of searching the polylines every frame."""
+        self.h_start = None
+        if "g_poly_y" not in graph.a:
+            return
+        n = np.ceil(self.len / HEIGHT_STEP).astype(np.int64) + 1  # samples per edge: 0, 2, 4, ... and the end
+        n = np.maximum(n, 2)
+        self.h_start = np.concatenate([[0], np.cumsum(n)])
+        edge = np.repeat(np.arange(len(n)), n)
+        k = np.arange(self.h_start[-1]) - self.h_start[edge]
+        self.h = graph.heights(edge, np.minimum(k * HEIGHT_STEP, self.len[edge])).astype(np.float32)
 
     def _clear(self) -> None:
         self.edge = np.zeros(0, np.int64)
@@ -281,13 +296,24 @@ class Cars:
             self.cleared[over] = False
             self.wait[over] = 0.0
 
+    def _height(self, s: np.ndarray) -> np.ndarray:
+        """The road's height at distance s along each car's edge, between the two kept heights around it."""
+        e = self.edge
+        length = self.len[e]
+        s = np.clip(s, 0.0, length)
+        k = np.minimum((s / HEIGHT_STEP).astype(np.int64), self.h_start[e + 1] - self.h_start[e] - 2)
+        i = self.h_start[e] + k
+        span = np.maximum(np.minimum(HEIGHT_STEP, length - k * HEIGHT_STEP), 1e-9)  # the last span is shorter
+        f = np.clip((s - k * HEIGHT_STEP) / span, 0.0, 1.0)
+        return self.h[i] + (self.h[i + 1] - self.h[i]) * f
+
     def world(self, surface=None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Each car's centre (x, y, z) in metres, its heading and its pitch (positive nose up)."""
         L = self.length
         x, z, heading = self.g.points(self.edge, self.s - L / 2, self.offsets())
-        if "g_poly_y" in self.g.a:  # the prepared road profile: cheap, and exact on level-across roads
-            y = self.g.heights(self.edge, self.s - L / 2)
-            pitch = np.arctan2(self.g.heights(self.edge, self.s) - self.g.heights(self.edge, self.s - L), L)
+        if self.h_start is not None:  # the prepared road profile: exact on level-across roads
+            y = self._height(self.s - L / 2)
+            pitch = np.arctan2(self._height(self.s) - self._height(self.s - L), L)
             return np.stack([x, y, z], axis=1), heading, pitch
         if surface is None:
             return np.stack([x, np.zeros_like(x), z], axis=1), heading, np.zeros_like(x)

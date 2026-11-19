@@ -291,7 +291,7 @@ wheels = [
 [[package]]
 name = "manifold-gfx"
 version = "0.10.0"
-source = { git = "https://github.com/gia-uh/manifoldx?branch=feat%2Finstance-tint#2ef0ea568e6dd23508fcc658571c55ac8e6eac58" }
+source = { git = "https://github.com/gia-uh/manifoldx?branch=feat%2Finstance-tint#7111ebd5bbc3170555e2cfa9a5213187b582512b" }
 dependencies = [
     { name = "numpy" },
     { name = "rendercanvas" },

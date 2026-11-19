@@ -49,3 +49,21 @@ def test_far_and_fog_cover_what_the_camera_sees():
     eye, target = mapview.pose(cam)
     assert far > math.dist(eye, target) * 3
     assert fog_start < fog_end <= far
+
+
+def test_exaggeration_is_none_low_and_grows_to_twenty_over_the_island():
+    assert mapview.exaggeration(150.0) == 1.0
+    assert mapview.exaggeration(10_000.0) == 1.0
+    assert mapview.exaggeration(100_000.0) == pytest.approx(10.5)  # half way in the logarithm
+    assert mapview.exaggeration(1_000_000.0) == pytest.approx(20.0)
+    assert mapview.exaggeration(mapview.MAX_H) == pytest.approx(20.0)
+
+
+def test_the_game_stretches_heights_only_in_the_map():
+    from types import SimpleNamespace
+
+    from contravia.game import Game
+
+    assert Game._exaggeration(SimpleNamespace(mode="drive", map=None)) == 1.0
+    high = SimpleNamespace(mode="map", map=mapview.MapCam(0.0, 0.0, 1_000_000.0, 0.0))
+    assert Game._exaggeration(high) == pytest.approx(20.0)

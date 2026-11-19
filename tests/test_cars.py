@@ -109,3 +109,24 @@ def test_cars_take_height_and_pitch_from_the_edge_profile():
     xyz, _heading, pitch = cars.world()
     assert xyz[0, 1] == pytest.approx((100.0 - 4.5 / 2) * 0.1, abs=1e-3)
     assert pitch[0] == pytest.approx(np.arctan(0.1), abs=1e-3)
+
+
+def test_kept_heights_match_the_graph_profile(city):
+    """world() reads heights from the table _index keeps every 2 m; on a bumpy profile over the fixture city's
+    graph they stay within a few cm of the graph's own lookup, and so does the pitch."""
+    from contravia.graph import Graph
+
+    a = dict(city.graph.a)
+    x, z = a["g_poly"][:, 0].astype(np.float64), a["g_poly"][:, 1].astype(np.float64)
+    a["g_poly_y"] = (3 * np.sin(x / 40) + 2 * np.cos(z / 25)).astype(np.float32)  # hills up to 10 % steep
+    g = Graph(a)
+    cars = Cars(g, seed=1)
+    rng = np.random.default_rng(0)
+    e = rng.integers(0, len(g), 2000)
+    cars.add(e, rng.uniform(-0.2, 1.2, len(e)) * cars.len[e], np.zeros(len(e)), np.full(len(e), LOOK))
+    xyz, _heading, pitch = cars.world()
+    L = cars.length
+    old_y = g.heights(cars.edge, cars.s - L / 2)
+    old_pitch = np.arctan2(g.heights(cars.edge, cars.s) - g.heights(cars.edge, cars.s - L), L)
+    assert np.abs(xyz[:, 1] - old_y).max() < 0.03
+    assert np.abs(pitch - old_pitch).max() < np.radians(0.5)

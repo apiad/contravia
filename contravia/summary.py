@@ -17,6 +17,8 @@ from contravia.citydata import Cell
 from contravia.geo import CELL
 from contravia.mesh import MeshBuilder, signed_area
 from contravia.rules import facades
+from contravia.rules.cover import colours as cover_colours
+from contravia.rules.cover import exaggeration, shade, tint
 from contravia.rules.ground import GROUND, SEA, WATER_Y, relief
 from contravia.rules.roads import ROAD
 from contravia.rules.trees import TREE_EVERY, far_green, today
@@ -189,20 +191,34 @@ def _heights(xz, terrain, sea: bool) -> np.ndarray:
     return np.maximum(y, WATER_Y + LIFT) if sea else y
 
 
-def _normals(xz, terrain, step: float) -> np.ndarray:
-    """Unit normals of the terrain at points xz, its slope measured step metres either side."""
+def _normals(xz, terrain, step: float, stretch: float = 1.0) -> np.ndarray:
+    """Unit normals of the terrain at points xz, its slope measured step metres either side, its heights
+    stretched `stretch` times."""
     if terrain is None:
         return np.tile((0.0, 1.0, 0.0), (len(xz), 1))
     x, z = xz[:, 0], xz[:, 1]
-    dx = (terrain.height(x + step, z) - terrain.height(x - step, z)) / (2 * step)
-    dz = (terrain.height(x, z + step) - terrain.height(x, z - step)) / (2 * step)
+    dx = (terrain.height(x + step, z) - terrain.height(x - step, z)) / (2 * step) * stretch
+    dz = (terrain.height(x, z + step) - terrain.height(x, z - step)) / (2 * step) * stretch
     n = np.stack([-dx, np.ones_like(dx), -dz], axis=1)
     return n / np.linalg.norm(n, axis=1, keepdims=True)
 
 
-def _ground(mb, land, x0, z0, sq, side, terrain, colours, sea) -> None:
+def _blend(colours, xz, x0, z0, sq) -> np.ndarray:
+    """(N, 3) colours at points xz, blended between the (GRID, GRID, 3) colours of the squares' centres, so the
+    ground shows no square edges."""
+    fx = np.clip((xz[:, 0] - x0) / sq - 0.5, 0, GRID - 1)
+    fz = np.clip((xz[:, 1] - z0) / sq - 0.5, 0, GRID - 1)
+    c0, r0 = np.minimum(fx.astype(int), GRID - 2), np.minimum(fz.astype(int), GRID - 2)
+    tx, tz = (fx - c0)[:, None], (fz - r0)[:, None]
+    top = colours[r0, c0] * (1 - tx) + colours[r0, c0 + 1] * tx
+    bottom = colours[r0 + 1, c0] * (1 - tx) + colours[r0 + 1, c0 + 1] * tx
+    return top * (1 - tz) + bottom * tz
+
+
+def _ground(mb, land, x0, z0, sq, side, terrain, colours, sea, L: int) -> None:
     """The ground over land: each of the GRID x GRID squares inside it as two triangles, those it crosses cut
-    along the coast, each coloured as its square; and a skirt side / 64 deep down the node's edges under land."""
+    along the coast, coloured between its squares' centres and shaded by its slope (rules.cover.shade); and a skirt side / 64
+    deep down the node's edges under land."""
     import shapely
 
     if land.is_empty:
@@ -212,22 +228,21 @@ def _ground(mb, land, x0, z0, sq, side, terrain, colours, sea) -> None:
     shapely.prepare(land)
     inside = shapely.contains(land, tiles)
     cross = ~inside & shapely.intersects(land, tiles)
-    tris, owner = [], []
+    tris = []
     k = np.nonzero(inside)[0]
     if len(k):
         a = np.stack([x0 + c[k] * sq, z0 + r[k] * sq], 1)
         b, d, e = a + (sq, 0), a + (sq, sq), a + (0, sq)
         tris += [np.stack([a, b, d], 1), np.stack([a, d, e], 1)]
-        owner += [k, k]
     for j in np.nonzero(cross)[0]:
         t = _triangles(shapely.intersection(tiles[j], land))
         tris.append(t)
-        owner.append(np.full(len(t), j))
     t = np.concatenate(tris).reshape(-1, 2)
-    owner = np.concatenate(owner)
     pos = np.c_[t[:, 0], _heights(t, terrain, sea), t[:, 1]]
-    colour = np.repeat(colours.reshape(-1, 3)[owner], 3, axis=0)
-    mb.add(pos, _normals(t, terrain, sq / 2), colour, np.arange(len(t)).reshape(-1, 3))
+    normals = _normals(t, terrain, sq / 2)
+    steep = _normals(t, terrain, sq / 2, exaggeration(L))  # the slope as the map stretches it at this level
+    colour = shade(tint(_blend(colours, t, x0, z0, sq), pos[:, 1], L), steep, L)
+    mb.add(pos, normals, colour, np.arange(len(t)).reshape(-1, 3))
     edge = shapely.segmentize(shapely.intersection(shapely.box(x0, z0, x0 + side, z0 + side).boundary, land), sq)
     for line in shapely.get_parts(shapely.line_merge(edge) if not edge.is_empty else edge):
         p = shapely.get_coordinates(line)
@@ -261,8 +276,10 @@ def summary_mesh(s: dict, L: int, a: int, b: int, origin, terrain=None) -> MeshD
     leaf_share = np.minimum(green * 60.0 / (sq * sq), 1.0)  # a tree shades about 60 m²
     leaves = far_green(today())
     colours = np.add(np.multiply.outer(1 - leaf_share, GROUND), np.multiply.outer(leaf_share, leaves))  # (GRID, GRID, 3)
+    if "cover" in s:  # what WorldCover says covers each square (contravia.cover), in the atlas palette
+        colours = cover_colours(s["cover"], today())
     land = _land(s, x0, z0, sq, terrain, sea)
-    _ground(mb, land, x0, z0, sq, side, terrain, colours, sea)
+    _ground(mb, land, x0, z0, sq, side, terrain, colours, sea, L)
     rows, cols = np.nonzero(built > 0)
     cx, cz = x0 + (cols + 0.5) * sq, z0 + (rows + 0.5) * sq
     ys = terrain.height(cx, cz) if terrain is not None else np.zeros(len(cx))
