@@ -187,3 +187,11 @@ def no_photo(width: int, height: int) -> str:
             f'<rect x="{cx - 34}" y="{cy - 20}" width="68" height="46" rx="6" fill="{GREY}"/>'
             f'<rect x="{cx - 14}" y="{cy - 30}" width="28" height="12" rx="3" fill="{GREY}"/>'
             f'<circle cx="{cx}" cy="{cy + 3}" r="14" fill="#3a3a3a"/></svg>')
+
+
+def progress(width: int, height: int, share: float) -> str:
+    """A thin bar: yellow for the share done, dim cream for the rest."""
+    done = max(0.0, min(1.0, share)) * width
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">'
+            f'<rect width="{width}" height="{height}" rx="{height / 2}" fill="{PAPER}" fill-opacity="0.2"/>'
+            f'<rect width="{done}" height="{height}" rx="{height / 2}" fill="{YELLOW}"/></svg>')

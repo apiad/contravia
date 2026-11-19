@@ -90,7 +90,7 @@ def test_menu_goes_from_main_to_driving_to_pause_and_back(city_npz, tmp_path, mo
     engine.render_frame(supersample=1)
     menu.press("Escape")
     assert menu.current == "pause" and game.mode == "paused" and game.clock.paused
-    for _ in range(5):
+    for _ in range(6):
         menu.press("ArrowDown")  # Menú principal
     menu.press("Enter")
     assert menu.current == "main" and game.mode == "menu"
@@ -98,7 +98,7 @@ def test_menu_goes_from_main_to_driving_to_pause_and_back(city_npz, tmp_path, mo
     game.detail.close()
 
 
-@pytest.mark.parametrize("screen, top", [("main", 250 + 72), ("pause", 140)])  # the chosen option's row
+@pytest.mark.parametrize("screen, top", [("main", 214 + 64), ("pause", 140)])  # the chosen option's row
 def test_a_menu_screen_draws_its_yellow_stripe(city_npz, tmp_path, screen, top):
     from PIL import Image
 
@@ -307,3 +307,43 @@ def _png():
     raw = b"".join(b"\x00" + b"\x80\x40\x20" * 4 for _ in range(3))
     return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 4, 3, 8, 2, 0, 0, 0))
             + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
+def test_the_album_counts_by_province_opens_a_province_page_and_its_cards(city_npz, tmp_path, monkeypatch):
+    import manifoldx as mx
+
+    from contravia.clock import Clock, parse_at
+    from contravia.game import Game
+    from contravia.menu import PAGE_COLS, PAGE_ROWS, Menu
+    from contravia.world import World
+
+    monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path))
+    engine = mx.Engine("album", width=64, height=48)
+    game = Game(engine, World.load(str(city_npz)), clock=Clock(at=parse_at("Tue 10:00")))
+    menu = Menu(engine, game, FreeDrive.from_flags(when="Tue 10:00"), Options.load())
+    engine.render_frame(supersample=1)
+    capitolio = game.places.by_id("L0333")
+    game.album.photo_path(capitolio.id).parent.mkdir(parents=True, exist_ok=True)
+    game.album.photo_path(capitolio.id).write_bytes(_png())
+    game.album.add(capitolio.id, "10:00", "Despejado")
+    for _ in range(3):
+        menu.press("ArrowDown")  # Historia is "próximamente", so the list starts on Modo libre: down to Álbum
+    menu.press("Enter")
+    screen = menu.screens["album"]
+    assert menu.current == "album" and screen.back_to == "main"
+    assert screen.rows[0][0] == "La Habana" and screen.rows[0][1] == 1  # the largest province first
+    assert sum(r[2] for r in screen.rows) == len(game.places)
+
+    menu.press("Enter")
+    page = menu.screens["province"]
+    assert menu.current == "province" and page.places[0].id == capitolio.id  # the photographed first
+    menu.press("Enter")
+    assert menu.current == "card" and menu.card["back"] == "province"
+    menu.press("Escape")
+    assert menu.current == "province"
+    for _ in range(PAGE_ROWS):
+        menu.press("ArrowDown")  # off the first page
+    assert page.page == 1 and page.index == PAGE_COLS * PAGE_ROWS
+    menu.press("Escape")
+    menu.press("Escape")
+    assert menu.current == "main"

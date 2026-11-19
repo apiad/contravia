@@ -47,3 +47,22 @@ def test_a_broken_file_reads_as_empty_and_is_kept_until_the_next_add(config):
     assert path.read_text() == "{not json"
     a.add("L0330", "lun 10:00", "lluvia")
     assert json.loads(path.read_text())["L0330"]["weather"] == "lluvia"
+
+
+def test_tally_counts_what_the_player_has_against_the_total_largest_first():
+    from types import SimpleNamespace as P
+
+    from contravia.album import tally
+
+    ps = [P(id="a", province="Matanzas"), P(id="b", province="La Habana"), P(id="c", province="La Habana")]
+    assert tally(ps, lambda pid: pid in ("a", "c"), lambda p: p.province) == [("La Habana", 1, 2), ("Matanzas", 1, 1)]
+
+
+def test_grid_step_moves_inside_the_grid_and_stays_at_its_edges():
+    from contravia.album import grid_step
+
+    assert grid_step(0, "right", 4, 10) == 1 and grid_step(0, "down", 4, 10) == 4
+    assert grid_step(3, "right", 4, 10) == 3  # the row's last cell
+    assert grid_step(4, "left", 4, 10) == 4  # the row's first cell
+    assert grid_step(0, "up", 4, 10) == 0 and grid_step(8, "down", 4, 10) == 8 and grid_step(9, "right", 4, 10) == 9
+    assert grid_step(5, "down", 4, 10) == 9
