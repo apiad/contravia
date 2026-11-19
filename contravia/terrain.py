@@ -8,6 +8,7 @@ ground, the roads, the buildings and the car all stand on the same surface.
 """
 
 import math
+import os
 from pathlib import Path
 
 import numpy as np
@@ -164,7 +165,7 @@ def fetch_tile(folder, lat: int, lon: int) -> Path | None:
     for attempt in range(5):  # the bucket is slow from some networks: a read that times out is tried again
         try:
             with urllib.request.urlopen(GLO30_URL.format(name=name.removesuffix(".tif")), timeout=300) as r:
-                part = path.with_suffix(".part")
+                part = path.with_suffix(f".{os.getpid()}.part")  # parallel provinces may fetch the same tile
                 part.write_bytes(r.read())
                 part.rename(path)
             return path

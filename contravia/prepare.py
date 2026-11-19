@@ -573,16 +573,37 @@ def province_boxes(pbf) -> dict:
     return {k: (s - BOX_MARGIN, w - BOX_MARGIN, n + BOX_MARGIN, e + BOX_MARGIN) for k, (s, w, n, e) in boxes.items()}
 
 
-def main(pbf, out, dem=None, provinces=None, resume: bool = False) -> dict:
+def _province(pbf, out, dem, name: str, slug: str, box) -> dict:
+    """Build one province into out/<slug>.npz and return its report; a worker process runs it when jobs > 1.
+
+    The file is written under a temporary name and renamed when complete, so a crash never leaves a half-written
+    province that resume would take as built."""
+    import time
+
+    from contravia.terrain import read_terrain
+
+    t0 = time.perf_counter()
+    terrain = read_terrain(dem, box, stride=TERRAIN_STRIDE.get(name, 3)) if dem else None
+    city, report = build_city(read_osm(pbf, boundary=name, box=box), terrain)
+    path = Path(out) / f"{slug}.npz"
+    part = Path(out) / f"{slug}.part.npz"
+    city.save(part)
+    part.replace(path)
+    report["seconds"] = round(time.perf_counter() - t0, 1)
+    return report
+
+
+def main(pbf, out, dem=None, provinces=None, resume: bool = False, jobs: int = 1) -> dict:
     """Build each province (all of contravia.geo.PROVINCES by default) into out/<slug>.npz: read its part of the
     extract and, from the GLO-30 tiles in dem (downloaded there if missing), its cleaned relief. With resume, a
-    province whose file is there is left as it is. Returns the reports by province."""
+    province whose file is there is left as it is. jobs provinces are built at once, each in its own process
+    (about 2.5 GB of memory each). Returns the reports by province."""
     import json
-    import time
+    import multiprocessing
+    from concurrent.futures import ProcessPoolExecutor, as_completed
 
     from contravia import coast
     from contravia.geo import PROVINCES
-    from contravia.terrain import read_terrain
 
     boxes = province_boxes(pbf)
     reports = {}
@@ -591,6 +612,7 @@ def main(pbf, out, dem=None, provinces=None, resume: bool = False) -> dict:
         if not land.is_empty:
             reports["coast"]["bytes"] = coast.save(land, Path(out) / coast.NAME)
         print("coast", json.dumps(reports["coast"]), flush=True)
+    todo = []
     for name, slug in PROVINCES:
         if provinces and name not in provinces and slug not in provinces:
             continue
@@ -598,12 +620,17 @@ def main(pbf, out, dem=None, provinces=None, resume: bool = False) -> dict:
             raise ValueError(f"{pbf}: no province named {name!r} (admin_level 4)")
         if resume and (Path(out) / f"{slug}.npz").exists():
             continue
-        t0 = time.perf_counter()
-        terrain = read_terrain(dem, boxes[name], stride=TERRAIN_STRIDE.get(name, 3)) if dem else None
-        city, report = build_city(read_osm(pbf, boundary=name, box=boxes[name]), terrain)
-        Path(out).mkdir(parents=True, exist_ok=True)
-        city.save(Path(out) / f"{slug}.npz")
-        report["seconds"] = round(time.perf_counter() - t0, 1)
-        reports[name] = report
-        print(name, json.dumps(report), flush=True)
+        todo.append((name, slug))
+    Path(out).mkdir(parents=True, exist_ok=True)
+    if jobs <= 1:
+        for name, slug in todo:
+            reports[name] = _province(pbf, out, dem, name, slug, boxes[name])
+            print(name, json.dumps(reports[name]), flush=True)
+        return reports
+    with ProcessPoolExecutor(jobs, mp_context=multiprocessing.get_context("spawn")) as pool:
+        running = {pool.submit(_province, pbf, out, dem, name, slug, boxes[name]): name for name, slug in todo}
+        for done in as_completed(running):
+            name = running[done]
+            reports[name] = done.result()
+            print(name, json.dumps(reports[name]), flush=True)
     return reports

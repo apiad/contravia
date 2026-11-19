@@ -7,7 +7,7 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
 - The commercial name is Contravía; its brand (colours, fonts, logo, poster, how to make panels with klein) is in `branding/` and `know-how/branding.md`; the SVG icons, logo, palette and fonts the game draws are in `assets/`, written by `assets/build.py`; the approved UX (menus, free drive, map, options, pause, HUD, first run, icons) is `docs/ux/contravia-ux.html`.
 - The game is always the whole island; there is no Havana-only build. `contravia prepare <cuba-latest.osm.pbf>`
   builds each of the 16 provinces (`contravia.geo.PROVINCES`, La Habana first) into `data/cuba/<slug>.npz` with the same
-  pipeline (`--province` for one, `--resume` to go on); `contravia/world.py` joins them lazily, with `index.npz` and
+  pipeline (`--province` for one, `--resume` to go on, `--jobs` provinces at once, each in its own process of about 2.5 GB, half the cores by default); `contravia/world.py` joins them lazily, with `index.npz` and
   `summary/` written on first load. `contravia play` drives; `contravia bench` drives a fixed route and appends its
   numbers to `bench/history.jsonl`. The whole island takes about 25 minutes on the GPU machine.
 - `contravia prepare ... --dem DIR` adds the ground's heights from the Copernicus GLO-30 tiles, downloaded into DIR
