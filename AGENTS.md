@@ -58,6 +58,7 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   (`$CONTRAVIA_CONFIG` in tests). The HUD (`contravia/hud.py`) has the time and weather, the minimap with its N badge,
   the municipio and the speed with a drawn gearbox. `--screen main|free|options|pause|photo|drive` opens a screen or
   drives at once; with `--shot` it saves that screen as a PNG (drive by default), and `contravia dev` reloads into the drive.
+  `--screen map --height 220000 --at X,Z --yaw 30` opens the map's camera that high over that point, for shots of each stage.
   The menu's flags below fill in the free drive's rows. Driving starts at the Capitolio at 10:00 today; `--time "Sun 08:00"` or `"17:30"` starts the clock elsewhere,
   `--time now` runs it on the machine's clock, `--warp 60` speeds it up for tests. The keys ramp the wheel and the
   pedals (`contravia/input.py`). `contravia play --traffic my.json` changes demand settings
