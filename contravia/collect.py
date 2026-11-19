@@ -34,6 +34,13 @@ SIGHT_INSET = 1.0  # metres a sight ray stops short of the box, so the place's o
 SIGHT_EDGE = 0.15  # the share of the near face's width the side rays keep in from its ends
 
 
+# The landmarks the game models by hand (contravia/landmarks), by NAME, and the place each one is. Their box comes
+# from the mesh, which is what the player frames. The Malecón and the Plaza keep the list's box: their meshes are
+# 7 km of coast and a whole square, and the photo is of a stretch of the one and of the Memorial in the other.
+MODELLED = {"Capitolio": "L0333", "Gran Teatro": "L0330", "Morro": "L0312", "Hotel Nacional": "M001",
+            "FOCSA": "L0378", "Habana Libre": "M002"}
+
+
 @dataclass(frozen=True)
 class Place:
     """One collectible place, with its box in world metres."""
@@ -54,6 +61,7 @@ class Place:
     x: float  # the box's centre in world metres (geo.to_local)
     z: float
     axis: tuple[float, float]  # the unit direction of the `w` side in the world, as (x, z)
+    base: float | None = None  # the box's bottom when a mesh gives it; else the ground's height under the centre
 
 
 def _axis(lat: float, lon: float, yaw_deg: float) -> tuple[float, float]:
@@ -103,6 +111,26 @@ class Places:
 
     def by_id(self, pid: str) -> Place:
         return self._ids[pid]
+
+    def with_meshes(self, bounds: dict) -> Places:
+        """The same places, with the box of each modelled landmark (MODELLED) set to its mesh's (Landmarks.bounds).
+
+        The box stays axis-aligned, so a landmark turned on the grid gets a box a little larger than itself."""
+        new = Places([])
+        swap = {}
+        for name, pid in MODELLED.items():
+            if name in bounds and pid in self._ids:
+                lo, hi = (np.asarray(v, float) for v in bounds[name])
+                old = self._ids[pid]
+                swap[pid] = Place(**{**old.__dict__, "x": float(lo[0] + hi[0]) / 2, "z": float(lo[2] + hi[2]) / 2,
+                                     "w": float(hi[0] - lo[0]), "d": float(hi[2] - lo[2]),
+                                     "h": float(hi[1] - lo[1]), "axis": (1.0, 0.0), "base": float(lo[1])})
+        new._all = [swap.get(p.id, p) for p in self._all]
+        new._ids = {p.id: p for p in new._all}
+        for p in new._all:
+            i, j = geo.cell_of([p.x, p.z])
+            new._cells.setdefault((int(i), int(j)), []).append(p)
+        return new
 
     def near(self, x: float, z: float, r: float) -> list[Place]:
         """The places whose centre is less than `r` metres from (x, z), looking only at the cells the circle touches."""

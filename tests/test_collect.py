@@ -147,3 +147,13 @@ def test_start_zoom_fills_sixty_percent_within_one_and_three():
     eye, target = (0.0, 1.5, 60.0), (0.0, 10.0, 0.0)
     assert collect.framing(eye, target, box(), zoom=z).size == pytest.approx(0.6, abs=0.02)
     assert zoom_at(800.0) == 3.0
+
+
+def test_a_modelled_landmark_takes_the_box_of_its_mesh():
+    ps = collect.Places([record("L0333", w=30.0, d=30.0, h=30.0), record("X")])
+    got = ps.with_meshes({"Capitolio": ((-100.0, 2.0, -50.0), (100.0, 94.0, 70.0))})
+    cap = got.by_id("L0333")
+    assert (cap.w, cap.d, cap.h, cap.x, cap.z) == (200.0, 120.0, 92.0, 0.0, 10.0)
+    assert cap.base == 2.0 and got.by_id("X").base is None
+    assert got.by_id("X").w == 20.0 and len(got) == 2
+    assert [p.id for p in got.near(0.0, 10.0, 5.0)] == ["L0333"]
