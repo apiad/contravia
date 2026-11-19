@@ -70,6 +70,9 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   JSON in the config folder's `garaje/` (`contravia/garage.py`) and drives any car, bus or truck from the main menu,
   the free drive's Vehículo row or the pause. A vehicle builds on a worker thread; names are never trademarks.
   `--screen garage|design --shot` saves either screen.
+- A script of your own that builds `Game` (custom shots, probes) must run its code under
+  `if __name__ == "__main__":`: the streamer starts worker processes with spawn, which re-imports the script and
+  fails with "start a new process before the current process has finished its bootstrapping phase".
 - `contravia flowmap out.png --time "Tue 08:00" [--traffic my.json]` draws the flow layer over the province without a
   window; `contravia bench --time ...` adds traffic numbers to the run.
 - `contravia fleet-sheet OUTDIR [--kind car]` renders one review PNG per kind: a row per variant of `contravia/rules/fleet.py`
