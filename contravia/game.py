@@ -130,6 +130,7 @@ class Game:
         self.places = collect.Places.load().with_meshes(self.walls.landmarks.bounds)
         self.album = Album.load({p.id: p.province for p in self.places})
         self.spot, self._spot_at = None, 0.0
+        self.aim = None  # while aiming at a place: {"place", "ground", "yaw", "pitch", "zoom"} (start_aim)
         self.camera_override = None  # bench.py sets a function () -> (eye, target) in world metres
         self.mode = "drive"  # or "menu", "paused", "photo", "map", "garage": see contravia/menu.py
         self.photo = None  # the photo mode's and the Garaje's camera around the car: (yaw, pitch, distance)
@@ -489,7 +490,7 @@ class Game:
 
     def resume(self) -> None:
         """Drive on from the pause."""
-        self.mode, self.photo = "drive", None
+        self.mode, self.photo, self.aim = "drive", None, None
         self.clock.resume()
 
     def to_menu(self) -> None:
@@ -533,6 +534,44 @@ class Game:
     def photo_eye(self) -> tuple[float, float, float]:
         """Where the photo camera stands: 1.5 m over the car."""
         return (self.car.x, self.car.y + collect.EYE_HEIGHT, self.car.z)
+
+    def start_aim(self) -> bool:
+        """Stop the car and the clock and point the photo camera at the spot, zoomed to frame it; False with no spot."""
+        p = self.spot
+        if p is None:
+            return False
+        self.mode = "aim"
+        self.clock.pause()
+        ground = self.ground_of(p)
+        self.aim = {"place": p, "ground": ground, "yaw": 0.0, "pitch": 0.0, "zoom": 1.0}
+        eye, target = self.aim_pose()
+        self.aim["zoom"] = collect.start_zoom(eye, target, collect.corners(p, ground))
+        return True
+
+    def aim_pose(self) -> tuple[tuple, tuple]:
+        """(eye, target) of the photo camera: from over the car toward the box's centre, turned by the arrows."""
+        a = self.aim
+        p = a["place"]
+        eye = self.photo_eye()
+        dx, dy, dz = p.x - eye[0], a["ground"] + p.h / 2 - eye[1], p.z - eye[2]
+        yaw = math.atan2(dz, dx) + a["yaw"]
+        pitch = math.atan2(dy, math.hypot(dx, dz)) + a["pitch"]
+        d = (math.cos(pitch) * math.cos(yaw), math.sin(pitch), math.cos(pitch) * math.sin(yaw))
+        return eye, (eye[0] + d[0] * 10, eye[1] + d[1] * 10, eye[2] + d[2] * 10)
+
+    def turn_aim(self, dyaw: float, dpitch: float, zoom_factor: float) -> None:
+        """Turn the photo view and change its zoom, within collect's limits."""
+        a = self.aim
+        a["yaw"] = min(collect.AIM_YAW, max(-collect.AIM_YAW, a["yaw"] + dyaw))
+        a["pitch"] = min(collect.AIM_PITCH, max(-collect.AIM_PITCH, a["pitch"] + dpitch))
+        a["zoom"] = min(collect.ZOOM_MAX, max(collect.ZOOM_MIN, a["zoom"] * zoom_factor))
+
+    def shoot(self) -> collect.Framing:
+        """How the photo camera frames its place now, walls included."""
+        a = self.aim
+        eye, target = self.aim_pose()
+        return collect.framing(eye, target, collect.corners(a["place"], a["ground"]), a["zoom"],
+                               walls=self.walls.near(self.car.x, self.car.z))
 
     def _find_spot(self, now: float) -> None:
         """Twice a second, the nearest place without a photo that is in reach and in sight of the car, or None."""
@@ -633,6 +672,9 @@ class Game:
 
             eye, target = mapview.pose(self.map)
             self.eye, target = np.asarray(eye, float), np.asarray(target, float)
+        elif self.mode == "aim" and self.aim:
+            eye, target = self.aim_pose()
+            self.eye, target = np.asarray(eye, float), np.asarray(target, float)
         elif self.mode in ("photo", "garage") and self.photo:
             yaw, pitch, dist = self.photo
             target = np.array([self.car.x, self.car.y + 1.0, self.car.z])
@@ -652,6 +694,7 @@ class Game:
             self.shelf.transform.pos = (0.0, self._shelf_y(), 0.0)
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
         self.engine.camera.vertical_scale = self._exaggeration()
+        self.engine.camera.fov = collect.fov_for(self.aim["zoom"]) if self.mode == "aim" and self.aim else collect.FOV_DEG
         self.hud.show(self.mode == "drive")
         if self.mode == "drive":
             e = self.driven.spec.engine

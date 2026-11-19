@@ -154,3 +154,48 @@ def test_the_map_opens_from_the_pause_and_the_main_menu_and_drives_at_its_crossh
     assert (game.car.x, game.car.z) != (x, z)
     game.streamer.close()
     game.detail.close()
+
+
+def _place_at(game, pid, dx, dz, side=8.0, h=10.0):
+    """A collectible place dx, dz metres from the car, as places.json writes it."""
+    from contravia import collect, geo
+
+    lat, lon = geo.to_latlon([[game.car.x + dx, game.car.z + dz]])[0]
+    r = {"id": pid, "title": f"Lugar {pid}", "type": "monumento", "province": "La Habana", "municipio": "Plaza",
+         "text": "Un texto.", "photo_target": "", "lat": lat, "lon": lon,
+         "box": {"w": side, "d": side, "h": h, "yaw_deg": 0.0},
+         "scores": {"h": 1, "c": 1, "v": 1, "total": 3, "tier": "débil"}}
+    return collect.Places([r]).by_id(pid)
+
+
+def test_f_aims_at_the_spot_space_says_what_is_wrong_and_escape_drives_on(city_npz):
+    import manifoldx as mx
+
+    from contravia import collect
+    from contravia.game import Game
+    from contravia.menu import Menu
+    from contravia.world import World
+
+    engine = mx.Engine("aim", width=64, height=48)
+    game = Game(engine, World.load(str(city_npz)), clock=Clock(at=parse_at("Tue 10:00")))
+    menu = Menu(engine, game, FreeDrive.from_flags(when="Tue 10:00"), Options.load(), screen=None)
+    try:
+        engine.render_frame(supersample=1)
+        game.spot = None
+        menu.press("f")
+        assert menu.current is None and game.mode == "drive"  # nothing to aim at
+        game.spot = _place_at(game, "lejos", 250.0, 0.0)
+        game.walls.near = lambda *a, **k: np.zeros((0, 2, 2))
+        menu.press("f")
+        assert menu.current == "aim" and game.mode == "aim"
+        assert game.aim["zoom"] == collect.ZOOM_MAX  # too small to fill the frame even zoomed in
+        engine.render_frame(supersample=1)
+        assert engine.camera.fov == pytest.approx(collect.fov_for(collect.ZOOM_MAX))
+        menu.press("Space")
+        assert menu.screens["aim"].note.text == "Muy lejos"
+        menu.press("Escape")
+        assert menu.current is None and game.mode == "drive" and game.aim is None
+        engine.render_frame(supersample=1)
+        assert engine.camera.fov == pytest.approx(collect.FOV_DEG)
+    finally:
+        game._shutdown()

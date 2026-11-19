@@ -259,3 +259,13 @@ def start_zoom(eye, target, box_corners, aspect: float = ASPECT) -> float:
         return ZOOM_MIN
     size = max(np.ptp(s[:, 0]), np.ptp(s[:, 1])) / 2
     return float(min(ZOOM_MAX, max(ZOOM_MIN, ZOOM_FILL / max(size, 1e-9))))
+
+
+def fov_for(zoom: float) -> float:
+    """The vertical field of view in degrees of the game's camera at a zoom: the tangent of half the angle shrinks."""
+    return math.degrees(2 * math.atan(math.tan(math.radians(FOV_DEG) / 2) / zoom))
+
+
+AIM_YAW = math.radians(25.0)  # how far the arrows turn the photo view from the place, either side
+AIM_PITCH = math.radians(15.0)  # and up or down
+WHY = {"far": "Muy lejos", "near": "Muy cerca", "off": "Céntralo", "hidden": "Algo lo tapa"}  # a miss, in the note
