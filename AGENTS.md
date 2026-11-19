@@ -113,6 +113,10 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   on them; the Malecón leaves out its wall pieces across the coast road. `contravia walls-check` counts what would
   stand inside a road over all of Havana and must read 0 (about 3 minutes; it needs `data/`, so it is not a rift
   rule; tests/test_walls.py checks the same rule on the fixture city).
+- Collectible places (spec `docs/superpowers/specs/2026-11-19-collectible-places-design.html`): `contravia/places.json`
+  is written outside the repo from EcuRed and OSM and reviewed by hand; replace it whole, never edit it here.
+  `contravia/collect.py` loads it into world metres by cell, finds the places near a point and judges how a camera
+  frames a place's box.
 - The game grows in layers, and every layer covers the whole city. Never detail one district ahead of the rest.
 - Same inputs, same city: every random draw is seeded from an OSM id or a block centroid.
 - `data/` is never committed: no OSM extract, no npz.
