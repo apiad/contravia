@@ -271,8 +271,8 @@ class PauseScreen(ListScreen):
     def items(self):
         m = self.menu
         return [("Seguir", "", m.resume), ("Mapa", "", lambda: m.show("map")),
-                ("Álbum", "", lambda: m.show("album")),
                 ("Cambiar vehículo", "", lambda: m.show("garage")), ("Modo foto", "", lambda: m.show("photo")),
+                ("Álbum", "", lambda: m.show("album")),
                 ("Opciones", "", lambda: m.show("options")), ("Menú principal", "", m.to_menu)]
 
     def background(self, width):
