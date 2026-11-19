@@ -22,6 +22,8 @@ import time
 
 import numpy as np
 
+from contravia import collect
+from contravia.album import Album
 from contravia.camera import chase
 from contravia.car import CarState, Controls, Driven, settle
 from contravia.geo import CELL, to_local
@@ -124,6 +126,10 @@ class Game:
         self.tune = True  # tau follows the frame time; the bench and offline shots keep it fixed
         self.driver = Driver()
         self.hud = Hud(engine)
+        # The collectible places, the player's collection, and the place the photo hint offers (contravia/collect.py).
+        self.places = collect.Places.load().with_meshes(self.walls.landmarks.bounds)
+        self.album = Album.load({p.id: p.province for p in self.places})
+        self.spot, self._spot_at = None, 0.0
         self.camera_override = None  # bench.py sets a function () -> (eye, target) in world metres
         self.mode = "drive"  # or "menu", "paused", "photo", "map", "garage": see contravia/menu.py
         self.photo = None  # the photo mode's and the Garaje's camera around the car: (yaw, pitch, distance)
@@ -518,6 +524,36 @@ class Game:
         self.area = str(a["g_muni_names"][m]) if 0 <= m < len(a["g_muni_names"]) else ""
         self.address = describe(a, *at) if "g_name" in a else ("", "", self.area)
 
+    def ground_of(self, p: collect.Place) -> float:
+        """The height a place's box stands on: its mesh's bottom for a modelled landmark, else the ground's."""
+        if p.base is not None:
+            return p.base
+        return float(self.terrain.height(np.array([p.x]), np.array([p.z]))[0])
+
+    def photo_eye(self) -> tuple[float, float, float]:
+        """Where the photo camera stands: 1.5 m over the car."""
+        return (self.car.x, self.car.y + collect.EYE_HEIGHT, self.car.z)
+
+    def _find_spot(self, now: float) -> None:
+        """Twice a second, the nearest place without a photo that is in reach and in sight of the car, or None."""
+        if now - self._spot_at < 0.5:
+            return
+        self._spot_at = now
+        eye = self.photo_eye()
+        walls = None
+        best = None
+        for p in self.places.near(self.car.x, self.car.z, collect.REACH_MAX):
+            if self.album.has(p.id) or not collect.in_reach(p, self.car.x, self.car.z):
+                continue
+            if walls is None:
+                walls = self.walls.near(self.car.x, self.car.z)
+            if not collect.in_sight(eye, collect.corners(p, self.ground_of(p)), walls):
+                continue
+            d = math.hypot(p.x - self.car.x, p.z - self.car.z)
+            if best is None or d < best[0]:
+                best = (d, p)
+        self.spot = best[1] if best else None
+
     def _shutdown(self, _=None) -> None:
         """Stop what the game started itself: the street builders, the wall builder and the traffic thread. A reload under
         contravia dev fires this before it builds the game again from the new code."""
@@ -623,6 +659,8 @@ class Game:
                             loading=bool(getattr(self.engine.state, "cells_waiting", 0)))
             self.hud.set_time(self.clock.now(), self.weather_state)
             self._find_area(now)
+            self._find_spot(now)
+            self.hud.set_spot(self.spot.title if self.spot else "")
             self.hud.set_area(self.area, self._dt)
             self.hud.set_address(*self.address)
             self.hud.show_stats(self._stats_lines())

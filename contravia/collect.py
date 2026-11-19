@@ -26,6 +26,7 @@ LARGEST = 0.90  # and at most this share; above it the camera is too close
 CENTRE = 0.60  # the box's centre must fall in this central share of the frame, on each axis
 INSIDE = 0.80  # at least this share of the box's rectangle on screen must be inside the frame
 ASPECT = 16 / 9  # the game window's width over its height
+EYE_HEIGHT = 1.5  # metres over the car where the photo camera stands
 REACH_SIDES = 6.0  # a place is in reach closer than this many times its largest side
 REACH_MAX = 300.0  # and never farther than this, metres
 ZOOM_MIN, ZOOM_MAX = 1.0, 3.0  # the photo camera's zoom range
