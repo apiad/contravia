@@ -64,6 +64,7 @@ BRIDGE_STEP = 2.0  # metres between the samples of a bridge's profile, so no str
 TUNNEL_DEPTH = 8.0  # metres of a tunnel under the ground: its headroom, roof and cover
 END_FREE = 8.0  # metres at each end of a bridge where the ground street it leaves from lies under it
 SEA_DEPTH = 14.0  # metres under sea level where a tunnel runs beneath the sea
+AT_END = 1.0  # metres: a ground street leaves from a bridge's or tunnel's end when its own end is this near
 DASH, DASH_GAP = 3.0, 6.0  # metres of paint and of gap along a dashed centre line, and of each painted piece
 PAINTED = {c for k in ("motorway", "trunk", "primary", "secondary", "tertiary") for c in (k, f"{k}_link")}
 
@@ -571,7 +572,9 @@ def pieces(chains, centre, ends, lens, trim, ew):
             # over itself on the inside of a tight bend when the street is wide.
             segs = [LineString(q[i:i + 2]).buffer((w[i] + w[i + 1]) / 4, cap_style="flat") for i in range(len(q) - 1)]
             bends = [shapely.Point(q[i]).buffer(w[i] / 2, QS) for i in range(1, len(q) - 1)]
-            rib = largest(shapely.union_all(segs + bends))
+            # cut square at both ends: a bend's disc near an end would reach past it, over the next piece
+            ends = LineString(q).buffer(float(w.max()), cap_style="flat")
+            rib = largest(shapely.intersection(shapely.union_all(segs + bends), ends))
             h0, h1 = w[0] / 2, w[-1] / 2
         else:
             left, right = offset(q, e.w / 2)
@@ -723,14 +726,17 @@ def build(a, widths, walls=()):
     ground_nodes = {n for e in levels.get(0, ()) for n in (e.f, e.t)}
     portals = frozenset(n for L, es in levels.items() if L for e in es for n in (e.f, e.t)) & ground_nodes
     out = [[], [], [], [], [], []]
-    ends = np.zeros((0, 2))
+    ends, ground = np.zeros((0, 2)), None
     for layer in sorted(levels, key=lambda x: (x != 0, abs(x), x)):
         Jl = J if layer == 0 else _onto_ground(J, levels[layer], ground_nodes, ends)
-        ribbons, owner, axes, rings, rnode, chains = _level_pieces(Jl, levels[layer], portals if layer == 0 else frozenset())
+        ribbons, owner, axes, rings, rnode, chains = _level_pieces(Jl, levels[layer], portals)
+        if layer < 0 and ground is not None:
+            ribbons, owner, axes = _off_ground(ribbons, owner, axes, ground)
         for c in chains:
             c.layer = layer
         if layer == 0 and chains:
             ends = np.array([p for c in chains for p in (c.p[0], c.p[-1])])
+            ground = (built_tree(list(rings)), list(rings), list(ribbons), list(axes))
         n = len(out[5])
         out[0] += list(ribbons)
         out[1] += [o + n for o in owner]
@@ -738,7 +744,28 @@ def build(a, widths, walls=()):
         out[3] += list(rings)
         out[4] += [r if layer == 0 else (layer, r) for r in rnode]
         out[5] += chains
+    out[0] = _split_twins(out[0], out[2], [k for k, o in enumerate(out[1]) if out[5][o].layer < 0])
     return tuple(out)
+
+
+def _split_twins(ribbons, axes, tubes):
+    """The ribbons with each two tunnels side by side (a tunnel's two carriageways) cut apart halfway between
+    their centrelines, where contravia.structures puts the edge of their shared box: overlapping, a wheel near
+    the middle would stand on the other carriageway's road, which is higher or lower near the mouths."""
+    ribbons = list(ribbons)
+    for i, k in enumerate(tubes):
+        for k2 in tubes[i + 1:]:
+            a_, b_ = ribbons[k], ribbons[k2]
+            if a_.intersection(b_).area < 1.0:
+                continue
+            a = densify(axes[k], 2.0)
+            cells = shapely.voronoi_polygons(shapely.multipoints(np.vstack([a, densify(axes[k2], 2.0)])),
+                                             extend_to=a_.union(b_).envelope).geoms
+            mine = shapely.points(a)
+            side = shapely.union_all([c for c in cells if shapely.intersects(c, mine).any()])
+            ribbons[k] = largest(a_.difference(b_.difference(side))) or a_
+            ribbons[k2] = largest(b_.difference(a_.intersection(side))) or b_
+    return ribbons
 
 
 def _onto_ground(J, edges, ground_nodes, ends):
@@ -756,6 +783,45 @@ def _onto_ground(J, edges, ground_nodes, ends):
         e.p = e.p.copy()
         e.p[0], e.p[-1] = J[e.f], J[e.t]
     return J
+
+
+def _off_ground(ribbons, owner, axes, ground):
+    """A tunnel's pieces fitted to the ground pieces they start from.
+
+    _onto_ground puts each end at the end of a ground street, which is the centre of the junction when one is
+    there: left as it is, the tunnel would run on into that junction, two surfaces at different heights in one
+    place, with the walls of one across the other. Each end in a junction is cut back along its centreline to
+    the junction's edge, and the ribbon loses what still lies in it. An end where a ground street starts gets
+    the sliver between the two squared ends, which meet at a slight angle: through that crack a wheel would see
+    only a street crossing above. ground is (an STRtree of the ground junctions, the junctions, the ground
+    ribbons and their centrelines)."""
+    tree, rings, gribs, gaxes = ground
+    starts = built_tree(shapely.points(np.array([q[i] for q in gaxes for i in (0, -1)]))) if gaxes else None
+    out_r, out_a = [], []
+    for rib, q in zip(ribbons, axes):
+        line = LineString(q)
+        L, trim, held, meet = line.length, [0.0, 0.0], [], []
+        for end, p in ((0, q[0]), (1, q[-1])):
+            P = shapely.Point(p)
+            for g in tree.query(P, predicate="within"):
+                cross = shapely.get_coordinates(shapely.intersection(line, rings[g].exterior))
+                if not len(cross):
+                    continue
+                s = shapely.line_locate_point(line, shapely.points(cross))
+                trim[end] = max(trim[end], float(s.min() if end == 0 else L - s.max()))
+                held.append(rings[g])
+            if not trim[end] and starts is not None:
+                meet += [(P, gribs[int(i) // 2]) for i in starts.query(P, predicate="dwithin", distance=0.05)]
+        if held and sum(trim) < L - 2.0:
+            q = cut(q, trim[0], L - trim[1])
+            rib = largest(rib.difference(shapely.union_all(held))) or rib
+        for P, g in meet:
+            ball = P.buffer(rib.area / max(L, 1e-9) / 2 + 1.0)  # past the half width
+            wedge = shapely.union_all([rib.intersection(ball), g.intersection(ball)]).convex_hull.difference(g)
+            rib = largest(rib.union(wedge)) or rib
+        out_r.append(rib)
+        out_a.append(q)
+    return out_r, owner, out_a
 
 
 def _level_pieces(J, edges, stops=frozenset()):
@@ -860,7 +926,7 @@ def heights(ribbons, owner, axes, rings, rnode, chains, terrain):
         return hj, out
     ground = [k for k in range(len(axes)) if not layer[k]]
     gring = [i for i, n in enumerate(rnode) if not isinstance(n, tuple)]
-    near = _Ends(ground, axes, [chains[owner[k]].w for k in ground], [rings[i] for i in gring],
+    near = _Ends(ground, axes, [rings[i] for i in gring],
                  [rnode[i] for i in gring], [(chains[owner[k]].f, chains[owner[k]].t) for k in ground])
     for L in sorted({x for x in layer if x}, key=lambda x: (abs(x), x)):
         # what this level passes over or under: the ground and the levels nearer to it, already final
@@ -929,10 +995,10 @@ def structure_profile(axis, width, layer, terrain, y_lower):
 class _Ends:
     """The ground streets' ends and junctions, found by point: where bridges and tunnels leave the ground."""
 
-    def __init__(self, ground, axes, widths, rings, nodes, ends):
+    def __init__(self, ground, axes, rings, nodes, ends):
         self.k = ground
         self.axes = [axes[k] for k in ground]
-        self.reach = np.maximum(np.asarray(widths, float), 4.0)
+        self.reach = np.full(len(ground), AT_END)
         pts = np.array([q[i] for q in self.axes for i in (0, -1)]).reshape(-1, 2)
         self.ends = built_tree(shapely.points(pts)) if len(pts) else None
         self.rings, self.nodes = rings, nodes
