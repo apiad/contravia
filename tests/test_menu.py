@@ -245,3 +245,65 @@ def test_a_good_shot_saves_the_photo_fills_the_album_and_shows_the_card(city_npz
         assert menu.current is None and game.mode == "drive"
     finally:
         game._shutdown()
+
+
+def test_the_map_names_the_place_under_its_crosshair_offers_its_card_and_joins_a_municipio(
+        city_npz, tmp_path, monkeypatch):
+    import manifoldx as mx
+
+    from contravia import mapview, placemarks, ui
+    from contravia.clock import Clock, parse_at
+    from contravia.game import Game
+    from contravia.menu import Menu
+    from contravia.world import World
+
+    monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path))
+    engine = mx.Engine("map", width=64, height=48)
+    game = Game(engine, World.load(str(city_npz)), clock=Clock(at=parse_at("Tue 10:00")))
+    menu = Menu(engine, game, FreeDrive.from_flags(when="Tue 10:00"), Options.load())
+    engine.render_frame(supersample=1)
+    capitolio = game.places.by_id("L0333")
+    game.album.photo_path(capitolio.id).parent.mkdir(parents=True, exist_ok=True)
+    game.album.photo_path(capitolio.id).write_bytes(_png())
+    game.album.add(capitolio.id, "10:00", "Despejado")
+    menu.press("ArrowDown")  # Mapa de Cuba
+    menu.press("Enter")
+    screen = menu.screens["map"]
+    game.map = mapview.MapCam(capitolio.x, capitolio.z, 600.0, 0.0)
+    screen.tick(0.0)
+    assert screen.note.text == capitolio.title and screen.under.got
+
+    menu.press("Enter")  # the choice
+    assert screen.choice is not None and screen.choice_panel in engine.gui._panels
+    menu.press("Enter")  # Ver ficha
+    assert menu.current == "card" and menu.card["count"].startswith("1 de ")
+    assert "base64" in menu.card["texture"] and "Despejado" in menu.card["meta"]
+    menu.press("Escape")
+    assert menu.current == "map" and game.map.x == capitolio.x and screen.back_to == "main"
+
+    other = next(p for p in game.places if not game.album.has(p.id))
+    menu.view_card(other)
+    assert menu.card["texture"] == ui.no_photo(480, 270)
+    menu.press("Enter")
+    assert menu.current == "map"
+
+    game.map = mapview.MapCam(capitolio.x, capitolio.z, placemarks.CITY_H * 2, 0.0)
+    group = next(m for m in placemarks.on_map(game.places, game.album.has, game.map, screen.width, ui.DESIGN_H)
+                 if capitolio.id in m.ids)
+    game.map = mapview.MapCam(*group.at, placemarks.CITY_H * 2, 0.0)
+    screen.tick(0.0)
+    assert screen.under is not None and len(screen.under.ids) > 1 and " lugares" in screen.note.text
+    menu.press("Enter")  # comes down over the group
+    assert game.map.h < placemarks.CITY_H and menu.current == "map" and screen.choice is None
+
+
+def _png():
+    import struct
+    import zlib
+
+    def chunk(t, d):
+        return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d))
+
+    raw = b"".join(b"\x00" + b"\x80\x40\x20" * 4 for _ in range(3))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 4, 3, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))

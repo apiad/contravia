@@ -16,7 +16,7 @@ import math
 import textwrap
 from typing import ClassVar
 
-from contravia import collect, garage, ui
+from contravia import collect, garage, mapview, placemarks, ui
 from contravia.hud import DAY_NAMES
 from contravia.rules import designs, fleet
 from contravia.settings import WEATHER_ICON, FreeDrive, Options
@@ -547,36 +547,93 @@ class CardScreen(Screen):
         photo = Image(c["texture"], style_overrides={"width": 480, "height": 270})
         self.panels = [Panel([photo, words], anchor="center",
                              style_overrides={"direction": "h", "gap": 22, "padding": 22, "bg": ui.alpha(ui.INK, 0.92)}),
-                       _hints(width, [("ENTER", "Seguir")])]
+                       _hints(width, [("ENTER", "Volver" if c.get("back") else "Seguir")])]
 
     def key(self, k):
         if k in ("enter", "back"):
+            if self.menu.card.get("back"):
+                self.menu.show(self.menu.card["back"])
+                return
             self.menu.game.resume()
             self.menu.show(None)
 
 
+MAP_MARKS = 80  # most place marks the map shows at once
+MARK_PX = 26  # pixels across a place's icon on the map
+OFF = (-1000, -1000)  # offset that puts an unused mark outside the window
+CHOICES = ("Ver ficha", "Manejar aquí")
+
+
 class MapScreen(Screen):
     """The map: the world from the air (contravia/mapview.py). The wheel or W and S zoom, dragging or the arrows
-    move, Q and E turn, ENTER drives on the road nearest the crosshair, Escape goes back where it came from."""
+    move, Q and E turn, ENTER drives on the road nearest the crosshair, Escape goes back where it came from.
+    The collectible places show as icons (contravia/placemarks.py); with the crosshair on one the note names it
+    and ENTER offers its card or driving there, and on a municipio's group ENTER comes down over it."""
 
     PAN_PX = 600.0  # screen pixels a second the arrows move the ground
     TURN = 1.2  # radians a second for Q and E
 
     def build(self, width):
-        from manifoldx.gui import Panel
+        from manifoldx.gui import Image, Panel
 
-        if self.menu.current_before != "map":  # a resized window rebuilds the map from the map
+        if self.menu.current_before not in ("map", "card"):  # a resized window or a card rebuilds it from the map
             self.back_to = "pause" if self.menu.current_before == "pause" else "main"
+        self.marks, self.under, self.choice, self.picked = [], None, None, 0
+        for _ in range(MAP_MARKS):
+            image = Image(placemarks.icon("lugar", False, MARK_PX), style_overrides={"width": MARK_PX})
+            count = _text("", ui.BOLD, 13, ui.PAPER)
+            self.marks.append((Panel([image, count], anchor="top-left", offset=OFF,
+                                     style_overrides={**CLEAR, "direction": "h", "gap": 4}), image, count))
         cross = Panel([], anchor="center", style_overrides={**CLEAR, "width": 22, "height": 22, "border": 3,
                                                              "border_color": ui.YELLOW})
         self.note = _text("", ui.BOLD, 15, ui.PAPER)
-        self.panels = [cross, Panel([self.note], anchor="top-left", offset=(44, 40), style_overrides=CLEAR),
+        self.options = [_text(t, ui.TITLE, 26, ui.PAPER) for t in CHOICES]
+        self.choice_panel = Panel(self.options, anchor="center", offset=(0, 90),
+                                  style_overrides={"gap": 4, "padding": "10 18", "bg": ui.alpha(ui.INK, 0.92)})
+        self.panels = [*(m for m, _, _ in self.marks), cross,
+                       Panel([self.note], anchor="top-left", offset=(44, 40), style_overrides=CLEAR),
                        _hints(width, [("RUEDA", "Zoom"), ("ARRASTRAR", "Mover"), ("Q E", "Girar"),
-                                      ("ENTER", "Manejar aquí"), ("ESC", "Volver")])]
+                                      ("ENTER", "Elegir"), ("ESC", "Volver")])]
+        self.width = width
         self.menu.game.open_map()
+
+    def _open_choice(self, on: bool) -> None:
+        """Show or hide «Ver ficha» and «Manejar aquí» for the place under the crosshair."""
+        if on == (self.choice is not None):
+            return
+        self.choice, self.picked = (self.under if on else None), 0
+        (self.menu.engine.gui.append if on else self.menu.engine.gui.remove)(self.choice_panel)
+        self._paint_choice()
+
+    def _paint_choice(self) -> None:
+        for k, t in enumerate(self.options):
+            t.style_overrides = {**t.style_overrides, "fg": ui.YELLOW if k == self.picked else ui.PAPER}
 
     def key(self, k):
         g = self.menu.game
+        if self.choice is not None:
+            if k in ("up", "down"):
+                self.picked = 1 - self.picked
+                self._paint_choice()
+            elif k == "back":
+                self._open_choice(False)
+            elif k == "enter":
+                pid = self.choice.ids[0]
+                self._open_choice(False)
+                if self.picked == 0:
+                    self.menu.view_card(g.places.by_id(pid))
+                elif g.drive_to(g.places.by_id(pid)):
+                    self.note.text = "Aquí no hay calle cerca"
+                else:
+                    self.menu.show(None)
+            return
+        if k == "enter" and self.under is not None:
+            if len(self.under.ids) > 1:  # a group: come down over it, below the city stage
+                x, z = self.under.at
+                g.map = mapview.MapCam(x, z, placemarks.CITY_H / 2, g.map.yaw)
+            else:
+                self._open_choice(True)
+            return
         if k == "back":
             g.map = None
             if self.back_to == "pause":
@@ -591,11 +648,37 @@ class MapScreen(Screen):
                 self.menu.show(None)
 
     def tick(self, dt):
-        from contravia import mapview
-
-        g, inp = self.menu.game, self.menu.engine.input
+        g = self.menu.game
         if g.map is None:
             return
+        if self.choice is None:
+            self._move(dt)
+        self._place_marks()
+
+    def _place_marks(self) -> None:
+        """Put the places' marks where the camera sees them and name the one under the crosshair."""
+        g = self.menu.game
+        marks = placemarks.on_map(g.places, g.album.has, g.map, self.width, ui.DESIGN_H)
+        for k, (panel, image, count) in enumerate(self.marks):
+            if k >= len(marks):
+                panel.offset = OFF
+                continue
+            m = marks[k]
+            svg = placemarks.icon(m.kind, m.got, MARK_PX)
+            if image.svg != svg:
+                image.svg = svg
+            number = str(len(m.ids)) if len(m.ids) > 1 else ""
+            if count.text != number:
+                count.text = number
+            panel.offset = (round(m.x - MARK_PX / 2), round(m.y - MARK_PX / 2))
+        was, self.under = self.under, placemarks.under_cross(marks, self.width, ui.DESIGN_H)
+        if self.under is not None:
+            self.note.text = self.under.label
+        elif was is not None:
+            self.note.text = ""
+
+    def _move(self, dt):
+        g, inp = self.menu.game, self.menu.engine.input
         cam, vh = g.map, max(self.menu.engine.h, 1)
         wheel = inp.wheel_delta[1]
         held = inp.is_pressed("s") - inp.is_pressed("w")
@@ -1126,6 +1209,24 @@ class Menu:
         self.card = {"place": place, "texture": texture, "meta": " · ".join(
             x for x in (place.type.replace("_", " "), place.municipio, when, weather) if x),
             "count": f"NUEVO · {g.album.count(place.province)} de {total} en {place.province}"}
+        self.screens.pop("card", None)
+        self.show("card")
+
+    def view_card(self, place) -> None:
+        """A place's card from the map: its photo if it has one, how many of its province the player has, and
+        when the photo was taken. ENTER or Escape goes back to the map."""
+        g = self.game
+        total = sum(p.province == place.province for p in g.places)
+        when = ()
+        if g.album.has(place.id):
+            e = g.album.entry(place.id)
+            when = (e.get("game_time", ""), e.get("weather", ""))
+            texture = ui.photo(g.album.photo_path(place.id), 480, 270)
+        else:
+            texture = ui.no_photo(480, 270)
+        self.card = {"place": place, "texture": texture, "back": "map", "meta": " · ".join(
+            x for x in (place.type.replace("_", " "), place.municipio, *when) if x),
+            "count": f"{g.album.count(place.province)} de {total} en {place.province}"}
         self.screens.pop("card", None)
         self.show("card")
 

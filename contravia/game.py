@@ -474,6 +474,17 @@ class Game:
         self.clock.pause()
         self.map = self.map or mapview.MapCam(self.car.x, self.car.z, 2500.0, 0.0)
 
+    def drive_to(self, p: collect.Place) -> str | None:
+        """Leave the map driving on a street from which the place frames well (go_near); the error if none."""
+        self.go_near(p)
+        error = self.engine.state.teleport.get("error")
+        if error:
+            return error
+        self.map = None
+        self.km, self.area, self.address = 0.0, "", ("", "", "")
+        self.resume()
+        return None
+
     def drive_here(self) -> str | None:
         """Leave the map driving on the road nearest the point under its crosshair; the error if there is none."""
         x, z = self.map.x, self.map.z

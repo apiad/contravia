@@ -170,3 +170,20 @@ def refit(panel):
 
     drop(panel)
     return fit(panel)
+
+
+def photo(path, width: int, height: int) -> str:
+    """A saved PNG as SVG markup, so a GUI Image can show it at width x height."""
+    data = base64.b64encode(Path(path).read_bytes()).decode()
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">'
+            f'<image width="{width}" height="{height}" href="data:image/png;base64,{data}"/></svg>')
+
+
+def no_photo(width: int, height: int) -> str:
+    """The grey frame a card shows for a place not photographed yet, with a camera in the middle."""
+    cx, cy = width / 2, height / 2
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">'
+            f'<rect width="{width}" height="{height}" fill="#3a3a3a"/>'
+            f'<rect x="{cx - 34}" y="{cy - 20}" width="68" height="46" rx="6" fill="{GREY}"/>'
+            f'<rect x="{cx - 14}" y="{cy - 30}" width="28" height="12" rx="3" fill="{GREY}"/>'
+            f'<circle cx="{cx}" cy="{cy + 3}" r="14" fill="#3a3a3a"/></svg>')
