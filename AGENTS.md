@@ -74,6 +74,9 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   ray wheels with tyres, engine, gearbox and brakes, stepped at 120 Hz by `contravia/car.py` (`Driven`); each family's
   numbers are in `contravia/rules/handling.py` and `tests/test_handling_targets.py` holds them to the spec's targets.
   The Realismo option (0 easy to 100 real) sets the four assists' strengths; `Options.locked_assists` keeps some off.
+- A script of your own that builds `Game` (custom shots, probes) must run its code under
+  `if __name__ == "__main__":`: the streamer starts worker processes with spawn, which re-imports the script and
+  fails with "start a new process before the current process has finished its bootstrapping phase".
 - `contravia flowmap out.png --time "Tue 08:00" [--traffic my.json]` draws the flow layer over the province without a
   window; `contravia bench --time ...` adds traffic numbers to the run.
 - `contravia fleet-sheet OUTDIR [--kind car]` renders one review PNG per kind: a row per variant of `contravia/rules/fleet.py`
@@ -97,4 +100,8 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
 - `data/` is never committed: no OSM extract, no npz.
 - Code is for students: one job per module, docstrings in full sentences.
 - An engine limit is fixed in manifoldx with a benchmark, not worked around here.
+- Gates: a merge to main needs green tests and nothing else. The full `contravia bench` (the whole route, about
+  15 minutes a run) runs only before a release. To make something faster, measure only the part being optimised,
+  with a profile of a few minutes at most, before and after each change; never wait on the full bench to learn
+  what a profile already shows, and never run it on every iteration.
 - Checks: `rift check` (tests and lint).
