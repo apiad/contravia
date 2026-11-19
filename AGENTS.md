@@ -39,6 +39,9 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   (deleting each once read) and writes it; the index keeps each square's class shares in its summary (`summary_version`
   3), and `summary_mesh` mixes the flat atlas tones and shades the slopes away from a north-west light. Its licence
   (CC BY 4.0) asks for `contravia.cover.CREDIT` wherever the game names its data.
+- In the map the camera stretches heights (`mapview.exaggeration`: 1 up to 10 km of height, 20 at 1 000 km, through
+  manifoldx's `Camera.vertical_scale`), the summaries mix in height tints from the city stage up and shade the
+  slope as stretched at their level (`rules/cover.py`): a stylised relief atlas, not a photo.
 - `contravia prepare` also builds the road graph traffic drives on (g_* arrays); data from before layer 2 plays with no traffic.
 - `contravia prepare` then builds the street surface from that graph (`contravia/streets.py`): avenues' two carriageways
   joined, junctions merged and rounded, one flat height per junction, cut per cell and triangulated. The cells draw

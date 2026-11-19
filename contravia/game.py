@@ -299,6 +299,14 @@ class Game:
             return HIDDEN_Y
         return (BASE_Y + self._water_y()) / 2
 
+    def _exaggeration(self) -> float:
+        """The camera's stretch of heights: the map's relief exaggeration for its height, none while driving."""
+        if self.mode != "map" or not self.map:
+            return 1.0
+        from contravia import mapview
+
+        return mapview.exaggeration(self.map.h)
+
     def _water_y(self) -> float:
         """The sea's height: WATER_Y while driving; in the map, MAP_SINK screen pixels lower, so that from high
         up the depth buffer still puts the coast's ground above the water."""
@@ -607,6 +615,7 @@ class Game:
         if self.shelf is not None:
             self.shelf.transform.pos = (0.0, self._shelf_y(), 0.0)
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
+        self.engine.camera.vertical_scale = self._exaggeration()
         self.hud.show(self.mode == "drive")
         if self.mode == "drive":
             e = self.driven.spec.engine
