@@ -39,9 +39,12 @@ TARGET_MS = 20.0  # the frame time the streamer's detail is tuned for, 50 fps
 TUNE_EVERY = 60  # frames between two tunings, over whose median frame time
 FAR = 15000.0  # the camera's far plane: past the clear-weather fog's end
 RECENTRE = 2000.0  # metres from the engine's origin before it moves to the camera
-BASE = 40_000.0  # side of the plain ground under everything, so empty cells show ground, not sky
+BASE = 40_000.0  # side of the plain ground under everything with flat data, so empty cells show ground, not sky
 BASE_Y = WATER_Y  # sea level, a little up: the ground under SEA is not drawn, so the water shows there
 SEA_TILE = 1000.0  # metres: the side of the squares the sea is laid in when it has holes
+OCEAN = 30_000_000.0  # metres: the side of the ocean, centred on the Capitolio, past the map's farthest far plane
+OCEAN_TILE = 1_000_000.0  # metres: the ocean is laid in squares no larger than this, so clipping stays exact
+MAP_SINK = 2.0  # screen pixels the water sinks below sea level in the map, so the coast never flickers on it
 WATER = (0.10, 0.24, 0.32)
 FLAT_BASE_Y = -1.0  # with flat data: below every streamed ground, which always wins over it
 SHADOW = (5.0, 2.3)  # metres: the dark ellipse under the car, along and across it
@@ -231,23 +234,31 @@ class Game:
                                   k("ArrowDown") or k("s"), k("Space"), dt)
 
     def _spawn_base(self):
-        """One plain square of water, BASE metres a side, at sea level, that follows the camera: the sea and the
-        bay wherever the streamed ground leaves out what lies below contravia.rules.ground.SEA. Where the data
-        holds holes in the sea (contravia.structures: over cuts and tunnels that run lower than the water), the
-        water is laid once instead, over the whole city and BASE / 2 around it, without them."""
+        """The sea, laid once at sea level: an ocean OCEAN metres a side around the Capitolio, so every view
+        down to the map's whole island shows water wherever the streamed ground leaves out what lies below
+        contravia.rules.ground.SEA. Where the data holds holes in the sea (contravia.structures: over cuts and
+        tunnels that run lower than the water), the water over the city and BASE / 2 around it leaves them out,
+        and the ocean leaves out that box. Flat data has no sea: one square of ground, BASE metres a side,
+        follows the camera under everything, as before."""
         from manifoldx.components import Material, Mesh, Transform
         from manifoldx.resources import StandardMaterial
 
         from contravia.mesh import MeshBuilder
 
-        sea = relief(self.terrain)  # flat data has no sea: the plane is ground under everything, as before
+        sea = relief(self.terrain)
         holes = self.city.a.get("sea_holes") if sea else None
-        self._sea_still = holes is not None and len(holes) > 0
         mb = MeshBuilder()
-        if self._sea_still:
-            t = _water_without(np.asarray(holes, float), self.city.a["g_poly"])
-            mb.add(np.c_[t[:, 0], np.zeros(len(t)), t[:, 1]], [(0, 1, 0)] * len(t), WATER,
-                   np.arange(len(t)).reshape(-1, 3))
+        if sea:
+            box = None
+            if holes is not None and len(holes):
+                box = _still_box(self.city.a["g_poly"])
+                t = _water_without(np.asarray(holes, float), self.city.a["g_poly"])
+                mb.add(np.c_[t[:, 0], np.zeros(len(t)), t[:, 1]], [(0, 1, 0)] * len(t), WATER,
+                       np.arange(len(t)).reshape(-1, 3))
+            q = _ocean(box)  # (Q, 4, 2) rectangles
+            pos = np.c_[q[:, :, 0].ravel(), np.zeros(4 * len(q)), q[:, :, 1].ravel()]
+            tris = (np.arange(len(q))[:, None, None] * 4 + np.array([[0, 1, 2], [0, 2, 3]])).reshape(-1, 3)
+            mb.add(pos, np.tile((0.0, 1.0, 0.0), (len(pos), 1)), WATER, tris)
         else:
             h = BASE / 2
             mb.add([(-h, 0, -h), (h, 0, -h), (h, 0, h), (-h, 0, h)], [(0, 1, 0)] * 4, WATER if sea else GROUND,
@@ -257,6 +268,15 @@ class Game:
                                        "indices": m.indices}),
                                  Material(StandardMaterial("#ffffff", roughness=0.95, vertex_colors=True)),
                                  Transform(pos=(0.0, BASE_Y if sea else FLAT_BASE_Y, 0.0)))
+
+    def _water_y(self) -> float:
+        """The sea's height: WATER_Y while driving; in the map, MAP_SINK screen pixels lower, so that from high
+        up the depth buffer still puts the coast's ground above the water."""
+        if self.mode != "map" or not self.map:
+            return BASE_Y
+        from contravia import mapview
+
+        return BASE_Y - MAP_SINK * mapview.metres_per_pixel(self.map, max(self.engine.h, 1))
 
     def _spawn_shadow(self):
         """A dark ellipse straight under the car on the bare ground, not on the road: where the road stands
@@ -550,8 +570,10 @@ class Game:
         else:
             self.eye, target = chase(self.eye, self.car, self._dt, self.surface)
         self.o = self._recentre()
-        if not self._sea_still:
-            self.base.transform.pos = (float(self.eye[0]), BASE_Y if self._sea else FLAT_BASE_Y, float(self.eye[2]))
+        if not self._sea:
+            self.base.transform.pos = (float(self.eye[0]), FLAT_BASE_Y, float(self.eye[2]))
+        else:
+            self.base.transform.pos = (0.0, self._water_y(), 0.0)
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
         self.hud.show(self.mode == "drive")
         if self.mode == "drive":
@@ -726,7 +748,7 @@ class Game:
 def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, size=(1280, 720),
          traffic: str | None = None, when: str | None = None, warp: float = 1.0, sky: str | None = None,
          pipelined: bool = True, with_traffic: bool = False,
-         screen: str | None = None) -> None:
+         screen: str | None = None, height: float | None = None, yaw: float = 0.0) -> None:
     """Open a window on the main menu, or with `shot`, render offscreen until the city is drawn and save a PNG.
 
     screen opens a menu screen ("main", "free", "options", "pause", "photo", "map", "garage", "design") or "drive"
@@ -737,6 +759,8 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     with_traffic turns the traffic on, as a traffic file does: traffic: a JSON file of demand settings. when ("Sun 08:00", "17:30") pins the clock, 10:00 today by default,
     and "now" runs it on the machine's clock; warp speeds it up, for tests and the dev channel. pipelined runs the systems of the next
     frame while the window draws this one; --no-pipeline is the serial path, for comparing the two.
+    With screen "map", height (metres) puts the map's camera that high over `at`, turned yaw degrees from north,
+    and the car stays at the Capitolio: `at` may be far from any road.
     """
     import manifoldx as mx
 
@@ -748,9 +772,14 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     engine = mx.Engine("contravia", width=size[0], height=size[1], pipelined=pipelined)
     clock = Clock(warp=warp) if when == "now" else Clock(at=parse_at(when or "10:00"), warp=warp)
     sky_config = load_sky_config(sky) if sky else None
-    game = Game(engine, World.load(data), at=at, traffic=load_config(traffic) if traffic else None,
+    look = screen == "map" and height  # then `at` is where the map looks; the car waits at the Capitolio
+    game = Game(engine, World.load(data), at=(0.0, 0.0) if look else at, traffic=load_config(traffic) if traffic else None,
                 clock=clock, sky=sky_config, with_traffic=with_traffic or bool(traffic))
     screen = screen or ("drive" if shot else "main")
+    if look:
+        from contravia import mapview
+
+        game.map = mapview.zoom(mapview.MapCam(float(at[0]), float(at[1]), 1.0, math.radians(yaw)), height)
     if "car" in engine.state:  # a reload under contravia dev drives on
         screen = "drive"
     from contravia.menu import Menu
@@ -792,9 +821,8 @@ def _water_without(holes, points) -> np.ndarray:
     (H, 3, 2): laid in SEA_TILE squares, of which only those the holes reach are cut."""
     import shapely
 
-    lo = np.floor((points.min(axis=0) - BASE / 2) / SEA_TILE) * SEA_TILE
-    hi = np.ceil((points.max(axis=0) + BASE / 2) / SEA_TILE) * SEA_TILE
-    gx, gz = np.meshgrid(np.arange(lo[0], hi[0], SEA_TILE), np.arange(lo[1], hi[1], SEA_TILE))
+    x0, z0, x1, z1 = _still_box(points)
+    gx, gz = np.meshgrid(np.arange(x0, x1, SEA_TILE), np.arange(z0, z1, SEA_TILE))
     gx, gz = gx.ravel(), gz.ravel()
     hole = shapely.union_all(shapely.polygons(holes))
     tiles = shapely.box(gx, gz, gx + SEA_TILE, gz + SEA_TILE)
@@ -804,3 +832,32 @@ def _water_without(holes, points) -> np.ndarray:
     cut = shapely.constrained_delaunay_triangles(shapely.difference(tiles[hit], hole))
     rest = shapely.get_coordinates(cut).reshape(-1, 4, 2)[:, :3]
     return np.concatenate([plain.reshape(-1, 2), rest.reshape(-1, 2)])
+
+
+def _still_box(points) -> tuple[float, float, float, float]:
+    """(x0, z0, x1, z1) of the water _water_without lays: the box of points widened by BASE / 2, on SEA_TILE."""
+    lo = np.floor((points.min(axis=0) - BASE / 2) / SEA_TILE) * SEA_TILE
+    hi = np.ceil((points.max(axis=0) + BASE / 2) / SEA_TILE) * SEA_TILE
+    return float(lo[0]), float(lo[1]), float(hi[0]), float(hi[1])
+
+
+def _ocean(hole=None) -> np.ndarray:
+    """(Q, 4, 2) rectangles, corners in the order of the rest of the water, covering a square OCEAN metres a side
+    around the origin in OCEAN_TILE squares, but for the box hole (x0, z0, x1, z1): a square the hole reaches is
+    cut into the up to four rectangles around it."""
+    from itertools import pairwise
+
+    n = round(OCEAN / OCEAN_TILE)
+    edges = (np.arange(n + 1) - n / 2) * OCEAN_TILE
+    rects = []
+    for x0, x1 in pairwise(edges):
+        for z0, z1 in pairwise(edges):
+            if hole is None or hole[0] >= x1 or hole[2] <= x0 or hole[1] >= z1 or hole[3] <= z0:
+                rects.append((x0, z0, x1, z1))
+                continue
+            hx0, hz0, hx1, hz1 = max(hole[0], x0), max(hole[1], z0), min(hole[2], x1), min(hole[3], z1)
+            for r in ((x0, z0, x1, hz0), (x0, hz1, x1, z1), (x0, hz0, hx0, hz1), (hx1, hz0, x1, hz1)):
+                if r[2] > r[0] and r[3] > r[1]:
+                    rects.append(r)
+    r = np.array(rects, float)
+    return np.stack([r[:, [0, 1]], r[:, [2, 1]], r[:, [2, 3]], r[:, [0, 3]]], axis=1)
