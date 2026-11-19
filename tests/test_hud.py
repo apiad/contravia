@@ -41,3 +41,18 @@ def test_north_badge_sits_on_top_facing_north_and_below_facing_south():
     assert north_y < south_y
     east_x, _ = north_offset(0.0, side, size)  # facing east, north is on the map's left: farther from the right edge
     assert east_x > north_x
+
+
+def test_the_minimap_redraws_only_when_the_car_moved_or_turned():
+    from contravia.hud import MINIMAP_EVERY, MINIMAP_IDLE, MINIMAP_MOVE, MINIMAP_TURN, minimap_stale
+
+    last = (100.0, 200.0, 0.3)
+    assert minimap_stale(None, last, 1)
+    assert not minimap_stale(last, last, MINIMAP_EVERY)
+    assert not minimap_stale(last, (100.0 + MINIMAP_MOVE * 0.9, 200.0, 0.3), MINIMAP_EVERY)
+    assert minimap_stale(last, (100.0, 200.0 + MINIMAP_MOVE * 1.1, 0.3), MINIMAP_EVERY)
+    assert minimap_stale(last, (100.0, 200.0, 0.3 + math.radians(MINIMAP_TURN * 1.1)), MINIMAP_EVERY)
+    assert not minimap_stale(last, (100.0, 200.0, 0.3 + math.radians(MINIMAP_TURN * 0.9)), MINIMAP_EVERY)
+    assert not minimap_stale(last, (150.0, 200.0, 0.3), MINIMAP_EVERY - 1)  # never more often than before
+    assert minimap_stale((0.0, 0.0, math.pi - 0.01), (0.0, 0.0, -math.pi + 0.01), MINIMAP_EVERY) is False
+    assert minimap_stale(last, last, MINIMAP_IDLE)  # the traffic around a still car moves on

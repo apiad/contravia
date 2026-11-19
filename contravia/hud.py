@@ -2,7 +2,8 @@
 
 Top left: the game's time, the day and the weather's icon. Top right: a round minimap with a cream rim, the
 scene itself seen from MINIMAP_HEIGHT metres straight above the car, rendered by the engine into a texture
-(render_to_texture) every MINIMAP_EVERY frames. Its top is the way the car faces, so the red arrow in its middle
+(render_to_texture) when the car has moved MINIMAP_MOVE metres or turned MINIMAP_TURN degrees since the last
+render, at most every MINIMAP_EVERY frames and at least every MINIMAP_IDLE. Its top is the way the car faces, so the red arrow in its middle
 always points up and the streets turn around it; the N badge rides the rim where north is. Bottom left: the
 name of the municipio when the car enters it, large, fading out after AREA_SHOWN seconds. Bottom right: the
 speed, the gear in yellow and a rev counter in segments, from the car's own automatic gearbox, and the four
@@ -22,7 +23,10 @@ from contravia import ui
 MINIMAP_SIZE = 256  # pixels of the texture
 MINIMAP_SHOWN = 190  # pixels across on screen
 MINIMAP_HEIGHT = 300.0  # metres above the car
-MINIMAP_EVERY = 4  # frames between two renders of the minimap
+MINIMAP_EVERY = 4  # fewest frames between two renders of the minimap
+MINIMAP_MOVE = 2.0  # metres the car moves before the minimap renders again, about one pixel of it on screen
+MINIMAP_TURN = 1.5  # degrees the car turns before the minimap renders again
+MINIMAP_IDLE = 60  # most frames between two renders, so the traffic around a still car moves on
 RIM = 8  # pixels of the minimap's cream rim
 MARGIN = 24  # pixels between the HUD and the window's edges
 STATS_LINES = 9  # lines of the F1 panel
@@ -63,6 +67,17 @@ def speed_text(speed: float, units: str = "kmh") -> str:
     return f"{abs(speed) * (3.6 if units == 'kmh' else 2.23694):.0f}"
 
 
+def minimap_stale(last, pose, frames: int) -> bool:
+    """Whether the minimap must render again for the car at pose = (x, z, yaw), `frames` frames after it
+    last rendered at `last` (None before its first render)."""
+    if last is None or frames >= MINIMAP_IDLE:
+        return True
+    if frames < MINIMAP_EVERY:
+        return False
+    turn = abs((math.degrees(pose[2] - last[2]) + 180.0) % 360.0 - 180.0)
+    return bool(math.hypot(pose[0] - last[0], pose[1] - last[1]) >= MINIMAP_MOVE or turn >= MINIMAP_TURN)
+
+
 def north_offset(yaw: float, side: float, size: float) -> tuple[float, float]:
     """Where the N badge goes, as the offset of a top-right panel `size` across: on the minimap's rim, at the
     angle north shows at when the map's top is the way the car faces."""
@@ -84,6 +99,7 @@ class Hud:
         self.texture = None
         self.units, self.minimap_on, self.shown = "kmh", True, False
         self._frame = 0
+        self._drawn, self._drawn_frame = None, 0  # the car's pose at the minimap's last render, and its frame
         self._area, self._area_t = "", 0.0
         self._address = None
         self._clock_text, self._weather, self._lit, self._gear = None, None, None, None
@@ -201,6 +217,7 @@ class Hud:
                 for p in self.minimap:
                     (self.engine.gui.append if minimap else self.engine.gui.remove)(p)
             self.minimap_on = minimap
+            self._drawn = None
 
     def toggle_stats(self) -> None:
         """Show the F1 panel if hidden, hide it if shown."""
@@ -268,7 +285,8 @@ class Hud:
 
     def update(self, car, origin: np.ndarray, rpm_range: tuple[float, float] = (850.0, 6500.0)) -> None:
         """Show the car's speed, gear and revs between rpm_range's idle and redline, light the assists' lamps,
-        turn the north badge, and every MINIMAP_EVERY frames render the minimap above it."""
+        and when the car has moved or turned enough (minimap_stale) render the minimap above it and turn the
+        north badge with it."""
         if not self.panels:
             return
         self.speed_text.text = self.speed_shadow.text = speed_text(car.speed, self.units)
@@ -284,10 +302,12 @@ class Hud:
         if lit != self._lit:
             self._lit = lit
             self.revs.svg = ui.revs(lit, REV_SEGMENTS)
-        self.north.offset = north_offset(car.yaw, MINIMAP_SHOWN, 26)
         self._frame += 1
-        if not self.minimap_on or self._frame % MINIMAP_EVERY:
+        pose = (car.x, car.z, car.yaw)
+        if not self.minimap_on or not minimap_stale(self._drawn, pose, self._frame - self._drawn_frame):
             return
+        self._drawn, self._drawn_frame = pose, self._frame
+        self.north.offset = north_offset(car.yaw, MINIMAP_SHOWN, 26)
         here = np.array([car.x, car.y, car.z]) - origin
         self.camera.up = np.array([math.cos(car.yaw), 0.0, math.sin(car.yaw)], np.float32)
         self.camera.set_pose(position=tuple(here + (0.0, MINIMAP_HEIGHT, 0.0)), target=tuple(here))
