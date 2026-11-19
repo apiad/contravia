@@ -87,7 +87,7 @@ pre{font:12.5px/1.5 var(--font-mono);background:var(--raised);border:1px solid v
 
 <h2><span class="n">01</span>Tareas</h2>
 
-<details class="task" id="task-1" data-state="pending"><summary><span class="st">pendiente</span><b>1. Las piezas</b><span class="files">contravia/landmarks/generic.py, tests/test_landmarks.py</span></summary>
+<details class="task" id="task-1" data-state="done"><summary><span class="st">pendiente</span><b>1. Las piezas</b><span class="files">contravia/landmarks/generic.py, tests/test_landmarks.py</span></summary>
 <ol>
 <li><code>is_point(place)</code>: su caja es la de su tipo por defecto (<code>POINT_BOX</code>), la que la lista pone cuando OSM solo trae un punto.</li>
 <li><code>spot(x, z, roads, r)</code>: el sitio más cercano al punto, probando anillos de 6 a 30 m, donde un círculo de radio <code>r</code> no pisa ninguna calle.</li>
@@ -96,14 +96,14 @@ pre{font:12.5px/1.5 var(--font-mono);background:var(--raised);border:1px solid v
 </ol>
 <div class="verify"><b>Verificar:</b> <code>python -m pytest tests/test_landmarks.py -q</code> pasa.</div></details>
 
-<details class="task" id="task-2" data-state="pending"><summary><span class="st">pendiente</span><b>2. La caja del lugar</b><span class="files">contravia/landmarks/shapes.py, contravia/landmarks/__init__.py, contravia/collect.py, contravia/game.py, tests/test_collect.py</span></summary>
+<details class="task" id="task-2" data-state="done"><summary><span class="st">pendiente</span><b>2. La caja del lugar</b><span class="files">contravia/landmarks/shapes.py, contravia/landmarks/__init__.py, contravia/collect.py, contravia/game.py, tests/test_collect.py</span></summary>
 <ol>
 <li><code>Piece.boxes</code> y <code>Landmarks.place_boxes</code>: por id de lugar, la caja de su pieza.</li>
 <li><code>Places.with_meshes(bounds, boxes)</code> pone esas cajas, como ya hace con los landmarks modelados.</li>
 </ol>
 <div class="verify"><b>Verificar:</b> <code>python -m pytest tests/test_collect.py tests/test_landmarks.py -q</code> pasa.</div></details>
 
-<details class="task" id="task-3" data-state="pending"><summary><span class="st">pendiente</span><b>3. Capturas, documentación y cierre</b><span class="files">AGENTS.md</span></summary>
+<details class="task" id="task-3" data-state="doing"><summary><span class="st">pendiente</span><b>3. Capturas, documentación y cierre</b><span class="files">AGENTS.md</span></summary>
 <ol>
 <li>Capturas de apuntar a una pieza de cada tipo que haya en los datos de La Habana, con <code>--place ID --screen aim</code>, para revisarlas con el mantenedor.</li>
 <li>La suite entera en segundo plano, <code>rift check</code>, PR.</li>
