@@ -4,7 +4,7 @@ from graphs import four_way, straight
 
 from contravia.traffic import S0, Cars
 
-KIND = 0  # car, 4.5 m
+LOOK = 0  # the first look is a car, 4.5 m
 
 
 def run(cars, seconds, t0=0.0, obstacles=(), dt=0.1):
@@ -20,7 +20,7 @@ def gaps_on_edge(cars, edge):
 
 def test_two_cars_in_a_lane_keep_their_distance():
     cars = Cars(straight(), seed=1)
-    cars.add([0, 0], [10.0, 40.0], [11.0, 2.0], [KIND, KIND])
+    cars.add([0, 0], [10.0, 40.0], [11.0, 2.0], [LOOK, LOOK])
     smallest = np.inf
     for k in range(1200):
         cars.step(0.1, k * 0.1, [])
@@ -32,7 +32,7 @@ def test_two_cars_in_a_lane_keep_their_distance():
 
 def test_a_car_stops_behind_a_stopped_car():
     cars = Cars(straight(), seed=1)
-    cars.add([0, 0], [0.0, 150.0], [11.0, 0.0], [KIND, KIND])
+    cars.add([0, 0], [0.0, 150.0], [11.0, 0.0], [LOOK, LOOK])
     cars.stopped[1] = True
     run(cars, 60)
     assert cars.v[0] < 0.05 and cars.edge[0] == 0
@@ -41,7 +41,7 @@ def test_a_car_stops_behind_a_stopped_car():
 
 def test_a_car_stops_before_an_obstacle():
     cars = Cars(straight(), seed=1)
-    cars.add([0], [0.0], [11.0], [KIND])
+    cars.add([0], [0.0], [11.0], [LOOK])
     run(cars, 60, obstacles=[(0, 0, 100.0, 0.0)])
     assert cars.v[0] < 0.05 and cars.s[0] <= 100.0 - 4.5 - S0 + 0.1
 
@@ -51,7 +51,7 @@ def test_four_way_junction_without_control_empties():
     cars = Cars(g, seed=3)
     approaches = [e for e in range(len(g)) if g.a["g_to"][e] == 0]
     for e in approaches:
-        cars.add([e] * 3, [130.0, 120.0, 110.0], [0.0] * 3, [KIND] * 3)
+        cars.add([e] * 3, [130.0, 120.0, 110.0], [0.0] * 3, [LOOK] * 3)
     run(cars, 120)
     assert not np.isin(cars.edge, approaches).any()
 
@@ -61,7 +61,7 @@ def test_signal_lets_one_axis_go_at_a_time():
     cars = Cars(g, seed=3)
     approaches = [e for e in range(len(g)) if g.a["g_to"][e] == 0]
     for e in approaches:
-        cars.add([e], [125.0], [0.0], [KIND])
+        cars.add([e], [125.0], [0.0], [LOOK])
     run(cars, 20, t0=0.0)
     heading = np.array([g.a["g_junction"][g.a["g_to"][e]] - g.a["g_junction"][g.a["g_from"][e]] for e in approaches])
     east_west = np.abs(heading[:, 0]) > np.abs(heading[:, 1])
@@ -72,7 +72,7 @@ def test_signal_lets_one_axis_go_at_a_time():
 def test_a_car_takes_its_next_edge_and_draws_another():
     g = straight()
     cars = Cars(g, seed=1)
-    cars.add([0], [190.0], [11.0], [KIND])
+    cars.add([0], [190.0], [11.0], [LOOK])
     first_next = cars.next_edge[0]
     run(cars, 3)
     assert cars.edge[0] == first_next
@@ -92,7 +92,7 @@ def test_a_junction_keeps_up_with_steady_arrivals():
             for e in approaches:
                 on = cars.edge == e
                 if not on.any() or cars.s[on].min() > 10:
-                    cars.add([e], [0.0], [8.0], [KIND])
+                    cars.add([e], [0.0], [8.0], [LOOK])
                     added += 1
         cars.step(dt, t, [])
         cars.remove(np.isin(cars.edge, approaches, invert=True) & (cars.s > 100))  # gone down an exit
@@ -105,7 +105,7 @@ def test_cars_take_height_and_pitch_from_the_edge_profile():
     a = g.a
     a["g_poly_y"] = (a["g_poly"][:, 0] * 0.1).astype(np.float32)  # rises 1 m every 10 m going east
     cars = Cars(g, seed=1)
-    cars.add([0], [100.0], [0.0], [KIND])
+    cars.add([0], [100.0], [0.0], [LOOK])
     xyz, _heading, pitch = cars.world()
     assert xyz[0, 1] == pytest.approx((100.0 - 4.5 / 2) * 0.1, abs=1e-3)
     assert pitch[0] == pytest.approx(np.arctan(0.1), abs=1e-3)

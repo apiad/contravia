@@ -697,7 +697,7 @@ class Game:
         self.layer.update(x, z, dt, obstacles)
         cars = self.layer.cars
         xyz, head, pitch = cars.world(self.surface)
-        self.fleet.draw(xyz - self.o, head, pitch, cars.kind)
+        self.fleet.draw(xyz - self.o, head, pitch, cars.look)
         # A contact: the player stopped against a traffic car this frame.
         if len(cars) and abs(before.speed) * 3.6 > 25 and abs(self.car.speed) < abs(before.speed) * 0.5:
             d = np.hypot(xyz[:, 0] - x, xyz[:, 2] - z)
