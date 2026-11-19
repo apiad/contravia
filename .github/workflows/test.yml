@@ -1,0 +1,46 @@
+# The test suite. On main (and by hand) it runs whole; on a pull request it runs only the tests testmap picks from
+# the diff, using the map testmap.yml recorded on main. lavapipe (mesa-vulkan-drivers) gives the runner a software
+# Vulkan adapter, so the render tests run here instead of skipping.
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TESTMAP: "testmap @ git+https://github.com/syalia-srl/testmap@v0.1.0"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install a software Vulkan driver
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+      - run: uv sync --locked --group dev
+      - name: The whole suite
+        if: github.event_name != 'pull_request'
+        run: uv run pytest -n auto -m "not slow" -rs
+      - name: The tests the change can break
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          uv run --with "$TESTMAP" testmap fetch
+          uv run --with "$TESTMAP" testmap run --base "origin/${{ github.base_ref }}" -- -n auto -m "not slow" -rs
