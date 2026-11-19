@@ -18,7 +18,7 @@ prepare = ["osmium", "tifffile", "imagecodecs"]
 dev = ["pytest", "ruff", "osmium", "tifffile", "imagecodecs"]
 
 [tool.uv.sources]
-manifold-gfx = { git = "https://github.com/gia-uh/manifoldx", branch = "main" }
+manifold-gfx = { git = "https://github.com/gia-uh/manifoldx", branch = "feat/instance-tint" }
 
 [build-system]
 requires = ["hatchling"]

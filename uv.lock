@@ -200,7 +200,7 @@ prepare = [
 
 [package.metadata]
 requires-dist = [
-    { name = "manifold-gfx", extras = ["desktop", "svg"], git = "https://github.com/gia-uh/manifoldx?branch=main" },
+    { name = "manifold-gfx", extras = ["desktop", "svg"], git = "https://github.com/gia-uh/manifoldx?branch=feat%2Finstance-tint" },
     { name = "numpy" },
     { name = "pillow" },
     { name = "shapely" },
@@ -291,7 +291,7 @@ wheels = [
 [[package]]
 name = "manifold-gfx"
 version = "0.10.0"
-source = { git = "https://github.com/gia-uh/manifoldx?branch=main#751f51c2a2e30ae032f996e42e05d1f952992ac7" }
+source = { git = "https://github.com/gia-uh/manifoldx?branch=feat%2Finstance-tint#2ef0ea568e6dd23508fcc658571c55ac8e6eac58" }
 dependencies = [
     { name = "numpy" },
     { name = "rendercanvas" },
