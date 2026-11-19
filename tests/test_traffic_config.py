@@ -1,8 +1,7 @@
 from datetime import datetime
 
-import pytest
-
 import numpy as np
+import pytest
 
 from contravia.rules.fleet import FAMILIES, KINDS
 from contravia.rules.traffic import (
