@@ -43,3 +43,27 @@ def test_every_drivable_family_finds_its_handling(family, expect):
 def test_cycles_are_not_driven():
     with pytest.raises(KeyError, match="bicicleta"):
         handling.handling_of("bicicleta")
+
+
+def test_every_drivable_garaje_preset_has_a_spec():
+    for key, preset in fleet.catalogue().items():
+        if preset.drivable:
+            spec = handling.spec_for(preset.params, key)
+            assert spec.mass > 0, key
+
+
+@pytest.mark.parametrize("key", ["metroguagua", "caja"])
+def test_a_bus_and_a_truck_draw_from_the_driven_pose(key):
+    from types import SimpleNamespace
+
+    from manifoldx.modeling.assets.car import place_car
+    from manifoldx.vehicles import FlatGround
+
+    from contravia.car import CarState, Driven
+
+    preset = fleet.catalogue()[key]
+    model = fleet.BUILDERS[preset.family](preset.params)
+    d = Driven(handling.spec_for(preset.params, key), CarState(0, 0, 0, 0.0), FlatGround())
+    handles = {p.name: [SimpleNamespace(transform=SimpleNamespace())] for p in model.parts}
+    place_car(handles, model, **d.pose())
+    assert all(hasattr(h[0].transform, "pos") for h in handles.values())

@@ -83,7 +83,25 @@ class Driven:
         f = self.fleet
         f.velocity[0] = matrices(f.rotation)[0][:, 0] * speed
         f.omega[0] = speed / f.p.radius[0]
+        if speed > 0:
+            f.pick_gear(0)
         self.state = self._read()
+
+    FIELDS = ("position", "rotation", "velocity", "angular", "omega", "slip", "compression", "ground_y", "gear",
+              "shift_timer", "rpm", "wheel_turn")
+
+    def snapshot(self) -> dict:
+        """The physics' state as plain lists, to keep across a reload of the game's code."""
+        return {k: np.asarray(getattr(self.fleet, k)[0]).tolist() for k in self.FIELDS}
+
+    def restore(self, snap: dict) -> CarState:
+        """Put back what snapshot() kept: the car goes on as it was, slide and spin included."""
+        f = self.fleet
+        for k in self.FIELDS:
+            getattr(f, k)[0] = np.asarray(snap[k])
+        f._before = (f.position.copy(), f.rotation.copy())
+        self.state = self._read()
+        return self.state
 
     def step(self, c: Controls, dt: float, walls: np.ndarray, strengths=None) -> CarState:
         """Advance by a frame of dt seconds under the controls, against walls (W, 2, 2), with the assists'

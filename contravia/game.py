@@ -285,14 +285,15 @@ class Game:
             x, z = float(p["x"]), float(p["z"])
         self.teleport(float(x), float(z))
 
-    def teleport(self, x: float, z: float) -> None:
-        """Put the car on the road nearest (x, z), stopped; with no road within 5 km it stays and state says why."""
+    def teleport(self, x: float, z: float, y: float | None = None) -> None:
+        """Put the car on the road nearest (x, z), stopped, on the level nearest y (a bridge's deck when the car
+        was on it); with no road within 5 km it stays and state says why."""
         found = self.walls.nearest_road(x, z)
         if found is None:
             self.engine.state.teleport = {"to": [x, z], "error": "no road within 5 km"}
             return
         x, z, yaw = found
-        self._place(settle(CarState(x, z, yaw, 0.0), self.surface))
+        self._place(settle(CarState(x, z, yaw, 0.0, y=0.0 if y is None else y), self.surface))
         self.eye = np.array([x, self.car.y + 3.0, z])
         self.engine.state.teleport = {"to": [x, z], "error": None}
         self._recentre()
@@ -314,11 +315,17 @@ class Game:
             self.driven.launch(speed)
         self.car = self.driven.state
 
+    def saved_car(self) -> dict:
+        """What a reload needs to drive on: the pose, the height, the camera and the physics' state."""
+        return {"pose": [self.car.x, self.car.z, self.car.yaw, self.car.speed], "y": self.car.y,
+                "eye": self.eye.tolist() if hasattr(self, "eye") else [self.car.x, self.car.y + 3.0, self.car.z],
+                "driven": self.driven.snapshot()}
+
     def strengths(self):
         """The assists' strengths from the realism option."""
         from manifoldx.vehicles import strengths_for
 
-        return strengths_for(self.realism, self.locked_assists)
+        return strengths_for(getattr(self, "realism", 30.0), getattr(self, "locked_assists", ()))
 
     def _follow_province(self) -> None:
         """When the car is in another province, drive on that province's graph: its traffic starts over there."""
@@ -334,7 +341,9 @@ class Game:
     def _resume(self, car: dict) -> None:
         """Put the car and the camera back where engine.state.car says, at the same speed."""
         x, z, yaw, speed = car["pose"]
-        self._place(settle(CarState(x, z, yaw, 0.0), self.surface), speed)
+        self._place(settle(CarState(x, z, yaw, 0.0, y=car.get("y", 0.0)), self.surface), speed)
+        if car.get("driven"):
+            self.car = self.driven.restore(car["driven"])
         self.eye = np.array(car["eye"], float)
         self._recentre()
 
@@ -501,7 +510,7 @@ class Game:
         self._before = self.car
         if self.mode == "drive":
             if inp.just_pressed("r"):
-                self.teleport(self.car.x, self.car.z)
+                self.teleport(self.car.x, self.car.z, y=self.car.y)
             if inp.just_pressed("F1"):
                 self.hud.toggle_stats()
             if inp.just_pressed("t"):
@@ -554,7 +563,7 @@ class Game:
             self.hud.set_address(*self.address)
             self.hud.show_stats(self._stats_lines())
         st = self.engine.state
-        st.car = {"pose": [self.car.x, self.car.z, self.car.yaw, self.car.speed], "eye": self.eye.tolist()}
+        st.car = self.saved_car()
         st.pos = [round(self.car.x, 1), round(self.car.z, 1)]
         st.cell = [math.floor(self.car.x / CELL), math.floor(self.car.z / CELL)]
         st.speed_kmh = round(abs(self.car.speed) * 3.6, 1)

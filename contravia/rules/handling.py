@@ -63,8 +63,13 @@ def handling_of(family: str) -> Handling:
     if family in HANDLING:
         return HANDLING[family]
     f = fleet.FAMILIES.get(family)
-    if f is None:
-        raise KeyError(f"no fleet family {family!r}")
+    if f is None:  # a Garaje catalogue key ("caja", "pipa", "volteo"): drive as its kind does
+        preset = fleet.catalogue().get(family)
+        if preset is None:
+            raise KeyError(f"no fleet family {family!r}")
+        if preset.family in BY_KIND:
+            return HANDLING[BY_KIND[preset.family]]
+        raise KeyError(f"family {family!r} ({preset.family}) is not driven")
     if f.kind in BY_KIND:
         return HANDLING[BY_KIND[f.kind]]
     if f.bases:
@@ -75,6 +80,8 @@ def handling_of(family: str) -> Handling:
 def _preset_of(family: str):
     if family in fleet.FAMILIES:
         return fleet.FAMILIES[family].preset()
+    if family in fleet.catalogue():
+        return fleet.catalogue()[family].params
     return {"patrulla": fleet.patrulla, "guagua": fleet.metroguagua, "camion": fleet.camion_80}[family]()
 
 
