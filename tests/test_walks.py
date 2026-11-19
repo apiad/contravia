@@ -82,3 +82,48 @@ def test_a_park_block_is_paved_by_its_layout_and_its_lawn_left_bare():
     c = kerb[:, :, [0, 2]].mean(axis=1)
     inside = (c > 5 + parks.KERB_W + 0.5).all(axis=1) & (c < 95 - parks.KERB_W - 0.5).all(axis=1)
     assert len(kerb) and not inside.any()  # the raised pavement is only the ring round the park
+
+
+def _surface(a, tris, paint, terrain):
+    """A Surface over the arrays' streets and the walks just built, in cell (0, 0)."""
+    from contravia.citydata import CityData
+
+    city = CityData.from_features(np.zeros((0, 5)), [], np.zeros(0), [], np.zeros(0), np.zeros((0, 2)), terrain)
+    city.add_kind("street_tris", a["street_tris"], np.zeros((len(a["street_tris"]), 2), int))
+    city.add_kind("street_edges", np.zeros((0, 2, 3)), np.zeros((0, 2), int))
+    city.add_kind("walk_tris", tris, np.zeros((len(tris), 2), int))
+    city.add_kind("walk_paint", paint, np.zeros((len(tris), 2), int))
+    return Surface(city, terrain)
+
+
+def test_a_raised_street_edge_slopes_down_to_the_ground_over_a_verge():
+    a = _arrays([_box(40, 40, 10)])  # one small building: not a dense block
+    a["street_tris"][:, :, 1] = 0.4  # the streets stand 0.4 m over flat ground
+    tris, paint, _, report = walks.build(a, Terrain.flat())
+    assert report["verge_triangles"] and (paint == walks.SHOULDER_CODE).any() and (paint == walks.SLOPE_CODE).any()
+    s = _surface(a, tris, paint, Terrain.flat())
+    x = np.arange(4.0, 5.0 + walks.SHOULDER + walks.RUN + 1.0, 0.05)  # off the street along x = 0, at z = 30
+    y = s.height(x, np.full(len(x), 30.0))
+    assert np.allclose(y[x < 5.0], 0.4, atol=1e-3)                                 # the street
+    assert np.allclose(y[(x > 5.02) & (x < 5.0 + walks.SHOULDER - 0.02)], 0.4, atol=1e-3)   # the shoulder
+    assert np.abs(y[-1]) < 1e-3                                                     # back on the ground
+    assert np.abs(np.diff(y)).max() < 0.4 / walks.RUN * 0.05 + 1e-3                  # no step anywhere
+
+
+def test_no_verge_leads_into_a_dense_block():
+    a = _arrays([_box(x, z, 38) for x in (8, 52) for z in (8, 52)])
+    a["street_tris"][:, :, 1] = 0.4
+    tris, paint, _, report = walks.build(a, Terrain.flat())
+    verge = tris[paint >= walks.SHOULDER_CODE][:, :, [0, 2]].mean(axis=1)
+    inside = (verge > walks.SAMPLE / 2).all(axis=1) & (verge < 100 - walks.SAMPLE / 2).all(axis=1)
+    assert report["dense_blocks"] == 1 and not inside.any()
+
+
+def test_a_wheel_rolls_up_a_bevelled_kerb():
+    a = _arrays([_box(x, z, 38) for x in (8, 52) for z in (8, 52)])
+    tris, paint, _, _ = walks.build(a, Terrain.flat())
+    s = _surface(a, tris, paint, Terrain.flat())
+    x = np.arange(3.0, 7.0, 0.01)  # across the kerb of the street along x = 0, at z = 30
+    y = s.height(x, np.full(len(x), 30.0))
+    assert abs(y[0]) < 1e-3 and abs(y[-1] - walks.KERB) < 1e-3
+    assert np.diff(y).min() > -1e-4 and np.diff(y).max() < 0.01  # a ramp no steeper than 1:1, not a step

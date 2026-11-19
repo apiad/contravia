@@ -44,7 +44,8 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   slope as stretched at their level (`rules/cover.py`): a stylised relief atlas, not a photo.
 - `contravia prepare` also builds the road graph traffic drives on (g_* arrays); data from before layer 2 plays with no traffic.
 - `contravia prepare` then builds the street surface from that graph (`contravia/streets.py`): avenues' two carriageways
-  joined, junctions merged and rounded, one flat height per junction, cut per cell and triangulated. The cells draw
+  joined, junctions merged and rounded, each junction on the plane that fits the ground under it and each street
+  5 cm over the ground, tilted with it across, cut per cell and triangulated. The cells draw
   it and the wheels stand on the same triangles (`contravia/surface.py`). `contravia streets` rebuilds it in an existing
   data file in about 3 minutes, without reading OSM again. Data without it draws the old
   per-segment ribbons.
@@ -55,8 +56,10 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   it (`Surface.height(..., near=)`) and a wall stops the car only at its own heights.
 - `contravia prepare` then lays the pavements (`contravia/walks.py`): a road-network face built over more than 30 %
   (12 % in the old centre) rises 15 cm kerb to kerb; elsewhere each building gets a 1.5 m platform and a path to
-  its street. The cells draw them with manifoldx's pavement patterns and the wheels stand on them. `contravia walks`
-  rebuilds them in an existing data file in about 4 minutes.
+  its street. Every raised edge is bevelled so a wheel rolls up it, and outside dense blocks a street edge that
+  stands 10 cm or more over the ground gets a verge: a 0.5 m shoulder at its height, then a 2.5 m slope down. The
+  cells draw them with manifoldx's pavement patterns and the wheels stand on them. `contravia walks` rebuilds them
+  in an existing data file in about 5 minutes; the verges read the streets, so after `contravia streets` run it too.
 - `contravia prepare` turns blocks with few or no buildings into parks (`contravia/parks.py`, spec
   `docs/superpowers/specs/2026-11-18-parks-design.html`): city parks with paths, plaza and centrepiece, paseos, the paved
   Prado and wild parks outside the city, some with a lake. `contravia/props.py` builds their motifs as `park_tris`, the
