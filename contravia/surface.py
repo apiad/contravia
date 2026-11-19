@@ -11,7 +11,9 @@ draws: the height of the triangle under it, found in its own cell (the surface i
 Where a bridge passes over a street, or a street over a tunnel, a point has more than one triangle under it.
 Given `near`, the height a wheel was at, it stands on the highest surface no more than STEP above that, so
 a car under a bridge stays under it and a car on it stays on it; with no surface low enough, on the lowest.
-Without `near` it takes the highest. Off the streets, a wheel far below the ground (in a tunnel, at its walls)
+Under a tunnel's roof nothing above the roof counts: a wheel off the asphalt there (between two tunnels side by
+side, under a street that crosses over them) does not jump up to the street. Without `near` it takes the
+highest. Off the streets, a wheel far below the ground (in a tunnel, at its walls)
 keeps its own height instead of jumping up to the ground.
 """
 
@@ -100,21 +102,37 @@ class Surface:
                 continue
             i, j = int(ci[group[0]]), int(cj[group[0]])
             st = self._streets(i, j)
+            ceil = None if nears is None else self._ceiling(i, j, x[group], z[group], nears[group])
             if st is not None and len(st[0]):
                 if (i, j) not in self._bins:
                     self._bins[(i, j)] = self._bin_index(st)
                 out[group] = self._on_streets_binned(st, x[group], z[group], out[group],
-                                                     None if nears is None else nears[group], index=self._bins[(i, j)])
+                                                     None if nears is None else nears[group], index=self._bins[(i, j)],
+                                                     ceil=ceil)
             elif st is not None:
                 out[group] = self._on_streets(st, x[group], z[group], out[group],
-                                              None if nears is None else nears[group])
+                                              None if nears is None else nears[group], ceil=ceil)
             else:
                 for k in group:
                     out[k] = self._on_ribbon(i, j, x[k], z[k], out[k])
         return out
 
+    def _ceiling(self, i, j, x, z, nears):
+        """The lowest tunnel roof over each point above its near height (inf in the open), or None when cell
+        (i, j) has no roofs."""
+        rf = self._prepared(self._roofs, i, j, "street_roofs")
+        if rf is None or not len(rf[0]):
+            return None
+        a, inv, y = rf
+        dx, dz = x[:, None] - a[None, :, 0], z[:, None] - a[None, :, 1]
+        u = inv[:, 0, 0] * dx + inv[:, 0, 1] * dz
+        v = inv[:, 1, 0] * dx + inv[:, 1, 1] * dz
+        h = (1 - u - v) * y[:, 0] + u * y[:, 1] + v * y[:, 2]
+        over = (u > -1e-6) & (v > -1e-6) & (u + v < 1 + 1e-6) & (h > nears[:, None])
+        return np.where(over, h, np.inf).min(axis=1)
+
     @staticmethod
-    def _on_streets(st, x, z, ground, nears, chunk=256) -> np.ndarray:
+    def _on_streets(st, x, z, ground, nears, chunk=256, ceil=None) -> np.ndarray:
         """Heights of points over one cell's street triangles st: the highest triangle under each, or with
         nears the highest no more than STEP above it (else the lowest); the ground off the streets, unless that
         is far above near (a tunnel or a cut)."""
@@ -125,7 +143,7 @@ class Surface:
                 out = np.where(out > nears + 2 * STEP, nears, out)
             return out
         if len(x) > 64:
-            return Surface._on_streets_binned(st, x, z, out, nears)
+            return Surface._on_streets_binned(st, x, z, out, nears, ceil=ceil)
         for c0 in range(0, len(x), chunk):
             sl = slice(c0, c0 + chunk)
             d = np.stack([x[sl], z[sl]], axis=1)[:, None, :] - a[None]  # (P, T, 2)
@@ -133,6 +151,8 @@ class Surface:
             w = np.concatenate([1 - uv.sum(axis=2, keepdims=True), uv], axis=2)
             inside = (w > -1e-6).all(axis=2)
             h = np.einsum("ptk,tk->pt", w, y)
+            if ceil is not None:  # under a tunnel's roof, nothing above it
+                inside &= h <= ceil[sl][:, None]
             hit = inside.any(axis=1)
             if nears is None:
                 best = np.where(inside, h, -np.inf).max(axis=1)
@@ -171,7 +191,7 @@ class Surface:
         return o, span, tri, off
 
     @staticmethod
-    def _on_streets_binned(st, x, z, ground, nears, size=8.0, index=None) -> np.ndarray:
+    def _on_streets_binned(st, x, z, ground, nears, size=8.0, index=None, ceil=None) -> np.ndarray:
         """_on_streets for many points: each triangle goes into the size-metre bins its bounding box covers, and a
         point is tested only against the triangles of its bin. index is _bin_index(st), kept by the caller."""
         a, inv, y = st
@@ -187,6 +207,8 @@ class Surface:
         w = np.concatenate([1 - uv.sum(axis=1, keepdims=True), uv], axis=1)
         inside = (w > -1e-6).all(axis=1)
         h = np.einsum("pk,pk->p", w, y[tk])
+        if ceil is not None:  # under a tunnel's roof, nothing above it
+            inside &= h <= ceil[pt]
         pt, h = pt[inside], h[inside]
         out = ground.copy()
         hit = np.zeros(len(x), bool)
