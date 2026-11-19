@@ -1,8 +1,9 @@
 """How traffic is drawn: one mesh per look of the fleet, each a pool of entities moved as arrays.
 
 A look is a variant of a family of `contravia/rules/fleet.py` in one of its colourways (`rules.traffic.looks`). Its
-mesh is manifoldx's `Vehicle.merged`: the outside pieces merged into one vertex-coloured mesh and decimated, so
-hundreds can be drawn. Building every look takes minutes, so the meshes are kept on disk under the user's cache
+mesh is manifoldx's `Vehicle.merged`: the outside pieces merged into one vertex-coloured mesh. It is not decimated:
+a grid decimation smears the normals and bleeds the wheels' and the chrome's colours into the body, and the engine's
+frustum culling keeps the cost to the cars in view. Building every look takes minutes, so the meshes are kept on disk under the user's cache
 folder, stamped with the code that builds them, and built again on several threads only when that code changes.
 
 At start the game spawns a pool of each look, sized by its share of Havana's mix; every frame the cars' positions are
@@ -24,7 +25,6 @@ from contravia.rules.traffic import TrafficConfig, look_kinds, look_shares, look
 PARKED = -1000.0  # the height of unused slots
 NEAR = 400  # the most cars the near traffic is expected to hold at once
 SLOT = 10_000  # a slot's number is look · SLOT + its index in the pool
-GRID = 28  # decimation cells along the longest side
 KEYS = ("positions", "normals", "colors", "indices")
 
 
@@ -41,7 +41,7 @@ def _shape(kind: str, family: str, k: int) -> list[dict]:
     built = v.build()
     out = []
     for palette in v.colourways:
-        geo = built.merged(palette=palette, grid=GRID).to_geometry()
+        geo = built.merged(palette=palette).to_geometry()
         out.append({key: geo[key] for key in KEYS})
     return out
 

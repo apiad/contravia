@@ -14,13 +14,13 @@ TAXI = np.flatnonzero(KIND == KINDS.index("taxi"))[0]
 
 
 @pytest.mark.slow
-def test_one_look_of_every_kind_builds_small_and_of_its_length():
+def test_one_look_of_every_kind_builds_of_its_length():
     for kind in KINDS:
         _, family, k, _ = next(look for look in looks() if look[0] == kind)
         for m in _shape(kind, family, k):
             span = np.ptp(m["positions"][:, 0])
             assert span == pytest.approx(LENGTH[kind], rel=0.3), (kind, span)
-            assert len(m["indices"]) // 3 < 4000, kind
+            assert len(m["indices"]) // 3 < 30_000, kind
             assert m["colors"].shape == m["positions"].shape
 
 
