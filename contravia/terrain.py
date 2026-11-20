@@ -78,6 +78,27 @@ def seat(ring, terrain: Terrain) -> float:
     return float(terrain.height(pts[:, 0], pts[:, 1]).min())
 
 
+STEP_UP = 0.2  # at most this many metres a sloped house's ground floor stands over its highest ground: a kerb's
+# height and the street's 5 cm, so the pavement in front of it meets the plinth under its door
+SINK = 0.2  # how far a plinth reaches below the lowest ground it was sampled at, so no gap shows under it
+
+
+def footing(ring, terrain: Terrain) -> tuple[float, float]:
+    """A house on a slope as it is built: (base, foot), its ground floor's height and its plinth's foot.
+
+    The ground is sampled at the footprint's corners, the middle of its walls and its centroid. The ground floor
+    stands over the highest of them, by the slope's height up to STEP_UP (so a door clears the pavement's kerb),
+    and the plinth, a plain masonry wall, fills down to SINK under the lowest: nothing is buried and nothing
+    floats. On flat ground base and foot are both the ground's height and no plinth is drawn."""
+    ring = np.asarray(ring, float).reshape(-1, 2)
+    pts = np.vstack([ring, (ring + np.roll(ring, -1, axis=0)) / 2, ring.mean(axis=0)])
+    h = terrain.height(pts[:, 0], pts[:, 1])
+    lo, hi = float(h.min()), float(h.max())
+    if hi - lo < 1e-3:
+        return lo, lo
+    return hi + min(STEP_UP, hi - lo), lo - SINK
+
+
 def _filter(grid: np.ndarray, size: int, reduce) -> np.ndarray:
     """Apply reduce (np.min or np.max) over a size x size window, one axis at a time, edges repeated."""
     k = size // 2

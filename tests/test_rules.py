@@ -138,13 +138,39 @@ def test_neighbouring_cells_share_their_ground_edge():
     assert np.allclose(pa[:, 1], 0.1 * pa[:, 0] + 0.05 * pa[:, 2], atol=1e-3)
 
 
-def test_a_box_on_a_slope_stands_on_its_lowest_corner():
-    from contravia.terrain import seat
+def test_a_house_on_a_slope_stands_on_its_top_ground_over_a_plinth_to_its_lowest():
+    from contravia.terrain import SINK, STEP_UP, footing
 
-    t, ring = tilted(), np.array([(0, 0), (30, 0), (30, 20), (0, 20)], float)
+    t, ring = tilted(), np.array([(0, 0), (30, 0), (30, 20), (0, 20)], float)   # ground from 0 to 4 m
+    base, foot = footing(ring, t)
+    assert base == pytest.approx(4.0 + STEP_UP, abs=0.03) and foot == pytest.approx(-SINK, abs=0.03)
     mb = MeshBuilder()
-    buildings.box(mb, ring, 3, base=seat(ring, t))
-    assert np.isclose(mb.to_meshdata(0, 0).positions[:, 1].min(), 0.0, atol=1e-4)   # h(0, 0) = 0 is the lowest
+    buildings.box(mb, ring, 3, base=base, foot=foot)
+    m = mb.to_meshdata(0, 0)
+    plan = facades.plan(3, area=600.0)
+    plinth = np.all(np.isclose(m.colors, np.multiply(plan.color, buildings.PLINTH_SHADE), atol=1e-4), axis=1)
+    assert plinth.any() and m.positions[plinth, 1].min() <= 0.0          # the plinth reaches the lowest ground
+    assert m.positions[plinth, 1].max() == pytest.approx(base)          # and stops under the ground floor
+    assert not m.facade[plinth].any()                                   # plain masonry: no window, no door
+    faced = m.facade[:, 2] > 0
+    assert m.positions[faced, 1].min() == pytest.approx(base)           # the facade starts over the plinth
+    ground = t.height(m.positions[faced, 0], m.positions[faced, 2])
+    assert np.all(m.positions[faced, 1] >= ground - 1e-3)               # no ground-floor vertex under the ground
+
+
+def test_flat_ground_draws_the_same_box_as_before():
+    from contravia.terrain import footing, seat
+
+    for level in (0.0, 7.5):
+        t = Terrain(np.full((20, 20), level, np.float32), (-100, -100), (10, 10), fade=0)
+        for k, ring in enumerate((L, np.array([(0, 0), (30, 0), (30, 20), (0, 20)], float))):
+            old, new = MeshBuilder(), MeshBuilder()
+            buildings.box(old, ring, 40 + k, base=seat(ring, t))
+            base, foot = footing(ring, t)
+            buildings.box(new, ring, 40 + k, base=base, foot=foot)
+            a, b = old.to_meshdata(0, 0), new.to_meshdata(0, 0)
+            for name in ("positions", "normals", "colors", "indices", "facade"):
+                assert np.array_equal(getattr(a, name), getattr(b, name)), name
 
 
 def test_wild_trees_grow_the_same_in_clumps_off_the_roads_and_out_of_the_sea():

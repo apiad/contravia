@@ -1134,7 +1134,7 @@ def roofs_near(city, landmarks, x: float, z: float, reach: float) -> tuple[list,
     """The footprints of the buildings and filler boxes of the cells within reach metres of (x, z), as the cells
     draw them (clearance.boxes), and the heights of their roofs, parapets included, for flight.clearance."""
     from contravia.clearance import boxes, roads_around, streets_around
-    from contravia.terrain import seat
+    from contravia.terrain import footing
 
     rings, tops = [], []
     for i in range(int(np.floor((x - reach) / CELL)), int(np.floor((x + reach) / CELL)) + 1):
@@ -1142,7 +1142,7 @@ def roofs_near(city, landmarks, x: float, z: float, reach: float) -> tuple[list,
             c = landmarks.keep(i, j, city.cell(i, j))
             for ring, _, p in boxes(c, roads_around(city, i, j), streets_around(city, i, j)):
                 rings.append(ring)
-                tops.append(seat(ring, city.terrain) + p.roof + p.parapet)
+                tops.append(footing(ring, city.terrain)[0] + p.roof + p.parapet)
     return rings, tops
 
 

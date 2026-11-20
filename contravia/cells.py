@@ -17,7 +17,7 @@ from contravia.mesh import MeshBuilder
 from contravia.rules import buildings, detail, facades, ground, roads
 from contravia.rules import shore as shore_rules
 from contravia.shore import of as shore_of
-from contravia.terrain import seat
+from contravia.terrain import footing
 from contravia.world import World
 
 SKIPPED_ROOFS = 0  # footprints drawn as walls only in this process, because their roof could not be cut
@@ -82,7 +82,8 @@ def build(i: int, j: int):
     near = roads_around(city(), i, j)
     for ring, style_id, plan in boxes(c, near, streets_around(city(), i, j)):
         portals = facades.portal_walls(ring, near) if plan.portal else None
-        if not buildings.box(mb, ring, style_id, base=seat(ring, terrain), plan=plan, portals=portals):
+        base, foot = footing(ring, terrain)
+        if not buildings.box(mb, ring, style_id, base=base, plan=plan, portals=portals, foot=foot):
             SKIPPED_ROOFS += 1
     cemetery.dress(mb, cemetery.yard(city(), i, j, landmarks(), plots=False, pantheons=False), terrain)
     return mb.to_meshdata(x0, z0)
@@ -97,7 +98,7 @@ def build_detail(i: int, j: int):
     mb = MeshBuilder()
     for ring, style_id, plan in boxes(c, near, streets_around(city(), i, j)):
         portals = facades.portal_walls(ring, near) if plan.portal else None
-        detail.dress(mb, ring, style_id, seat(ring, terrain), plan, near, portals)
+        detail.dress(mb, ring, style_id, footing(ring, terrain)[0], plan, near, portals)
     if not mb._pos:
         return None
     return mb.to_meshdata(i * CELL, j * CELL)
