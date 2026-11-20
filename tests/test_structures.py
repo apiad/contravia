@@ -95,7 +95,7 @@ def test_in_a_tunnel_the_camera_stays_under_the_roof_and_the_walls_hold_the_car(
     from contravia.walls import Walls
 
     w = Walls.__new__(Walls)
-    w.city, w._cache, w._pending = city, {}, {}
+    w.city, w._cache, w._pending, w._joined = city, {}, {}, None
     w._build = lambda i, j: np.zeros((0, 2, 2))
     w._pool = type("P", (), {"submit": lambda *a: None})()
     inside = w.near(0.0, 600.0, y)
@@ -197,7 +197,7 @@ def _drive_along(city, t, x0, x1, z, speed=16.0):
     from contravia.walls import Walls
 
     w = Walls.__new__(Walls)
-    w.city, w._cache, w._pending = city, {}, {}
+    w.city, w._cache, w._pending, w._joined = city, {}, {}, None
     w._build = lambda i, j: np.zeros((0, 2, 2))
     w._pool = type("P", (), {"submit": lambda *a: None})()
     s = Surface(city, t)
