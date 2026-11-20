@@ -24,6 +24,7 @@ from contravia.rules.roads import level
 
 
 STEP = 1.5  # metres a wheel can climb from one frame to the next onto a surface above it
+CRACK = 0.02  # metres: a point off the street triangles this close to them is on the street, across a crack
 
 
 class Surface:
@@ -196,9 +197,34 @@ class Surface:
     @staticmethod
     def _on_streets_binned(st, x, z, ground, nears, size=8.0, index=None, ceil=None) -> np.ndarray:
         """_on_streets for many points: each triangle goes into the size-metre bins its bounding box covers, and a
-        point is tested only against the triangles of its bin. index is _bin_index(st), kept by the caller."""
+        point is tested only against the triangles of its bin. index is _bin_index(st), kept by the caller.
+
+        The pieces of the street surface (a junction's plate, its ribbons) are simplified and snapped to a grid each
+        on its own, so two of them can miss each other by a few millimetres; a point in such a crack takes the
+        surface of the points CRACK around it, as the eye sees the street go on, rather than the ground."""
+        index = index if index is not None else Surface._bin_index(st, size)
+        best, hit = Surface._binned(st, x, z, nears, size, index, ceil)
+        lost = np.flatnonzero(~hit)
+        if len(lost):
+            ring = CRACK * np.array([[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0]])
+            px, pz = (np.repeat(x[lost], 4) + np.tile(ring[:, 0], len(lost)),
+                      np.repeat(z[lost], 4) + np.tile(ring[:, 1], len(lost)))
+            b, h = Surface._binned(st, px, pz, None if nears is None else np.repeat(nears[lost], 4), size, index,
+                                   None if ceil is None else np.repeat(ceil[lost], 4))
+            b, h = b.reshape(-1, 4), h.reshape(-1, 4)
+            near = h.any(axis=1)
+            best[lost[near]] = np.where(h, b, -np.inf).max(axis=1)[near]
+            hit[lost[near]] = True
+        out = ground.copy()
+        if nears is not None:
+            out = np.where(~hit & (out > nears + 2 * STEP), nears, out)  # off the asphalt in a tunnel or a cut
+        return np.where(hit, best, out)
+
+    @staticmethod
+    def _binned(st, x, z, nears, size, index, ceil):
+        """The height each point takes on the triangles st (by nears as _on_streets says) and whether any is under it."""
         a, inv, y = st
-        o, span, tri, off = index if index is not None else Surface._bin_index(st, size)
+        o, span, tri, off = index
         px = np.floor(np.stack([x, z], axis=1) / size).astype(np.int64) - o
         ok = (px[:, 0] >= 0) & (px[:, 0] < span[0]) & (px[:, 1] >= 0) & (px[:, 1] < span[1])
         b = np.where(ok, px[:, 0] * span[1] + px[:, 1], 0)
@@ -213,7 +239,6 @@ class Surface:
         if ceil is not None:  # under a tunnel's roof, nothing above it
             inside &= h <= ceil[pt]
         pt, h = pt[inside], h[inside]
-        out = ground.copy()
         hit = np.zeros(len(x), bool)
         hit[pt] = True
         if nears is None:
@@ -226,8 +251,7 @@ class Surface:
             lowest = np.full(len(x), np.inf)
             np.minimum.at(lowest, pt, h)
             best = np.where(np.isfinite(low), low, lowest)
-            out = np.where(~hit & (out > nears + 2 * STEP), nears, out)  # off the asphalt in a tunnel or a cut
-        return np.where(hit, best, out)
+        return best, hit
 
     def _on_ribbon(self, i, j, x, z, ground) -> float:
         """A point's height on the old per-segment road ribbons, for data without a street surface."""
