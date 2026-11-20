@@ -98,7 +98,9 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   row per tree of each cell drawn in full and spawns it as GPU instances of its species' meshes, which a grammar per
   species grows at three levels of detail (`contravia/rules/treegrammar.py`: trunk, branch levels, leaf clusters);
   each tree moves between levels by its distance to the camera, and its Tint (manifoldx) carries the date's colours
-  (flowering, autumn leaves, bare in the dry season). The car hits the trunks of the same trees (`walls.py`).
+  (flowering, autumn leaves, bare in the dry season). A tree at LOD 0 within 25 m also carries a layer of small
+  leaves over its clusters or leaflets along its fronds (`contravia/rules/foliage.py`, per species `FOLIAGE`), instances that sway in
+  the shader, spawned, dropped and faded by the same level-of-detail pass. The car hits the trunks of the same trees (`walls.py`).
 - Grass is not stored either (`contravia/grass.py`): a cell drawn in full lays, on a thread, a patch on every 2 m
   grid spot of its green and of its laid parks' lawns, and shorter, drier tufts on about half of every other spot of
   bare land, clear of its streets, roads, pavements, park motifs, buildings, filler houses, landmarks and the sea. Near the sea it grows only past the shore's sand, rock, cliff and mud, on the
