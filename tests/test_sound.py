@@ -70,3 +70,40 @@ def test_the_volume_rows_are_saved_and_loaded(options):
     options.save()
     assert Options.load()["vol_music"].value == 2
 
+
+
+def fake_game(rpm):
+    import numpy as np
+
+    from contravia.car import CarState, Controls
+
+    cam = SimpleNamespace(position=np.array([-6.0, 2.0, 0.0]), target=np.array([0.0, 1.0, 0.0]))
+    return SimpleNamespace(mode="drive", family="ruso", driven=None, sinking=None,
+                           engine=SimpleNamespace(camera=cam, state=SimpleNamespace()),
+                           car=CarState(x=0.0, z=0.0, yaw=0.0, speed=10.0, rpm=rpm),
+                           controls_now=Controls(0.6, 0.0, 0.0, False))
+
+
+def test_a_recorded_engine_follows_the_rpm(options, tmp_path):
+    import wave
+
+    import numpy as np
+
+    out = tmp_path / "drive.wav"
+    s = Sound.start(SimpleNamespace(), options, backend="file", path=out)
+    g = fake_game(2400.0)
+    s.attach(g)
+    t = time.time()
+    while time.time() - t < 3.0:
+        s.frame(g)
+        time.sleep(1 / 60)
+    s.close()
+    with wave.open(str(out)) as w:
+        x = np.frombuffer(w.readframes(w.getnframes()), "<i2").reshape(-1, 2)[:, 0] / 32767
+    x = x[-48000:]
+    spec = np.abs(np.fft.rfft(x * np.hanning(len(x))))
+    f = np.fft.rfftfreq(len(x), 1 / 48000)
+    band = (f > 40) & (f < 400)
+    firing = 2400 * 4 / 120  # a four-cylinder four-stroke at 2400 rpm: 80 Hz
+    peaks = f[band][np.argsort(spec[band])[-3:]]
+    assert np.abs(x).max() > 0.01 and any(abs(p / firing - round(p / firing)) < 0.05 for p in peaks)

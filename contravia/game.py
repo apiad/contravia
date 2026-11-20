@@ -546,6 +546,8 @@ class Game:
         self.handles = spawn_car(self.engine, vehicle, palette=palette)
         if rebuilt and self.driven is not None:
             self._rebuild()
+        if rebuilt and self.sound is not None:
+            self.sound.vehicle(self)
 
     def _rebuild(self) -> None:
         """New physics for the current model and family, standing where the car stands, stopped."""
@@ -864,6 +866,7 @@ class Game:
             self._before = self.car
             t0 = time.perf_counter()
             self.car = self.driven.step(c, self._dt, walls, self.strengths(), self._crashes().controls())
+            self.controls_now = c
             if self.help and self.car.telemetry is not None:
                 self.car.telemetry.setdefault("lit", {}).update(self.help.lit)
             self.physics_ms = (time.perf_counter() - t0) * 1000
@@ -1217,6 +1220,7 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
 
     game.sound = Sound.start(engine.state, options, backend="file" if audio_out else "null" if mute or shot else "device",
                              path=audio_out)
+    game.sound.attach(game)
     menu = Menu(engine, game, free, options, screen=screen if screen in ("main", "free", "options") else None)
     if screen in ("pause", "photo", "map"):
         engine.on("startup")(lambda _=None: (menu.pause(), screen != "pause" and menu.show(screen)))

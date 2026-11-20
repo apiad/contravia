@@ -8,8 +8,10 @@ interpreter: a reload under contravia dev keeps it and re-imports these modules 
 
 from __future__ import annotations
 
+import functools
 import math
 import time
+import zlib
 
 from manifoldx.audio import Audio, pose_names
 
@@ -17,10 +19,10 @@ BUSES = ("engine", "effects", "ambience", "music", "ui")
 ROWS = {"engine": "vol_engine", "effects": "vol_effects", "ambience": "vol_ambience", "music": "vol_music"}
 PAUSED_MUSIC = 10 ** (-10 / 20)  # the pause lowers the music by 10 dB
 DRIVING = ("drive", "aim")  # modes in which the car and the world are heard
-MODULES = ["contravia.audio"]  # re-imported in the sound process on a reload
+MODULES = ["contravia.rules.sound", "contravia.audio.engine", "contravia.audio"]  # re-imported in the sound process on a reload
 
 # Every control the game writes. A process started with fewer (by older code) is replaced.
-CONTROLS = (*pose_names("car"),)
+CONTROLS = (*pose_names("car"), "car.rpm", "car.throttle", "car.speed")
 
 
 class Sound:
@@ -44,12 +46,23 @@ class Sound:
             audio = Audio(backend=backend, path=path, stems=backend == "file", controls=CONTROLS)
             s = cls(audio, CONTROLS)
             state.sound = s
-        s.register()
         s.apply_options(options)
         return s
 
-    def register(self) -> None:
-        """Register every source and voice in the sound process (again, after a reload)."""
+    def attach(self, game) -> None:
+        """Register every source and voice of this game in the sound process: at the start, after a
+        reload, and again when the player takes another vehicle."""
+        self.vehicle(game)
+
+    def vehicle(self, game) -> None:
+        """The player's engine, from its family's sound and its physics' idle and peak-power rpm."""
+        from contravia.audio.engine import player_engine
+
+        e = game.driven.spec.engine if game.driven is not None else None
+        idle, red = (e.idle_rpm, e.peak_power_rpm * 1.15) if e is not None else (800.0, 5500.0)
+        seed = zlib.crc32(game.family.encode())
+        self.audio.source("engine", functools.partial(player_engine, game.family, float(idle), float(red), seed),
+                          "engine", placed=("car", 5.0, 300.0))
 
     @staticmethod
     def gains(options) -> dict:
@@ -92,6 +105,10 @@ class Sound:
         a.set("car.z", car.z)
         a.set("car.vx", car.speed * math.cos(car.yaw))
         a.set("car.vz", car.speed * math.sin(car.yaw))
+        a.set("car.rpm", car.rpm)
+        a.set("car.speed", abs(car.speed))
+        c = getattr(game, "controls_now", None)
+        a.set("car.throttle", 0.0 if c is None or getattr(game, "sinking", None) is not None else c.throttle)
         a.tick()
         now = time.monotonic()
         if now - self._published > 0.5:
