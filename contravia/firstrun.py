@@ -218,9 +218,9 @@ class Build:
         self.p, self._running = len(self.provinces), {}
         start = time.perf_counter()
         (self.out / "index.npz").unlink(missing_ok=True)
-        from contravia import coast, cover, regions, shore
+        from contravia import causeway, coast, cover, regions, shore
 
-        for name in (coast.NAME, cover.NAME, shore.NAME, regions.NAME):  # the coast and cover the index cuts per node; the shore
+        for name in (coast.NAME, cover.NAME, shore.NAME, regions.NAME, causeway.NAME):  # the coast and cover the index cuts per node; the shore
             if (self.source / name).exists():
                 shutil.copyfile(self.source / name, self.out / name)
         island = index(self.out)

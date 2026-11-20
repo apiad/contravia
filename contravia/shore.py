@@ -9,7 +9,7 @@ shore.src, which the game ships beside coast.src. ESA WorldCover's mangrove and 
 
 `Shore` answers for a built island: which cells are near the sea, and for each of those its `Field`, the 2.5 m
 grid of heights, normals, colours and types that contravia/rules/shore.py makes of the relief and these
-features. The cells draw that grid (rules/ground.py), the wheels stand on it (contravia/surface.py) and the
+features, and of the causeways' banks (contravia/causeway.py, causeways.src), which it makes land. The cells draw that grid (rules/ground.py), the wheels stand on it (contravia/surface.py) and the
 mangroves and rocks grow from it. Fields are cached per process; the same cell gives the same field in each.
 """
 
@@ -114,12 +114,13 @@ def load(path) -> dict:
 
 class Shore:
     """The shore of a world: OSM's features (from shore.src, if its folder has one), WorldCover's classes (from
-    cover.src, if there) and its terrain; `field(i, j)` makes and keeps a coastal cell's Field."""
+    cover.src, if there), its causeways (a contravia.causeway.Causeways, from causeways.src, if there) and its
+    terrain; `field(i, j)` makes and keeps a coastal cell's Field."""
 
-    def __init__(self, terrain, features=None, cover=None, built=None):
+    def __init__(self, terrain, features=None, cover=None, built=None, causeways=None):
         import shapely
 
-        self.terrain, self.cover, self.built = terrain, cover, built
+        self.terrain, self.cover, self.built, self.causeways = terrain, cover, built, causeways
         self.features = {k: g for k, g in (features or {}).items() if g is not None and not g.is_empty}
         self._trees = {k: shapely.STRtree(shapely.get_parts(g)) for k, g in self.features.items()}
         self._coastal: dict[tuple[int, int], bool] = {}
@@ -137,12 +138,15 @@ class Shore:
         return shapely.union_all(tree.geometries.take(hit)) if len(hit) else None
 
     def coastal(self, i: int, j: int) -> bool:
-        """Whether the sea comes within rules.shore.REACH of cell (i, j): only those cells draw a shore."""
+        """Whether the sea or a causeway comes within rules.shore.REACH of cell (i, j): only those cells draw a
+        shore."""
         from contravia.rules import shore as rules
 
         key = (i, j)
         if key not in self._coastal:
-            self._coastal[key] = rules.coastal(self.terrain, i, j)
+            self._coastal[key] = rules.coastal(self.terrain, i, j) or (
+                self.causeways is not None
+                and self.causeways.near(i * CELL, j * CELL, (i + 1) * CELL, (j + 1) * CELL, rules.REACH))
         return self._coastal[key]
 
     def field(self, i: int, j: int):
@@ -207,5 +211,5 @@ def of(city) -> Shore | None:
 
             features = load(folder / NAME) if (folder / NAME).exists() else None
             grid = cover.load(folder / cover.NAME) if (folder / cover.NAME).exists() else None
-            _shores[key] = Shore(city.terrain, features, grid, built=city)
+            _shores[key] = Shore(city.terrain, features, grid, built=city, causeways=getattr(city, "causeways", None))
     return _shores[key]

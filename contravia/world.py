@@ -19,7 +19,7 @@ from pathlib import Path
 
 import numpy as np
 
-from contravia import coast, cover
+from contravia import causeway, coast, cover
 from contravia.citydata import Cell, CityData
 from contravia.geo import CELL, PROVINCES, cell_of
 from contravia.quadtree import Tree
@@ -252,15 +252,33 @@ class World:
         """Every cell that holds a feature or land, on the whole island."""
         return self._cells
 
+    @property
+    def causeways(self):
+        """The island's causeways (contravia/causeway.py, from causeways.src beside the provinces), or None."""
+        if not hasattr(self, "_causeways"):
+            from contravia.causeway import Causeways
+
+            self._causeways = Causeways.of(self.folder) if self.folder is not None else None
+        return self._causeways
+
     def cell(self, i: int, j: int) -> Cell:
-        """Cell (i, j): the features of every province that holds it."""
+        """Cell (i, j): the features of every province that holds it, its streets raised onto any causeway.
+
+        The index names the cells a province holds roads or buildings in, not one a road's surface only crosses;
+        over the sea a causeway's surface crosses many such cells, so for a cell a causeway reaches the provinces
+        whose data holds it answer too."""
         ks = self.provinces_of(i, j)
+        if not ks and self.causeways is not None and self.causeways.near(i * CELL, j * CELL, (i + 1) * CELL,
+                                                                          (j + 1) * CELL):
+            ks = [k for k in self._regions_over([i * CELL, (i + 1) * CELL], [j * CELL, (j + 1) * CELL])
+                  if (i, j) in self.province(k)._index]
         if not ks:
             return Cell()
         if len(ks) == 1:
-            return self.province(ks[0]).cell(i, j)
-        parts = [self.province(k).cell(i, j) for k in ks]
-        return Cell.join(parts)
+            c = self.province(ks[0]).cell(i, j)
+        else:
+            c = Cell.join([self.province(k).cell(i, j) for k in ks])
+        return c if self.causeways is None else self.causeways.lift(c, i, j)
 
     def building(self, osm_id: int):
         """A La Habana building's footprint, for the landmarks."""
@@ -356,6 +374,10 @@ def index(folder) -> dict:
         land = coast.load(folder / coast.NAME)
     if land is not None and land.is_empty:  # an extract with no coastline: the land as before
         land = None
+    if land is not None and (folder / causeway.NAME).exists():  # the causeways over the sea are land too
+        import shapely
+
+        land = shapely.union(land, causeway.Causeways(causeway.load(folder / causeway.NAME)).outline())
     if land is not None:
         for key in _coast_cells(land):
             weights.setdefault(key, BARE)

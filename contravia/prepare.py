@@ -638,12 +638,17 @@ def main(pbf, out, dem=None, provinces=None, resume: bool = False, jobs: int = 1
         for name, slug in todo:
             reports[name] = _province(pbf, out, dem, name, slug, boxes[name], worldcover)
             print(name, json.dumps(reports[name]), flush=True)
-        return reports
-    with ProcessPoolExecutor(jobs, mp_context=multiprocessing.get_context("spawn")) as pool:
-        running = {pool.submit(_province, pbf, out, dem, name, slug, boxes[name], worldcover): name
-                   for name, slug in todo}
-        for done in as_completed(running):
-            name = running[done]
-            reports[name] = done.result()
-            print(name, json.dumps(reports[name]), flush=True)
+    else:
+        with ProcessPoolExecutor(jobs, mp_context=multiprocessing.get_context("spawn")) as pool:
+            running = {pool.submit(_province, pbf, out, dem, name, slug, boxes[name], worldcover): name
+                       for name, slug in todo}
+            for done in as_completed(running):
+                name = running[done]
+                reports[name] = done.result()
+                print(name, json.dumps(reports[name]), flush=True)
+    if not provinces and (Path(out) / coast.NAME).exists():  # the causeways, on the provinces' relief
+        from contravia import causeway
+
+        reports["causeways"] = causeway.write(pbf, out)
+        print("causeways", json.dumps(reports["causeways"], ensure_ascii=False), flush=True)
     return reports
