@@ -252,7 +252,7 @@ pre .c{color:var(--faint)} pre .k{color:var(--accent)} pre .s{color:var(--ok)}
 <div class="chrome">
   <span>contravia</span>
   <span class="tab">spec · the ground under the wheels, once a frame</span>
-  <span class="st"><span class="pill acc">proposed</span><span class="pill">2026-11-20</span><span class="pill">car physics · frame time</span></span>
+  <span class="st"><span class="pill acc">tried, no gain (#136 closed)</span><span class="pill">2026-11-20</span><span class="pill">car physics · frame time</span></span>
 </div>
 
 <div class="wrap">
@@ -270,7 +270,7 @@ pre .c{color:var(--faint)} pre .k{color:var(--accent)} pre .s{color:var(--ok)}
 
 <main>
 <h1>The ground under the wheels, gathered once a frame</h1>
-<div class="meta"><span>docs/superpowers/specs/2026-11-20-ground-patch-design.html</span><span>·</span><span>proposed, not started</span></div>
+<div class="meta"><span>docs/superpowers/specs/2026-11-20-ground-patch-design.html</span><span>·</span><span>tried in #136 and closed: identical heights, no speed-up in the game (0.645 against 0.63 ms per call)</span></div>
 <p class="lede">The car's physics asks the surface for the height under 20 points in every 1/120 s step, and each answer costs 0.9 ms although the work is small: most of it is the fixed cost of about 50 numpy calls. This spec gathers, once a frame, the few triangles and terrain samples the wheels can reach, and answers the steps from that small patch with the same rules, aiming at a quarter of the cost.</p>
 
 <h2 id="delivers"><span class="n">01</span>What this delivers</h2>
