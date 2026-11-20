@@ -3,7 +3,7 @@ streets they leave from ramp to them, and a car stays on the level it drives on.
 
 import numpy as np
 
-from contravia.camera import chase
+from contravia.camera import chase, seen_from
 from contravia.car import CarState, settle
 from contravia.citydata import CityData
 from contravia.prepare import WIDTHS
@@ -90,7 +90,7 @@ def test_in_a_tunnel_the_camera_stays_under_the_roof_and_the_walls_hold_the_car(
     s = Surface(city, t)
     y = s.height(0.0, 600.0)[0]
     car = CarState(0.0, 600.0, 0.0, 30.0, y=y)
-    eye, _ = chase(np.array([-20.0, y + 30.0, 600.0]), car, 10.0, s)
+    _, eye, _ = chase(seen_from(np.array([-20.0, y + 30.0, 600.0]), car), car, 10.0, s)
     assert eye[1] < y + ROOF
     from contravia.walls import Walls
 

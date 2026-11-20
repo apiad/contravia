@@ -24,7 +24,7 @@ import numpy as np
 
 from contravia import collect
 from contravia.album import Album
-from contravia.camera import chase
+from contravia.camera import chase, seen_from
 from contravia.car import CarState, Controls, Driven, settle
 from contravia.driving_help import DEFAULT, DrivingHelp, Road, brake_reach, chassis_strengths, road_assists
 from contravia.forest import Forest
@@ -145,6 +145,7 @@ class Game:
         self.aim = None  # while aiming at a place: {"place", "ground", "yaw", "pitch", "zoom"} (start_aim)
         self._photo_pending = None  # (PNG path, future of its pixels) between a shot and its saving
         self.camera_override = None  # bench.py sets a function () -> (eye, target) in world metres
+        self.rig, self._chased = None, None  # the chase camera's contravia.camera.Rig, and the eye it last placed
         self.mode = "drive"  # or "menu", "paused", "photo", "map", "garage": see contravia/menu.py
         self.photo = None  # the photo mode's and the Garaje's camera around the car: (yaw, pitch, distance)
         self.map = None  # the map's camera, a contravia.mapview.MapCam, while the map shows
@@ -809,7 +810,11 @@ class Game:
                 left = np.array([-math.sin(yaw), 0.0, math.cos(yaw)]) * GARAGE_SHIFT * dist
                 self.eye, target = self.eye + left, target + left
         else:
-            self.eye, target = chase(self.eye, self.driven.seen(), self._dt, self.surface)
+            seen = self.driven.seen()
+            if self.eye is not self._chased:  # another camera moved the eye: the chase starts from there
+                self.rig = seen_from(self.eye, seen)
+            self.rig, self.eye, target = chase(self.rig, seen, self._dt, self.surface)
+            self._chased = self.eye
         self.o = self._recentre()
         if not self._sea:
             self.base.transform.pos = (float(self.eye[0]), FLAT_BASE_Y, float(self.eye[2]))
