@@ -13,6 +13,7 @@ import math
 import time
 import zlib
 
+import numpy as np
 from manifoldx.audio import Audio, pose_names
 
 BUSES = ("engine", "effects", "ambience", "music", "ui")
@@ -20,11 +21,12 @@ ROWS = {"engine": "vol_engine", "effects": "vol_effects", "ambience": "vol_ambie
 PAUSED_MUSIC = 10 ** (-10 / 20)  # the pause lowers the music by 10 dB
 DRIVING = ("drive", "aim")  # modes in which the car and the world are heard
 MODULES = ["contravia.rules.sound", "contravia.audio.engine", "contravia.audio.car", "contravia.audio.weather",
-           "contravia.audio"]  # re-imported in the sound process on a reload
+           "contravia.audio.traffic", "contravia.audio"]  # re-imported in the sound process on a reload
 
 # Every control the game writes. A process started with fewer (by older code) is replaced.
 CONTROLS = (*pose_names("car"), "car.rpm", "car.throttle", "car.speed", "car.slip", "car.wet", "car.surface",
-            "car.horn", "car.cabin", "car.under", "weather.rain")
+            "car.horn", "car.cabin", "car.under", "weather.rain", "traffic.count",
+            *(f"traffic.{i}.{k}" for i in range(4) for k in ("x", "y", "z", "vx", "vy", "vz", "rpm", "cyl", "bright", "on")))
 
 
 class Sound:
@@ -38,6 +40,9 @@ class Sound:
         from contravia.audio.weather import Thunder
 
         self._thunder, self._under = Thunder(seed=7), False
+        from contravia.audio.traffic import Honks
+
+        self._honks, self._traffic_v, self._traffic_slow = Honks(), np.zeros(0), np.zeros(0, bool)
 
     @classmethod
     def start(cls, state, options, backend: str = "device", path=None) -> Sound:
@@ -74,6 +79,13 @@ class Sound:
         a.source("bubbles", weather.bubbles, "effects")
         a.voice("thunder", weather.thunder, "ambience", cap=3)
         a.voice("splash", weather.splash, "effects", cap=1, placed=True)
+        from contravia.audio import traffic
+
+        for i in range(traffic.SLOTS):
+            a.source(f"traffic.{i}", functools.partial(traffic.cheap_engine, i), "effects", placed=(f"traffic.{i}", 5.0, 200.0))
+        a.source("traffic.bed", traffic.bed, "ambience")
+        a.voice("honk", traffic.honk, "effects", cap=3, placed=True)
+        a.voice("brakes", traffic.brakes, "effects", cap=2, placed=True)
         self.vehicle(game)
 
     def vehicle(self, game) -> None:
@@ -153,6 +165,7 @@ class Sound:
         a.set("car.cabin", 0.0)  # the camera follows the car from outside; there is no cabin view yet
         self._events(game)
         self._weather(game, now)
+        self._traffic(game)
         a.tick()
         if now - self._published > 0.5:
             self._published = now
@@ -204,6 +217,50 @@ class Sound:
             if under:
                 a.event("splash", seed=self._frame, x=game.car.x, y=game.car.y, z=game.car.z)
         a.set("car.under", 1.0 if under else 0.0)
+
+    def _traffic(self, game) -> None:
+        """The four loudest traffic cars into their slots, the bed's count, horns and air brakes."""
+        from contravia.audio import traffic
+        from contravia.rules.traffic import looks
+
+        a, t = self.audio, getattr(game, "traffic_now", None)
+        if t is None or not len(t[0]):
+            a.set("traffic.count", 0.0)
+            for i in range(traffic.SLOTS):
+                a.set(f"traffic.{i}.on", 0.0)
+            return
+        xyz, head, v, look, wait = t
+        table = looks()
+        kinds = np.array([table[k][0] for k in look])
+        lis = np.array([a.controls.get("listener.x"), a.controls.get("listener.y"), a.controls.get("listener.z")])
+        if len(self._traffic_v) != len(v):
+            self._traffic_v = v
+        acc = (v - self._traffic_v) * 60.0  # m/s² at about 60 frames a second
+        self._traffic_v = v
+        pick = traffic.loudest(xyz, v, kinds, lis)
+        for i in range(traffic.SLOTS):
+            p = f"traffic.{i}."
+            if i >= len(pick):
+                a.set(p + "on", 0.0)
+                continue
+            k = pick[i]
+            cyl, bright = traffic.slot_numbers(table[look[k]][1])
+            for name, val in (("x", xyz[k, 0]), ("y", xyz[k, 1]), ("z", xyz[k, 2]), ("vx", v[k] * math.cos(head[k])),
+                              ("vy", 0.0), ("vz", v[k] * math.sin(head[k])),
+                              ("rpm", traffic.virtual_rpm(v[k], acc[k], kinds[k])), ("cyl", cyl), ("bright", bright),
+                              ("on", 1.0)):
+                a.set(p + name, float(val))
+        car = game.car
+        d = np.hypot(xyz[:, 0] - car.x, xyz[:, 2] - car.z)
+        a.set("traffic.count", float(max(0, int((d < traffic.BED_NEAR).sum()) - len(pick))))
+        stopped = abs(car.speed) < 1.0
+        for k in self._honks.due(wait, (d < 30.0) & stopped):
+            a.event("honk", family=table[look[k]][1], seed=self._frame + int(k), x=float(xyz[k, 0]),
+                    y=float(xyz[k, 1]), z=float(xyz[k, 2]))
+        if len(self._traffic_slow) == len(v):
+            for k in np.flatnonzero((kinds == "bus") & (v < 0.5) & ~self._traffic_slow):
+                a.event("brakes", seed=self._frame + int(k), x=float(xyz[k, 0]), y=float(xyz[k, 1]), z=float(xyz[k, 2]))
+        self._traffic_slow = v < 0.5
 
     def close(self) -> None:
         self.audio.close()

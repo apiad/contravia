@@ -1120,6 +1120,7 @@ class Game:
         xyz, head, pitch = cars.world(self.surface)
         bxyz, bhead, bpitch, blook = crashes.poses()
         self.fleet.draw(np.r_[xyz, bxyz] - self.o, np.r_[head, bhead], np.r_[pitch, bpitch], np.r_[cars.look, blook])
+        self.traffic_now = (xyz, head, cars.v.copy(), cars.look.copy(), cars.wait.copy())  # for the sound
         now = time.perf_counter()
         if now - self._state_at > 0.5:
             self._state_at = now
