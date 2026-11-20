@@ -150,12 +150,13 @@ class Fleet:
         self.overflow = 0
         self._next = None  # (xyz, heading, pitch, look) to draw on the next frame
         every = kept(engine.state, "traffic looks", _stamp(), meshes)
+        paint = StandardMaterial("#ffffff", roughness=0.6, vertex_colors=True)  # one for every look: its colours are in its vertices
         for i, n in sorted(self.pool.items()):
             if not n:
                 continue
             pos = np.zeros((n, 3))
             pos[:, 1] = PARKED
-            engine.spawn(Mesh(dict(every[i])), Material(StandardMaterial("#ffffff", roughness=0.6, vertex_colors=True)),
+            engine.spawn(Mesh(dict(every[i])), Material(paint),
                          Transform(pos=pos),
                          Slot(k=(i * SLOT + np.arange(n)).astype(float)), n=n)
 
