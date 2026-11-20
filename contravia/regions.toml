@@ -15,7 +15,12 @@
 #   storeys  [lo, hi], palette ["#rrggbb", …], wear [lo, hi]: over the type's row, for a type the region chose.
 #   portal   eclectic and colonial buildings of two storeys or more stand on columns along main roads.
 #
+# [region.blocks]
+#   fill     what a block OSM left empty gets: "houses" (filler houses, the default) or "none".
+#   parks    "keep" (the default) or "drop" the parks contravia prepare laid inside the region; not for a municipio.
+#
 # Without a region, a building is prefab when OSM calls it apartments, and suburban otherwise.
+# A tag or OSM id is looked up in regions.src: after naming a new one, run contravia regions <pbf>.
 
 # The municipio layer: what facades.choose wrote in code before regions.
 
@@ -96,3 +101,18 @@ priority = 20
 [region.buildings]
 types = { colonial = 0.7, eclectic = 0.3 }
 storeys = [2, 2]
+
+# The tag regions: what OSM's land use asks for.
+
+[[region]]
+name = "Cementerios"
+where = { tag = "landuse=cemetery" }
+priority = 10
+[region.blocks]
+fill = "none"
+parks = "drop"
+
+[[region]]
+name = "Necrópolis de Colón"
+where = { osm = "relation/3531562" }
+priority = 30

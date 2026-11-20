@@ -51,6 +51,11 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   height within 4 m of anything built. The wheels and the trees stand on the same grid. OSM's features are kept in
   `shore.src` beside `coast.src` (3 MB): `contravia shore <pbf> --out data/cuba` writes it into a built island
   without rebuilding it, and `prepare` and `source` write it with the coast.
+- What changes by place is in `contravia/regions.toml` (`contravia/regions.py`, spec
+  `docs/superpowers/specs/2026-11-20-regions-design.html`), applied when a cell opens: the municipio rules of
+  buildings, Guanabacoa's two storeys, and cemeteries (`landuse=cemetery`) with no filler houses and no laid parks.
+  A region named by OSM tag or id finds its polygon in `regions.src` beside `coast.src` (40 KB): after naming a new
+  one, run `contravia regions <pbf> --out data/cuba`; `source` writes it with the coast and the first run copies it.
 - In the map the camera stretches heights (`mapview.exaggeration`: 1 up to 10 km of height, 20 at 1 000 km, through
   manifoldx's `Camera.vertical_scale`), the summaries mix in height tints from the city stage up and shade the
   slope as stretched at their level (`rules/cover.py`): a stylised relief atlas, not a photo.
