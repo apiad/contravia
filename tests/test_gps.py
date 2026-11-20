@@ -5,7 +5,7 @@ import time
 from graphs import grid, make_graph, straight
 
 from contravia.driving_help import STRAIGHT
-from contravia.gps import Router, RouteGraph, arc_cost, route
+from contravia.gps import Router, RouteGraph, Step, arc_cost, distance_text, route, say, steps
 
 
 def rg_joined(rg) -> bool:
@@ -162,3 +162,73 @@ def test_the_router_says_none_when_no_street_is_near():
     r = Router(lambda: RouteGraph.from_graphs([grid(3)]))
     r.ask((10.0, 0.0, 0.0), (5000.0, 5000.0))
     assert wait_for(r.take, 5.0) == "none"
+
+
+@pytest.mark.parametrize("m, text", [(12, "Ahora"), (64, "60 m"), (180, "200 m"), (940, "950 m"),
+                                     (1240, "1,2 km"), (24400, "24,4 km")])
+def test_distances_round_as_the_spec_says(m, text):
+    assert distance_text(m) == text
+
+
+@pytest.mark.parametrize("deg, words", [(90, "Dobla a la derecha en Galiano"), (-90, "Dobla a la izquierda en Galiano"),
+                                        (45, "Dobla ligeramente a la derecha en Galiano")])
+def test_the_turn_s_angle_picks_the_verb(deg, words):
+    step = Step(200.0, "turn" if abs(deg) > 60 else "slight", np.radians(deg), "Galiano")
+    assert say(step, 200.0, None) == ("200 m", words)
+
+
+def test_an_unnamed_street_gets_no_name():
+    _, what = say(Step(200.0, "turn", np.radians(90), None), 200.0, None)
+    assert what == "Dobla a la derecha"
+
+
+def test_a_long_stretch_says_follow_along_the_street():
+    assert say(Step(2600.0, "turn", np.radians(90), "Paseo"), 2400.0, "Malecón") == ("2,4 km", "Sigue 2,4 km por Malecón")
+    assert say(Step(2600.0, "turn", np.radians(90), "Paseo"), 2400.0, None) == ("2,4 km", "Dobla a la derecha en Paseo")
+
+
+def test_straight_through_with_the_same_name_is_not_a_step():
+    g = make_graph([(0, 0), (100, 0), (200, 0), (100, 100)], [(0, 1), (1, 2), (1, 3)],
+                   names=["Neptuno", "Neptuno", "Galiano"])
+    rg = RouteGraph.from_graphs([g])
+    assert [s.kind for s in steps(rg, route(rg, (0, 0.0), [(1, 90.0)]))] == ["arrive"]
+
+
+def test_a_turn_is_a_step_at_its_junction_with_the_new_street_s_name():
+    g = make_graph([(0, 0), (100, 0), (200, 0), (100, 100)], [(0, 1), (1, 2), (1, 3)],
+                   names=["Neptuno", "Neptuno", "Galiano"])
+    rg = RouteGraph.from_graphs([g])
+    first, last = steps(rg, route(rg, (0, 20.0), [(2, 60.0)]))
+    assert (first.kind, first.name, first.at) == ("turn", "Galiano", pytest.approx(80.0))
+    assert last.kind == "arrive" and last.at == pytest.approx(140.0)
+
+
+def test_rural_roads_with_no_names_still_merge_and_never_say_en_nothing():
+    rg = RouteGraph.from_graphs([grid(3)])
+    for start, end in sample_pairs(rg, 20, seed=2):
+        r = route(rg, start, [end])
+        for st in steps(rg, r):
+            words = say(st, 300.0, None)[1]
+            assert not words.endswith(" en") and " en " not in words and "None" not in words
+
+
+def roundabout_fixture():
+    """A one-way ring (one way id) round the origin, counterclockwise seen from above with north up, and four
+    two-way arms: ring junctions 0 east, 1 north, 2 west, 3 south; arm ends 4 to 7 in the same order."""
+    ring = [(20, 0), (0, -20), (-20, 0), (0, 20)]
+    arms = [(100, 0), (0, -100), (-100, 0), (0, 100)]
+    edges = [(0, 1), (1, 2), (2, 3), (3, 0)]
+    for k in range(4):
+        edges += [(k + 4, k), (k, k + 4)]
+    g = make_graph(ring + arms, edges)
+    g.a["g_way"][:4] = 999999
+    return g
+
+
+def test_a_roundabout_says_which_exit():
+    g = roundabout_fixture()
+    rg = RouteGraph.from_graphs([g])
+    r = route(rg, (edge(g, 4, 0), 30.0), [(edge(g, 2, 6), 50.0)])
+    first = steps(rg, r)[0]
+    assert first.kind == "roundabout" and first.exit == 2
+    assert say(first, 80.0, None)[1].startswith("En la rotonda, toma la segunda salida")

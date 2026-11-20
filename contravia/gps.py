@@ -356,3 +356,108 @@ class Router:
             return "none"
         r.to, r.title = (float(to[0]), float(to[1])), title
         return r
+
+
+SLIGHT = np.radians(60)  # past STRAIGHT and under this, a turn is slight
+LONG = 1000.0  # metres: a step farther than this says to follow the street the car is on
+ORDINALS = ("primera", "segunda", "tercera", "cuarta", "quinta", "sexta", "séptima", "octava")
+
+
+@dataclass
+class Step:
+    """What to do at a junction `at` metres from the route's start: kind is "straight", "slight", "turn",
+    "roundabout" (exit counts the exits, the one taken included) or "arrive"; name is the street taken."""
+
+    at: float
+    kind: str
+    angle: float
+    name: str | None
+    exit: int = 0
+
+
+def roundabouts(rg: RouteGraph) -> np.ndarray:
+    """Whether each edge is part of a roundabout: a way whose edges are all one way and close a loop."""
+    first, last = rg.poly[rg.poly_start[:-1]], rg.poly[rg.poly_start[1:] - 1]
+    key = lambda p: [tuple(q) for q in np.round(p, 1).tolist()]  # noqa: E731
+    starts, ends = key(first), key(last)
+    out = np.zeros(len(rg.length), bool)
+    order = np.argsort(rg.way, kind="stable")
+    bounds = np.flatnonzero(np.r_[True, rg.way[order][1:] != rg.way[order][:-1], True])
+    for lo, hi in zip(bounds[:-1], bounds[1:]):
+        es = order[lo:hi].tolist()
+        if len(es) < 2:
+            continue
+        s, e = {starts[i] for i in es}, [ends[i] for i in es]
+        one_way = len(s) == len(es) and not ({(starts[i], ends[i]) for i in es} & {(ends[i], starts[i]) for i in es})
+        if one_way and all(p in s for p in e) and {starts[i] for i in es} == set(e):
+            out[es] = True
+    return out
+
+
+def _arc(rg: RouteGraph, a: int, b: int) -> int:
+    return int(np.flatnonzero((rg.arc_in == a) & (rg.arc_out == b))[0])
+
+
+def steps(rg: RouteGraph, route: Route) -> list[Step]:
+    """The route's steps: a junction where it turns, goes round a roundabout, or goes straight on into another named
+    street where another exit is as straight; any other straight on is not a step. The last step is "arrive"."""
+    ring = getattr(rg, "_ring", None)
+    if ring is None:
+        ring = rg._ring = roundabouts(rg)
+    names = lambda e: str(rg.names[rg.name[e]]) if rg.name[e] >= 0 else None  # noqa: E731
+    edges = route.edges.tolist()
+    out, at, k = [], float(rg.length[edges[0]] - route.s0), 0
+    while k < len(edges) - 1:
+        a, b = edges[k], edges[k + 1]
+        angle = float(rg.angle[_arc(rg, a, b)])
+        if ring[b] and not ring[a]:  # into a roundabout: count the exits until the route leaves it
+            here, exits, j = at, 0, k + 1
+            while j < len(edges) - 1 and ring[edges[j]]:
+                outs = rg.arc_out[rg.arc_in == edges[j]]
+                exits += int(np.sum(~ring[outs]))
+                at += float(rg.length[edges[j]])
+                j += 1
+            if j < len(edges) and not ring[edges[j]]:
+                out.append(Step(here, "roundabout", angle, names(edges[j]), exits))
+                k = j
+                continue
+            at = here
+        others = rg.angle[(rg.arc_in == a) & (rg.arc_out != b)]
+        fork = bool(np.any(np.abs(others) < STRAIGHT)) and names(b) is not None and names(b) != names(a)
+        if abs(angle) >= STRAIGHT or fork:
+            kind = "straight" if abs(angle) < STRAIGHT else "slight" if abs(angle) < SLIGHT else "turn"
+            out.append(Step(at, kind, angle, names(b)))
+        at += float(rg.length[b])
+        k += 1
+    out.append(Step(float(route.metres), "arrive", 0.0, None))
+    return out
+
+
+def distance_text(m: float) -> str:
+    """Metres as the panel writes them: «Ahora» under 30, 10 m steps under 100, 50 m steps under a kilometre, then
+    kilometres with one decimal and a comma."""
+    if m < 30:
+        return "Ahora"
+    if m < 100:
+        return f"{round(m / 10) * 10:.0f} m"
+    if round(m / 50) * 50 < 1000:
+        return f"{round(m / 50) * 50:.0f} m"
+    return f"{m / 1000:.1f}".replace(".", ",") + " km"
+
+
+def say(step: Step, metres: float, along: str | None) -> tuple[str, str]:
+    """(distance, words) of a step `metres` ahead: «Dobla a la derecha en Galiano»; past LONG, on a named street,
+    «Sigue 2,4 km por Malecón»."""
+    far = distance_text(metres)
+    if metres > LONG and along and step.kind != "arrive":
+        return far, f"Sigue {far} por {along}"
+    side = "derecha" if step.angle > 0 else "izquierda"
+    if step.kind == "arrive":
+        return far, "Llegas a tu destino"
+    if step.kind == "roundabout":
+        nth = ORDINALS[min(step.exit, len(ORDINALS)) - 1] if step.exit > 0 else "primera"
+        return far, f"En la rotonda, toma la {nth} salida" + (f" hacia {step.name}" if step.name else "")
+    if step.kind == "straight":
+        return far, "Sigue recto" + (f" por {step.name}" if step.name else "")
+    verb = "Dobla ligeramente a la " if step.kind == "slight" else "Dobla a la "
+    return far, verb + side + (f" en {step.name}" if step.name else "")
