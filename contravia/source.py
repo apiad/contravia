@@ -14,13 +14,14 @@ import numpy as np
 from contravia.prepare import Raw, read_osm
 from contravia.terrain import Terrain
 
-VERSION = 3  # 2: road names, places and consejos populares; 3: land never made a park
+VERSION = 4  # 2: road names, places and consejos populares; 3: land never made a park; 4: the satellite's built-up
 LEVEL = 19  # zstd level: packing is done once, unpacking stays fast at any level
 
 
-def pack(pbf, dem, out, provinces=None) -> dict:
-    """Write out/<slug>.src for each province (all by default): its part of the extract and its cleaned relief
-    from the GLO-30 tiles in dem (downloaded there if missing). Returns {name: sizes in bytes}."""
+def pack(pbf, dem, out, provinces=None, worldcover=None) -> dict:
+    """Write out/<slug>.src for each province (all by default): its part of the extract, its cleaned relief
+    from the GLO-30 tiles in dem and, with worldcover, where the satellite sees buildings (contravia.builtup), from
+    the WorldCover tiles there; tiles missing from either folder are downloaded. Returns {name: sizes in bytes}."""
     from contravia import coast
     from contravia.geo import PROVINCES
     from contravia.prepare import TERRAIN_STRIDE, province_boxes
@@ -35,7 +36,12 @@ def pack(pbf, dem, out, provinces=None) -> dict:
         if provinces and name not in provinces and slug not in provinces:
             continue
         terrain = read_terrain(dem, boxes[name], stride=TERRAIN_STRIDE.get(name, 3))
-        sizes[name] = write(read_osm(pbf, boundary=name, box=boxes[name]), terrain, Path(out) / f"{slug}.src")
+        raw = read_osm(pbf, boundary=name, box=boxes[name])
+        if worldcover:
+            from contravia import builtup
+
+            raw.built_up = builtup.read(worldcover, boxes[name])
+        sizes[name] = write(raw, terrain, Path(out) / f"{slug}.src")
         print(f"{name}: {sizes[name]['bytes'] / 1e6:.1f} MB", flush=True)
     return sizes
 
@@ -59,8 +65,8 @@ def load(path) -> tuple[Raw, Terrain]:
     return body["raw"], terrain
 
 
-def main(pbf, dem, out, provinces=None) -> dict:
+def main(pbf, dem, out, provinces=None, worldcover=None) -> dict:
     """Pack each province's source and print the island's size."""
-    sizes = pack(pbf, dem, out, provinces)
+    sizes = pack(pbf, dem, out, provinces, worldcover)
     print(f"{out}: {sum(v['bytes'] for v in sizes.values()) / 1e6:.1f} MB in {len(sizes)} provinces")
     return sizes

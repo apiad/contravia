@@ -14,8 +14,9 @@ def _rect(w, h, turn=0.0, at=(1000.0, 2000.0)):
     return p @ np.array([[c, s], [-s, c]]) + at
 
 
-def _kind(ring, built=0.0, buildings=0, green=0.0, city=True, boulevard=False, prado=False):
-    return parks.classify([Polygon(ring)], [built], [buildings], [green], [city], [boulevard], [prado])[0]
+def _kind(ring, built=0.0, buildings=0, green=0.0, city=True, boulevard=False, prado=False, seen=None):
+    return parks.classify([Polygon(ring)], [built], [buildings], [green], [city], [boulevard], [prado],
+                          None if seen is None else [seen])[0]
 
 
 def test_an_empty_city_block_is_a_city_park_with_a_centrepiece_on_its_plaza():
@@ -52,6 +53,15 @@ def test_built_blocks_are_not_parks_unless_osm_calls_them_green():
     assert _kind(ring, built=0.08 * 8000, buildings=6, green=6000) == parks.CITY
     assert _kind(_rect(30, 30)) == parks.NONE  # under 1 500 m²
     assert _kind(_rect(200, 12)) == parks.NONE  # too narrow
+
+
+def test_a_block_the_satellite_sees_built_is_houses_osm_lacks_not_a_park():
+    ring = _rect(100, 80)
+    assert _kind(ring, seen=0.4) == parks.CITY
+    assert _kind(ring, seen=parks.SEEN_BUILT) == parks.NONE
+    assert _kind(_rect(120, 100), city=False, seen=0.9) == parks.NONE
+    assert _kind(ring, green=6000, seen=0.9) == parks.CITY  # OSM's green wins
+    assert _kind(_rect(300, 35), prado=True, seen=0.9) == parks.PRADO
 
 
 def test_the_same_block_gives_the_same_park():

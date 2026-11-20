@@ -39,6 +39,8 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--out", default="data/cuba")
     p.add_argument("--dem", help="folder for the Copernicus GLO-30 tiles, downloaded there if missing; without it the island is flat")
     p.add_argument("--province", action="append", help="build only this province (name or slug); repeatable")
+    p.add_argument("--worldcover", help="folder for the ESA WorldCover tiles, downloaded there if missing: blocks the "
+                                        "satellite sees built get filler houses, not parks")
     p.add_argument("--resume", action="store_true", help="leave the provinces already built in --out as they are")
     p.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2),
                    help="provinces built at once, each in its own process of about 2.5 GB (half the cores by default)")
@@ -46,6 +48,7 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("source", help="pack a Cuba OSM extract and the GLO-30 tiles into the compact source the game ships")
     p.add_argument("pbf")
     p.add_argument("--dem", required=True, help="folder with the Copernicus GLO-30 tiles")
+    p.add_argument("--worldcover", required=True, help="folder for the ESA WorldCover tiles, downloaded there if missing")
     p.add_argument("--out", default="data/cuba-src", help="folder for one <province>.src each")
     p.add_argument("--province", action="append", help="pack only this province (name or slug); repeatable")
 
@@ -141,11 +144,12 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "prepare":
         from contravia.prepare import main as prepare
 
-        prepare(args.pbf, args.out, dem=args.dem, provinces=args.province, resume=args.resume, jobs=args.jobs)
+        prepare(args.pbf, args.out, dem=args.dem, provinces=args.province, resume=args.resume, jobs=args.jobs,
+                worldcover=args.worldcover)
     elif args.command == "source":
         from contravia.source import main as source
 
-        source(args.pbf, args.dem, args.out, args.province)
+        source(args.pbf, args.dem, args.out, args.province, args.worldcover)
     elif args.command == "coast":
         import json
         from pathlib import Path
