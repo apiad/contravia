@@ -337,6 +337,26 @@ class Sound:
         a.set("music.intensity", 0.5 if game.mode == "menu" else 1.0)
         a.set("music.date", float(when.date().toordinal()) if when is not None else 0.0)
 
+    def usage(self) -> dict:
+        """What the sound costs, for the bench: underruns, and each process's share of a core so far."""
+        st = self.audio.state()
+        out = {"audio_underruns": st.get("underruns", 0), "audio_cpu": st.get("cpu", 0.0)}
+        p = getattr(self, "music_process", None)
+        if p is not None and p.pid:
+            try:
+                from pathlib import Path
+
+                fields = Path(f"/proc/{p.pid}/stat").read_text().rsplit(")", 1)[1].split()
+                ticks = int(fields[11]) + int(fields[12])  # utime + stime
+                import os
+
+                started = int(fields[19]) / os.sysconf("SC_CLK_TCK")
+                uptime = float(Path("/proc/uptime").read_text().split()[0])
+                out["music_cpu"] = round(ticks / os.sysconf("SC_CLK_TCK") / max(uptime - started, 1e-6), 3)
+            except (OSError, IndexError, ValueError):  # not Linux, or the process is gone
+                pass
+        return out
+
     def close(self) -> None:
         p = getattr(self, "music_process", None)
         if p is not None and p.is_alive():

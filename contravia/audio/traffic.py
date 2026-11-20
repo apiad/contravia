@@ -68,8 +68,8 @@ def cheap_engine(slot: int, ctl) -> Unit:
     p = f"traffic.{slot}."
     fire = Live(lambda: ctl(p + "rpm") * max(ctl(p + "cyl"), 1.0) / 120.0, start=0.0)
     on = Share(Live(lambda: 1.0 if ctl(p + "on") > 0.5 else 0.0, start=0.0))
-    cut = Live(lambda: max(ctl(p + "bright"), 200.0), start=1000.0)
-    return Quiet(LowPass(Wavetable(_pulse(), fire), cut) * (on.tap() * 0.5), lambda: ctl(p + "on"))
+    # A fixed low-pass: a moving cutoff would redesign the filter many times a block, for four cars.
+    return Quiet(LowPass(Wavetable(_pulse(), fire), 1200.0) * (on.tap() * 0.5), lambda: ctl(p + "on"))
 
 
 def bed(ctl) -> Unit:

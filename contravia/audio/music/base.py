@@ -16,6 +16,7 @@ from euterpe.sound import FDNReverb, Pan, Unit
 
 MAJOR = [0, 2, 4, 5, 7, 9, 11]
 MINOR = [0, 2, 3, 5, 7, 8, 11]  # harmonic minor, for the dominant
+MUSIC_GAIN = 0.65  # the music sits about 14 LU under the engine at cruise, before the volume rows
 PERCUSSION = ("bongo", "maracas", "guiro", "claves", "palitos", "cajon", "tumba")
 
 
@@ -101,7 +102,7 @@ class Style:
         mix = parts[0]
         for p in parts[1:]:
             mix = mix + p
-        return FDNReverb(mix * self.level, decay=1.6, size=0.6, mix=self.reverb, seed=self.seed % 100000), nbars * self.bar_s
+        return FDNReverb(mix * (self.level * MUSIC_GAIN), decay=1.6, size=0.6, mix=self.reverb, seed=self.seed % 100000), nbars * self.bar_s
 
 
 def _on_bar(e, bar_s: float) -> bool:

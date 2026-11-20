@@ -90,9 +90,12 @@ def squeal(ctl) -> Unit:
 
 def wind(ctl) -> Unit:
     """The air past the car: band noise that rises in pitch and level with speed, muffled in the cabin."""
-    speed = Share(_live(ctl, "car.speed", abs))
-    level = Live(lambda: (min(abs(ctl("car.speed")), 50.0) / 40.0) ** 2 * (1 - 0.7 * ctl("car.cabin")))
-    return BandPass(PinkNoise(seed=31), speed.tap() * 20.0 + 200.0, 0.7) * (level * 0.25)
+    # Two fixed bands crossed by speed: the rise in pitch without redesigning a filter every block.
+    def level(): return (min(abs(ctl("car.speed")), 50.0) / 40.0) ** 2 * (1 - 0.7 * ctl("car.cabin"))
+    def high(): return min(abs(ctl("car.speed")) / 35.0, 1.0)
+    low_band = BandPass(PinkNoise(seed=31), 350.0, 0.7) * Live(lambda: level() * (1 - high()))
+    high_band = BandPass(PinkNoise(seed=32), 1000.0, 0.7) * Live(lambda: level() * high())
+    return Quiet((low_band + high_band) * 0.25, level)
 
 
 HORNS = {  # family group -> (pitches in Hz, wave)

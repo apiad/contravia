@@ -93,4 +93,4 @@ def player_engine(family: str, idle: float, red: float, seed: int, ctl) -> Unit:
     game can hand it over as functools.partial(player_engine, family, idle, red, seed)."""
     from contravia.rules.sound import of
 
-    return engine(of(family), idle, red, ctl, seed) * 0.8
+    return engine(of(family), idle, red, ctl, seed) * 2.4  # the engine leads the mix: about -25 LUFS at cruise
