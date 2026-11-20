@@ -102,9 +102,11 @@ def test_trees_fade_in_change_level_over_each_other_and_fade_out_before_they_go(
     now = [0.0]
     forest.clock = lambda: now[0]
     monkeypatch.setattr(forest, "grow", lambda i, j: _trees([[5.0, 5.0], [400.0, 5.0]]))
-    forest.update({(0, 0)}, (0.0, 5.0, 0.0))
-    forest._pending[(0, 0)].result()
-    forest.update({(0, 0)}, (0.0, 5.0, 0.0))  # the cell's trees spawn, drawing nothing yet
+    for _ in range(200):  # the grow thread may finish within the first update or after it
+        forest.update({(0, 0)}, (0.0, 5.0, 0.0))  # the cell's trees spawn, drawing nothing yet
+        if forest.stands:
+            break
+        forest._pending[(0, 0)].result()
     stand = forest.stands[(0, 0)]
     first = stand.ents[stand.ents >= 0]
     fade = engine.store._components["Fade"]
