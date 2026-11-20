@@ -156,6 +156,11 @@ shore's grid (`rules.shore.vegetated`). The
   `Options.locked_assists` keeps some off, and `Road.locate` finds the car's edge, lane and distance along it.
   While driving, L turns it to the next level (5, 4, ... 0, then 5 again, `next_level`) as the options would,
   saves it and names the level on the HUD for a moment.
+- The GPS (`contravia/gps.py`, spec `docs/superpowers/specs/2026-11-20-gps-design.html`) routes from anywhere to
+  anywhere on the island over one routing graph, the 16 provinces' graphs joined where they share an OSM node, kept
+  in `route.npz` beside `index.npz` (about 42 MB). It is built by the first run, by `contravia route`, or on the
+  router's thread the first time a route is asked, and again when a province file is newer or `gps.ROUTE_VERSION`
+  changes. `contravia route --from LAT,LON --to LAT,LON` prints a route's steps in Spanish, its length and time.
 - A script of your own that builds `Game` (custom shots, probes) must run its code under
   `if __name__ == "__main__":`: the streamer starts worker processes with spawn, which re-imports the script and
   fails with "start a new process before the current process has finished its bootstrapping phase".

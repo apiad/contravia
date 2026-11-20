@@ -461,3 +461,35 @@ def say(step: Step, metres: float, along: str | None) -> tuple[str, str]:
         return far, "Sigue recto" + (f" por {step.name}" if step.name else "")
     verb = "Dobla ligeramente a la " if step.kind == "slight" else "Dobla a la "
     return far, verb + side + (f" en {step.name}" if step.name else "")
+
+
+def main(data: str, start: str, to: str) -> int:
+    """`contravia route`: print the steps of the route between two "LAT,LON" points of the island built in data,
+    then its length, time and how long the search took; 1 with a reason on stderr when there is none."""
+    import sys
+    import time
+
+    from contravia.geo import to_local
+    from contravia.world import World
+
+    world = World.load(data)
+    rg = RouteGraph.for_world(world)
+    (ax, az), (bx, bz) = to_local(*np.array([[float(v) for v in p.split(",")] for p in (start, to)]).T)
+    rg.csr(), rg.near(ax, az, 1.0)  # the search's indexes, built once, outside the time it reports
+    t = time.perf_counter()
+    s, ends = rg.start_at(ax, az, 0.0), rg.ends_at(bx, bz)
+    if s is None or not ends:
+        print("no road near " + (start if s is None else to), file=sys.stderr)
+        return 1
+    r = route(rg, s, ends)
+    ms = (time.perf_counter() - t) * 1000
+    if r is None:
+        print("no route", file=sys.stderr)
+        return 1
+    prev = 0.0
+    for st in steps(rg, r):
+        far, words = say(st, st.at - prev, None)
+        print(f"{far:>8}  {words}")
+        prev = st.at
+    print(f"{r.metres / 1000:.1f}".replace(".", ",") + f" km · {round(r.seconds / 60)} min · route found in {ms:.0f} ms")
+    return 0
