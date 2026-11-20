@@ -94,7 +94,11 @@ def test_a_recorded_engine_follows_the_rpm(options, tmp_path):
     g = fake_game(2400.0)
     s.attach(g)
     t = time.time()
-    while time.time() - t < 3.0:
+    while time.time() - t < 30 and s.audio.state()["levels"]["engine"] < -60:  # until the engine is built
+        s.frame(g)
+        time.sleep(1 / 60)
+    t = time.time()
+    while time.time() - t < 2.5:
         s.frame(g)
         time.sleep(1 / 60)
     s.close()
@@ -106,7 +110,8 @@ def test_a_recorded_engine_follows_the_rpm(options, tmp_path):
     band = (f > 40) & (f < 400)
     firing = 2400 * 4 / 120  # a four-cylinder four-stroke at 2400 rpm: 80 Hz
     peaks = f[band][np.argsort(spec[band])[-3:]]
-    assert np.abs(x).max() > 0.01 and any(abs(p / firing - round(p / firing)) < 0.05 for p in peaks)
+    assert np.abs(x).max() > 0.01, "silent"
+    assert any(abs(p / firing - round(p / firing)) < 0.05 for p in peaks), f"peaks {peaks}"
 
 
 class Recorder:

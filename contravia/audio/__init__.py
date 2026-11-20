@@ -19,11 +19,12 @@ BUSES = ("engine", "effects", "ambience", "music", "ui")
 ROWS = {"engine": "vol_engine", "effects": "vol_effects", "ambience": "vol_ambience", "music": "vol_music"}
 PAUSED_MUSIC = 10 ** (-10 / 20)  # the pause lowers the music by 10 dB
 DRIVING = ("drive", "aim")  # modes in which the car and the world are heard
-MODULES = ["contravia.rules.sound", "contravia.audio.engine", "contravia.audio.car", "contravia.audio"]  # re-imported in the sound process on a reload
+MODULES = ["contravia.rules.sound", "contravia.audio.engine", "contravia.audio.car", "contravia.audio.weather",
+           "contravia.audio"]  # re-imported in the sound process on a reload
 
 # Every control the game writes. A process started with fewer (by older code) is replaced.
 CONTROLS = (*pose_names("car"), "car.rpm", "car.throttle", "car.speed", "car.slip", "car.wet", "car.surface",
-            "car.horn", "car.cabin")
+            "car.horn", "car.cabin", "car.under", "weather.rain")
 
 
 class Sound:
@@ -34,6 +35,9 @@ class Sound:
         self._mode, self._gains, self._published = None, {b: 1.0 for b in BUSES}, 0.0
         self._frame, self._crash_at, self._bump_at, self._travel = 0, -100, -100, None
         self._surface_at, self._surface_code, self._horn_was = 0.0, 0.0, False
+        from contravia.audio.weather import Thunder
+
+        self._thunder, self._under = Thunder(seed=7), False
 
     @classmethod
     def start(cls, state, options, backend: str = "device", path=None) -> Sound:
@@ -58,12 +62,18 @@ class Sound:
         from contravia.audio import car
 
         a = self.audio
-        a.source("roll", car.roll, "effects", placed=("car", 5.0, 300.0))
-        a.source("squeal", car.squeal, "effects", placed=("car", 5.0, 300.0))
+        a.source("roll", car.roll, "effects")  # the camera follows a few metres behind: only the engine is placed
+        a.source("squeal", car.squeal, "effects")
         a.source("wind", car.wind, "effects")
         a.voice("crash", car.crash, "effects", cap=4, placed=True)
         a.voice("bump", car.bump, "effects", cap=2, placed=True)
         a.voice("bell", car.bell, "effects", cap=1, placed=True)
+        from contravia.audio import weather
+
+        a.source("rain", weather.rain, "ambience")
+        a.source("bubbles", weather.bubbles, "effects")
+        a.voice("thunder", weather.thunder, "ambience", cap=3)
+        a.voice("splash", weather.splash, "effects", cap=1, placed=True)
         self.vehicle(game)
 
     def vehicle(self, game) -> None:
@@ -77,7 +87,7 @@ class Sound:
                           "engine", placed=("car", 5.0, 300.0))
         from contravia.audio import car
 
-        self.audio.source("horn", functools.partial(car.horn, game.family), "effects", placed=("car", 5.0, 300.0))
+        self.audio.source("horn", functools.partial(car.horn, game.family), "effects")
         self._bicycle = game.family in ("bicitaxi", "bicicleta")
 
     @staticmethod
@@ -102,9 +112,11 @@ class Sound:
         self._gains = self.gains(options)
         self._mode = None  # apply on the next frame
 
-    def frame(self, game) -> None:
-        """Once per frame: the controls, the listener and the mode's gains."""
+    def frame(self, game, now: float | None = None) -> None:
+        """Once per frame: the controls, the listener and the mode's gains. now: seconds on a clock
+        of the caller's (the wall clock by default), for the thunder."""
         a = self.audio
+        now = time.monotonic() if now is None else now
         if game.mode != self._mode:
             self._mode = game.mode
             for bus, g in self.mode_gains(game.mode, self._gains).items():
@@ -140,8 +152,8 @@ class Sound:
         a.set("car.horn", horn_on)
         a.set("car.cabin", 0.0)  # the camera follows the car from outside; there is no cabin view yet
         self._events(game)
+        self._weather(game, now)
         a.tick()
-        now = time.monotonic()
         if now - self._published > 0.5:
             self._published = now
             game.engine.state.audio = a.state()
@@ -177,6 +189,21 @@ class Sound:
                     self._bump_at = self._frame
                     a.event("bump", depth=jump, seed=self._frame, x=car.x, y=car.y, z=car.z)
             self._travel = travel
+
+    def _weather(self, game, now: float) -> None:
+        """The rain's level, thunder in a storm, and the sea: a splash, then muffled while sinking."""
+        a = self.audio
+        w = getattr(game, "weather_now", None)
+        a.set("weather.rain", w.rain if w is not None else 0.0)
+        for d in self._thunder.due(now, w.state if w is not None else "clear"):
+            a.event("thunder", distance=d, seed=int(now * 1000) & 0xFFFF)
+        under = getattr(game, "sinking", None) is not None
+        if under != self._under:
+            self._under = under
+            a.lowpass(400.0 if under else 20000.0)
+            if under:
+                a.event("splash", seed=self._frame, x=game.car.x, y=game.car.y, z=game.car.z)
+        a.set("car.under", 1.0 if under else 0.0)
 
     def close(self) -> None:
         self.audio.close()

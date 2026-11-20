@@ -39,13 +39,30 @@ class Timed(Unit):
         return self.src.block(n)
 
 
+class Quiet(Unit):
+    """Its source, or silence without asking the source while level() stays at 0: a horn nobody
+    presses costs nothing. Its spectrum is its source's."""
+
+    def __init__(self, src: Unit, level):
+        self.src, self.level, self.was = src, level, 1.0
+        self.channels = src.channels
+
+    def block(self, n: int) -> np.ndarray:
+        lv = self.level()
+        if lv <= 0.0 and self.was <= 0.0:
+            return np.zeros((n, 2) if self.channels == 2 else n, np.float32)
+        self.was = lv
+        return self.src.block(n)
+
+
 def roll(ctl) -> Unit:
     """The tyres on the ground: noise darker on asphalt, brighter and louder off it, rising with speed."""
     speed = Share(_live(ctl, "car.speed", lambda v: min(abs(v) / 30.0, 1.5)))
     out = None
     for k, (cut, level) in enumerate(SURFACES):
         on = _live(ctl, "car.surface", lambda v, k=k: 1.0 if round(v) == k else 0.0)
-        part = LowPass(PinkNoise(seed=11 + k), cut) * (speed.tap() * on * level)
+        part = Quiet(LowPass(PinkNoise(seed=11 + k), cut) * (speed.tap() * on * level),
+                     lambda k=k: float(round(ctl("car.surface")) == k and abs(ctl("car.speed")) > 0.1))
         out = part if out is None else out + part
     return out
 
@@ -55,7 +72,7 @@ def squeal(ctl) -> Unit:
     slip = _live(ctl, "car.slip", lambda v: min(max(v, 0.0) * 2.0, 1.0))
     dry = _live(ctl, "car.wet", lambda v: 1.0 - 0.6 * min(max(v, 0.0), 1.0))
     centre = Sine(5.3) * 150.0 + 1050.0
-    return BandPass(WhiteNoise(seed=21), centre, 6.0) * (slip * dry * 0.6)
+    return Quiet(BandPass(WhiteNoise(seed=21), centre, 6.0) * (slip * dry * 0.6), lambda: ctl("car.slip"))
 
 
 def wind(ctl) -> Unit:
@@ -95,7 +112,7 @@ def horn(family: str, ctl) -> Unit:
         tone = part if tone is None else tone + part
     if _horn_kind(family) == "air":
         tone = tone + WhiteNoise(seed=41) * 0.2
-    return BandPass(tone, pitches[0] * 2.0, 0.8) * (on.tap() * 0.35)
+    return Quiet(BandPass(tone, pitches[0] * 2.0, 0.8) * (on.tap() * 0.35), lambda: ctl("car.horn"))
 
 
 def crash(impulse: float, seed: int) -> Timed:
