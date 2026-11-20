@@ -83,11 +83,11 @@ class Style:
             before = {name: len(v) for name, v in ev.items()}
             self.bar(k, (k - k0) * self.bar_s, ev)
             part = self.section(k)
-            for name in ev:
+            for name, notes in ev.items():
                 rest = (part == "intro" and name != "tres") or (part == "break" and name not in PERCUSSION) \
                     or (part == "interlude" and name in self.melody)
                 if rest:
-                    del ev[name][before[name]:]
+                    del notes[before[name]:]
         if self.intensity < 1:  # thin the percussion, seeded, keeping the first beat of each bar
             for name in PERCUSSION:
                 if name in ev:
