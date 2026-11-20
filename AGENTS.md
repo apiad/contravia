@@ -57,8 +57,14 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
 - What changes by place is in `contravia/regions.toml` (`contravia/regions.py`, spec
   `docs/superpowers/specs/2026-11-20-regions-design.html`), applied when a cell opens: the municipio rules of
   buildings, Guanabacoa's two storeys, and cemeteries (`landuse=cemetery`) with no filler houses and no laid parks.
-  A region named by OSM tag or id finds its polygon in `regions.src` beside `coast.src` (40 KB): after naming a new
-  one, run `contravia regions <pbf> --out data/cuba`; `source` writes it with the coast and the first run copies it.
+  A region named by OSM tag or id finds its polygon in `regions.src` beside `coast.src` (72 KB, with OSM's service
+  roads and footways inside cemeteries): after naming a new one, run `contravia regions <pbf> --out data/cuba`
+  (about 20 s); `source` writes it with the coast and the first run copies it.
+- `blocks.fill = "cemetery"` lays out a cemetery (`contravia/cemetery.py`): a wall behind the streets round it with a
+  gate, lanes from OSM (a 20 m grid where it maps none), seeded plots of 1.2 x 2.4 m (slabs, tombs, crosses, angels)
+  and pantheons along the main lanes (`cemetery.pantheons`). `contravia/graveyard.py` draws the plots as instances
+  by level of detail with the forest's fade (`rules/tombs.py`), the cell mesh holds the wall, far summaries draw
+  pale stone and pantheon boxes, and the car hits the wall, pantheons and raised tombs (walls.py), never a slab.
 - In the map the camera stretches heights (`mapview.exaggeration`: 1 up to 10 km of height, 20 at 1 000 km, through
   manifoldx's `Camera.vertical_scale`), the summaries mix in height tints from the city stage up and shade the
   slope as stretched at their level (`rules/cover.py`): a stylised relief atlas, not a photo.

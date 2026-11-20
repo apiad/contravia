@@ -124,8 +124,11 @@ def open_ground(city, i: int, j: int, p, landmarks=None, clear=CLEAR, house_clea
                 road_clear=ROAD_CLEAR) -> np.ndarray:
     """Whether each (x, z) of p, points of cell (i, j), stands on open land: `clear` metres off the cell's streets,
     pavements, park motifs, bridges and cuts, `house_clear` metres off the buildings and filler houses of it and
-    its neighbours and off a landmark's rings, `road_clear` metres off a road's edge, and over the sea. A house is
-    its whole ring: clearance.boxes only drops a ring or cuts it back off the street, never grows it."""
+    its neighbours, off a landmark's rings and off the cell's tombs and pantheons (contravia/cemetery.py),
+    `road_clear` metres off a road's edge, and over the sea. A house is its whole ring: clearance.boxes only drops
+    a ring or cuts it back off the street, never grows it."""
+    from contravia import cemetery  # it lays its plots out with this module's helpers
+
     p = np.asarray(p, float).reshape(-1, 2)
     if not len(p):
         return np.zeros(0, bool)
@@ -138,6 +141,7 @@ def open_ground(city, i: int, j: int, p, landmarks=None, clear=CLEAR, house_clea
                if filled for r in filler_rings(block, int(seed))]
     if landmarks is not None:
         houses += landmarks.clear + landmarks.wall_rings
+    houses += list(cemetery.footprints(cemetery.yard(city, i, j, landmarks)))
     houses = [r for r in (np.asarray(r, float) for r in houses)
               if len(r) and (r.min(0) <= hi).all() and (r.max(0) >= lo).all()]
     roads = np.concatenate([n.roads for n in near]).reshape(-1, 5).astype(float)

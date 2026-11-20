@@ -174,7 +174,7 @@ def boxes(cell: Cell, roads: np.ndarray, streets: np.ndarray) -> list[tuple[np.n
         r = np.asarray(r, float)
         items.append((r, int(i), plan(int(i), a, params, abs(signed_area(r)))))
     for block, seed, params in zip(cell.fillers, cell.filler_seeds, at_fillers, strict=True):
-        if params.fill == "none":  # a region that leaves its empty blocks empty (blocks.fill)
+        if params.fill != "houses":  # a region that leaves its empty blocks empty, or lays a cemetery (blocks.fill)
             continue
         for k, r in enumerate(filler_rings(block, int(seed))):
             sid = abs(int(seed)) * 131 + k

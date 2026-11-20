@@ -16,8 +16,14 @@
 #   portal   eclectic and colonial buildings of two storeys or more stand on columns along main roads.
 #
 # [region.blocks]
-#   fill     what a block OSM left empty gets: "houses" (filler houses, the default) or "none".
+#   fill     what a block OSM left empty gets: "houses" (filler houses, the default) or "none"; "cemetery" leaves
+#            the blocks empty and lays the region's polygons out with a wall, lanes, tombs and pantheons
+#            (contravia/cemetery.py); not for a municipio.
 #   parks    "keep" (the default) or "drop" the parks contravia prepare laid inside the region; not for a municipio.
+#
+# [region.cemetery]
+#   pantheons  the share, 0 to 1, of the plots along the main lanes a pantheon takes (0.08 by default).
+#   palette    ["#rrggbb", …]: the stone of the tombs and pantheons.
 #
 # Without a region, a building is prefab when OSM calls it apartments, and suburban otherwise.
 # A tag or OSM id is looked up in regions.src: after naming a new one, run contravia regions <pbf>.
@@ -109,10 +115,15 @@ name = "Cementerios"
 where = { tag = "landuse=cemetery" }
 priority = 10
 [region.blocks]
-fill = "none"
+fill = "cemetery"
 parks = "drop"
 
 [[region]]
 name = "Necrópolis de Colón"
 where = { osm = "relation/3531562" }
 priority = 30
+[region.blocks]
+fill = "cemetery"
+[region.cemetery]
+pantheons = 0.15
+palette = ["#efece4", "#e3dfd6", "#d9d6cf", "#bfbab0"]

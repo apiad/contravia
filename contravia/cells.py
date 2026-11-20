@@ -9,7 +9,7 @@ clears are left out; the landmarks themselves are drawn once by the game, not pe
 
 import os
 
-from contravia import regions
+from contravia import cemetery, regions
 from contravia.clearance import boxes, roads_around, streets_around
 from contravia.geo import CELL
 from contravia.landmarks import Landmarks, cached
@@ -57,8 +57,9 @@ def warm() -> None:
 
 
 def build(i: int, j: int):
-    """The MeshData of cell (i, j): its ground, its shore's rocks near the sea (rules/shore.py), roads, buildings
-    and filler boxes. Its trees are not in it: the game draws them as instances (forest.py)."""
+    """The MeshData of cell (i, j): its ground, its shore's rocks near the sea (rules/shore.py), roads, buildings,
+    filler boxes and a cemetery's wall. Its trees, tombs and pantheons are not in it: the game draws them as
+    instances (forest.py, graveyard.py)."""
     global SKIPPED_ROOFS
     c = regions.current().parks(landmarks().keep(i, j, city().cell(i, j)))  # without the parks a region drops
     x0, z0 = i * CELL, j * CELL
@@ -83,6 +84,7 @@ def build(i: int, j: int):
         portals = facades.portal_walls(ring, near) if plan.portal else None
         if not buildings.box(mb, ring, style_id, base=seat(ring, terrain), plan=plan, portals=portals):
             SKIPPED_ROOFS += 1
+    cemetery.dress(mb, cemetery.yard(city(), i, j, landmarks(), plots=False, pantheons=False), terrain)
     return mb.to_meshdata(x0, z0)
 
 
@@ -109,4 +111,15 @@ def build_node(L: int, a: int, b: int):
     i, j = w.tree.origin[0] + (a << L), w.tree.origin[1] + (b << L)
     if L == 0:
         return build(i, j)
-    return summary_mesh(w.summary(L, a, b), L, a, b, w.tree.origin, w.terrain)
+    return summary_mesh(w.summary(L, a, b), L, a, b, w.tree.origin, w.terrain, _pantheons(L, i, j))
+
+
+def _pantheons(L: int, i: int, j: int):
+    """The pantheons of the cemeteries in node (L, i, j)'s cells, which its summary draws as boxes up to
+    cemetery.FAR_LEVEL; None past it or where no cemetery meets the node."""
+    if L > cemetery.FAR_LEVEL or not cemetery.touching(i * CELL, j * CELL, (i + (1 << L)) * CELL, (j + (1 << L)) * CELL):
+        return None
+    yards = [cemetery.yard(city(), i + di, j + dj, landmarks(), plots=False)
+             for di in range(1 << L) for dj in range(1 << L)
+             if cemetery.touching((i + di) * CELL, (j + dj) * CELL, (i + di + 1) * CELL, (j + dj + 1) * CELL)]
+    return cemetery.joined(yards)

@@ -25,7 +25,9 @@ shapely.contains_xy call per polygon.
 
 A region's blocks group takes filler houses (blocks.fill, read by clearance.boxes) and the parks contravia
 prepare laid (blocks.parks, read through `parks` by the cells, the walls, the forest and the grass) away from it.
-regions.src also keeps OSM's service roads and footways inside every cemetery ("lanes:main", "lanes:path").
+blocks.fill = "cemetery" lays the cemetery fill (contravia/cemetery.py) over the region's polygons instead, with the
+mix and stone of its cemetery group; `cemeteries` hands them out. regions.src also keeps OSM's service roads and
+footways inside every cemetery ("lanes:main", "lanes:path"), which the fill's lanes follow.
 
 Every process that builds cells loads the file once, on first use. Under contravia dev a reload imports this
 module afresh and starts new builder processes, so a reload always reads the file again.
@@ -54,7 +56,9 @@ TOLERANCE = 0.5  # metres the polygons of regions.src are simplified to
 SHAPES = ("municipio", "barrio", "osm", "tag", "place", "polygon")  # the keys of where
 LAYER = {"municipio": 1, "tag": 2, "barrio": 3, "osm": 3, "place": 3, "polygon": 3}
 BUILDINGS = ("types", "storeys", "palette", "wear", "portal")  # the keys of a region's buildings group
-BLOCKS = {"fill": ("houses", "none"), "parks": ("keep", "drop")}  # the keys of a region's blocks group, and values
+BLOCKS = {"fill": ("houses", "none", "cemetery"), "parks": ("keep", "drop")}  # the keys of a region's blocks group,
+                                                                               # and their values
+CEMETERY = ("pantheons", "palette")  # the keys of a region's cemetery group
 MARGIN = 100.0  # metres around a cell's square that its items' footprints may reach
 CASE = ("kind", "above", "below", "types", "storeys")  # the keys of one case of buildings.types
 
@@ -101,8 +105,10 @@ class Params:
     palette: tuple[str, ...] | None = None
     wear: tuple[float, float] | None = None
     portal: bool = False  # eclectic and colonial buildings of two storeys or more stand on columns by main roads
-    fill: str = "houses"  # what a block left empty gets: filler houses, or nothing
+    fill: str = "houses"  # what a block left empty gets: filler houses, nothing, or (in a polygon) the cemetery fill
     parks: str = "keep"  # whether the parks contravia prepare laid stand, or are dropped
+    pantheons: float = 0.08  # the share of the plots along a cemetery's main lanes that a pantheon takes
+    stones: tuple[str, ...] = ("#e9e6de", "#d6d2c8", "#c4beb2", "#b3ada3")  # a cemetery's stone (cemetery.palette)
     regions: tuple[str, ...] = ()  # the names of the regions merged into these, lowest layer first
 
     def pick(self, kind: str, area: float) -> Case:
@@ -216,6 +222,24 @@ def _blocks(name, group, shape) -> dict:
     return out
 
 
+def _cemetery(name, group) -> dict:
+    if not isinstance(group, dict):
+        _fail(name, "cemetery", "must be a table")
+    out = {}
+    for key, v in group.items():
+        if key == "pantheons":
+            if not isinstance(v, (int, float)) or not 0 <= v <= 1:
+                _fail(name, "cemetery.pantheons", "must be a share from 0 to 1")
+            out["pantheons"] = float(v)
+        elif key == "palette":
+            if not (isinstance(v, list) and v and all(isinstance(c, str) and len(c) == 7 and c[0] == "#" for c in v)):
+                _fail(name, "cemetery.palette", 'must be a list of colours such as "#efece4"')
+            out["stones"] = tuple(v)
+        else:
+            _fail(name, f"cemetery.{key}", f"unknown key (known: {', '.join(CEMETERY)})")
+    return out
+
+
 def _polygon(name, where) -> shapely.Polygon:
     from contravia.geo import to_local
 
@@ -293,8 +317,9 @@ class Regions:
             shapely.prepare(p)
         self.tree = shapely.STRtree(self.polygons) if len(self.polygons) else None
         self.dropping = any(regions[k].fields.get("parks") == "drop" for k in shaped)
-        self.emptying = any(r.fields.get("fill") == "none" for r in regions)
+        self.emptying = any(r.fields.get("fill", "houses") != "houses" for r in regions)
         self._cache: dict[frozenset, Params] = {}
+        self._cemeteries = None
 
     @classmethod
     def load(cls, path: Path | str = PATH, src: dict | None = None, stamp: str = "") -> Regions:
@@ -325,13 +350,16 @@ class Regions:
             if name in names:
                 _fail(name, "name", "two regions have this name")
             names.add(name)
-            for bad in set(raw) - {"name", "where", "priority", "buildings", "blocks"}:
-                _fail(name, bad, "unknown key (known: where, priority, buildings, blocks)")
+            for bad in set(raw) - {"name", "where", "priority", "buildings", "blocks", "cemetery"}:
+                _fail(name, bad, "unknown key (known: where, priority, buildings, blocks, cemetery)")
             priority = raw.get("priority", 0)
             if not isinstance(priority, int):
                 _fail(name, "priority", "must be a whole number")
             shape, value, poly = _shape(name, raw.get("where"), src)
-            fields = _buildings(name, raw.get("buildings", {}), tuple(TYPES)) | _blocks(name, raw.get("blocks", {}), shape)
+            fields = (_buildings(name, raw.get("buildings", {}), tuple(TYPES)) | _blocks(name, raw.get("blocks", {}), shape)
+                      | _cemetery(name, raw.get("cemetery", {})))
+            if shape == "municipio" and fields.get("fill") == "cemetery":  # the fill lays out a polygon
+                _fail(name, "blocks.fill", "a municipio region cannot fill with a cemetery: name the place by a shape")
             if shape in ("barrio", "osm", "tag") and poly is None:  # no regions.src: nothing places it
                 continue
             regions.append(Region(name, shape, value, priority, fields, k))
@@ -419,6 +447,24 @@ class Regions:
         if not self.emptying:
             return [True] * len(cell.fillers)
         return [p.fill == "houses" for p in self.cell(cell)[1]]
+
+    def cemeteries(self) -> tuple[list, list[Params], shapely.STRtree | None]:
+        """The polygons the cemetery fill lays out, their Params and an STRtree over them, made on first use: the
+        parts of the shaped regions whose blocks.fill is cemetery, joined where they overlap (the Necrópolis de
+        Colón is both a landuse=cemetery and its own relation), each with the Params of a point inside it, and
+        left out where those Params no longer fill it with a cemetery."""
+        if self._cemeteries is None:
+            parts = [p for p, k in zip(self.polygons, self.shaped, strict=True)
+                     if self.regions[k].fields.get("fill") == "cemetery"]
+            joined = [g for g in shapely.get_parts(shapely.union_all(parts)) if g.geom_type == "Polygon"] if parts else []
+            inside = shapely.get_coordinates(shapely.point_on_surface(joined)) if joined else np.zeros((0, 2))
+            params = self.assign(inside, [None] * len(joined))
+            keep = [k for k, p in enumerate(params) if p.fill == "cemetery"]
+            polys = [joined[k] for k in keep]
+            for p in polys:
+                shapely.prepare(p)
+            self._cemeteries = (polys, [params[k] for k in keep], shapely.STRtree(polys) if polys else None)
+        return self._cemeteries
 
     def kept(self, xz) -> np.ndarray:
         """Whether each (N, 2) point of a laid park stands where its regions keep parks (blocks.parks). Only

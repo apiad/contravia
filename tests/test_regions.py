@@ -284,4 +284,5 @@ def test_the_shipped_file_names_the_cemeteries_and_colon_in_regions_src():
     assert named() == ["osm:relation/3531562", "tag:landuse=cemetery"]
     r = Regions.parse(PATH.read_text(), {"tag:landuse=cemetery": SQUARE, "osm:relation/3531562": shapely.box(400, 400, 600, 600)})
     p = r.assign(np.array([[500.0, 500.0]]), [None])[0]
-    assert (p.fill, p.parks, p.regions[-2:]) == ("none", "drop", ("Cementerios", "Necrópolis de Colón"))
+    assert (p.fill, p.parks, p.regions[-2:]) == ("cemetery", "drop", ("Cementerios", "Necrópolis de Colón"))
+    assert (p.pantheons, p.stones[0]) == (0.15, "#efece4")

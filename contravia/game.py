@@ -28,6 +28,7 @@ from contravia.camera import Orbit, chase, orbit, seen_from
 from contravia.car import CarState, Controls, Driven, settle
 from contravia.driving_help import DEFAULT, DrivingHelp, Road, brake_reach, chassis_strengths, road_assists
 from contravia.forest import Forest
+from contravia.graveyard import Graveyard
 from contravia.geo import CELL, to_local
 from contravia.grass import Grass
 from contravia.hud import Hud, pilot_line
@@ -112,6 +113,8 @@ class Game:
         self.forest = Forest(engine, city, self.walls.landmarks)
         # The grass on the green near the camera: instanced patches of blades that sway in the shader (grass.py).
         self.grass = Grass(engine, city, self.walls.landmarks)
+        # The cemeteries' plots and pantheons: rows per cell, drawn as instances by level of detail (graveyard.py).
+        self.graveyard = Graveyard(engine, city, self.walls.landmarks)
         engine.state.teleport = {"to": None, "error": None}
         if self.walls.landmarks.mesh is not None:  # drawn once, not streamed: they are few and seen from afar
             from manifoldx.components import Material, Mesh, Transform
@@ -794,6 +797,7 @@ class Game:
         self.detail.close()
         self.forest.close()
         self.grass.close()
+        self.graveyard.close()
         self.walls.close()
         if self.layer:
             self.runner.stop()
@@ -997,6 +1001,7 @@ class Game:
         full = {(o[0] + a, o[1] + b) for L, a, b in self.streamer.drawn() if L == 0}
         self.forest.update(full, self.eye)
         self.grass.update(full, self.eye, (self.car.x, self.car.z))
+        self.graveyard.update(full, self.eye)
         tiles = self.streamer.stats()
         with self._state_lock:
             st = self.engine.state
@@ -1230,7 +1235,7 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     game.tune = False
     game.atmosphere.prepare(wait=True)  # an offline shot waits for the ambient light instead of drawing without it
     t0, n = time.monotonic(), 0
-    while n < frames or (game.waiting() and time.monotonic() - t0 < 300):
+    while n < frames or ((game.waiting() or game.graveyard.waiting()) and time.monotonic() - t0 < 300):
         img = engine.render_frame(supersample=1)
         n += 1
     if place and screen == "card":  # photographed once the city is drawn, as a player would
@@ -1242,6 +1247,7 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     game.detail.close()
     game.forest.close()
     game.grass.close()
+    game.graveyard.close()
 
 
 def _player_car():

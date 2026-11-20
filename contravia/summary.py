@@ -390,9 +390,9 @@ def _boxes(mb, s: dict, x0: float, z0: float, sq: float, terrain, node) -> None:
            None if facade is None else facade.reshape(-1, 4))
 
 
-def summary_mesh(s: dict, L: int, a: int, b: int, origin, terrain=None) -> MeshData:
-    """The node's land as one continuous ground, at most one box per square and the summary's widest roads,
-    as one MeshData.
+def summary_mesh(s: dict, L: int, a: int, b: int, origin, terrain=None, pantheons=None) -> MeshData:
+    """The node's land as one continuous ground, at most one box per square, the summary's widest roads and its
+    cemeteries in pale stone with the boxes of pantheons (a cemetery.Yard, contravia/cemetery.py), as one MeshData.
 
     The ground is a GRID x GRID grid of squares at the terrain's height, clipped by the node's land (the coast
     the index kept in the summary, see contravia.coast), lit by the slope and hemmed by a skirt along the node's
@@ -416,6 +416,9 @@ def summary_mesh(s: dict, L: int, a: int, b: int, origin, terrain=None) -> MeshD
     if len(roads):
         length = np.hypot(roads[:, 2] - roads[:, 0], roads[:, 3] - roads[:, 1])
         _roads(mb, roads[np.lexsort((-length, -roads[:, 4]))][:ROAD_CAP], ground, land, x0, z0, side, sea)
+    from contravia import cemetery
+
+    cemetery.far(mb, x0, z0, side, lambda xz: _heights(xz, terrain, sea), L, pantheons)
     return mb.to_meshdata(x0, z0)
 
 
