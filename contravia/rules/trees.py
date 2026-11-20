@@ -142,7 +142,7 @@ def _cumulative():
     for z, mix in MIX.items():
         w = np.array([mix.get(s, 0) for s in SPECIES], float)
         cum[z] = np.cumsum(w / w.sum())
-    cum[:, -1] = 1.0
+    cum[cum > 1 - 1e-9] = 1.0  # past a zone's last species nothing is drawn: species no mix holds come after it
     return cum
 
 
