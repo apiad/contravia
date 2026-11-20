@@ -392,7 +392,7 @@ pre .c{color:var(--faint)} pre .k{color:var(--accent)} pre .s{color:var(--ok)}
   <li>Throttle and brake come from <code>_idm</code>, with the gap to the car ahead in the lane and its speed, as for a traffic car. The free speed is the street's (<code>vfree</code>), capped by the wanted speed.</li>
   <li>The wanted speed starts at the street's. Holding the accelerator raises it at 3 m/s each second, holding the brake lowers it, and releasing both keeps it. The HUD shows it beside the speed.</li>
   <li>A red light in the car's lane ahead acts as a stopped car at the stop line, as <code>_signal_open</code> holds the traffic.</li>
-  <li>At a corner with no input, the car takes the exit closest to straight on, or the main street (the widest exit) when no exit is within 30° of straight. A tap of the wheel left or right in the last 40 m before the corner picks the exit on that side and moves to its turn lane. The HUD shows an arrow for the picked exit.</li>
+  <li>At a corner with no input, the car takes the exit closest to straight on, or the main street (the widest exit) when no exit is within 30° of straight. A tap of the wheel left or right in the last 40 m before the corner picks the exit on that side and moves to its turn lane. The HUD says it in words over the lamps, with the wanted speed: «60 km/h · dobla a la derecha» (the game's icons have no arrow).</li>
   <li>The handbrake hands the car back to the driver until the next time the throttle is released.</li>
   <li>The PILOTO lamp is lit while the assist drives.</li>
 </ul>

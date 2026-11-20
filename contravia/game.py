@@ -30,7 +30,7 @@ from contravia.driving_help import DEFAULT, DrivingHelp, Road, brake_reach, chas
 from contravia.forest import Forest
 from contravia.geo import CELL, to_local
 from contravia.grass import Grass
-from contravia.hud import Hud
+from contravia.hud import Hud, pilot_line
 from contravia.input import Driver
 from contravia.kept import kept, source
 from contravia.quadtree import LEVELS
@@ -421,7 +421,8 @@ class Game:
             self._help_for = (id(graph), id(self.driven))
         on = road_assists(level, locked)
         return self.help.apply(c, self.car, self._dt, level, locked, float(self.strengths()[0]),
-                               self._ahead_of_car() if "brake" in on else None)
+                               self._ahead_of_car() if on & {"brake", "pilot"} else None,
+                               self.layer.signal_open if self.layer else None)
 
     def _ahead_of_car(self) -> tuple[np.ndarray, np.ndarray]:
         """What the emergency brake must not hit: the walls, the traffic and the crashed cars near the car, as
@@ -826,6 +827,9 @@ class Game:
             self.hud.update(self.car, self.o, (e.idle_rpm, e.peak_power_rpm * 1.15),
                             loading=bool(getattr(self.engine.state, "cells_waiting", 0)))
             self.hud.set_time(self.clock.now(), self.weather_state)
+            help = getattr(self, "help", None)
+            self.hud.set_pilot(pilot_line(help.wanted, help.exit[1] if help.exit else None, self.hud.units)
+                               if help else "")
             self._find_area(now)
             self._find_spot(now)
             self.hud.set_spot(self.spot.title if self.spot else "")

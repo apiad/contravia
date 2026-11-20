@@ -59,7 +59,7 @@ def gearbox(car, idle: float, redline: float) -> tuple[str, float]:
 
 
 LAMPS = (("steer", "DIR"), ("traction", "TRC"), ("abs", "ABS"), ("stability", "EST"),
-         ("lane", "SENDA"), ("brake", "FRENO"))  # the assists' lamps
+         ("lane", "SENDA"), ("brake", "FRENO"), ("pilot", "PILOTO"))  # the assists' lamps
 
 
 def lamps_lit(car) -> list[bool]:
@@ -113,6 +113,7 @@ class Hud:
         self._area, self._area_t, self._area_a = "", 0.0, None
         self._address = None
         self._spot = ""  # the name of the place the photo hint shows, or "" with no hint
+        self._pilot = ""  # the pilot's line over the lamps, or "" with the pilot off
         self.places, self.has = None, lambda pid: False  # the collectible places and whether one is photographed
         self.marks = []  # (panel, image) of the minimap's place icons, the unused ones at OFF
         self._clock_text, self._weather, self._lit, self._gear, self._speed = None, None, None, None, None
@@ -198,6 +199,10 @@ class Hud:
                      style_overrides={**CLEAR, "gap": 4})
         lamps = Panel(self.lamp_texts, anchor="bottom-right", offset=(MARGIN, MARGIN + 140),
                       style_overrides={**CLEAR, "gap": 6, "direction": "h"})
+        # Over the lamps, while the pilot drives: its wanted speed and the turn it takes next.
+        self.pilot_text = Text(self._pilot, style_overrides={"font": ui.BOLD, "font_size": 14, "fg": ui.INK})
+        self.pilot_panel = Panel([self.pilot_text], anchor="bottom-right", offset=(MARGIN, MARGIN + 162),
+                                 style_overrides={"padding": "2 8", "bg": ui.YELLOW})
         # Bottom centre, while a place without a photo is in reach and in sight: its name and the key F.
         self.spot_text = Text(self._spot, style_overrides={"font": ui.BOLD, "font_size": 17, "fg": ui.PAPER})
         key = Panel([Text("F", style_overrides={"font": ui.KEYS, "font_size": 15, "fg": ui.INK})],
@@ -214,7 +219,7 @@ class Hud:
         self.stats_panel = Panel(self.stats_lines, anchor="top-left", offset=(MARGIN, MARGIN + 60),
                                  style_overrides={"padding": 10, "gap": 2, "bg": "#000000b0", "width": 460,
                                                   "height": 24 + 22 * STATS_LINES})
-        for p in (clock, area, gear_panel, self.address_back, self.address, self.spot_panel):  # the others fit by their anchor
+        for p in (clock, area, gear_panel, self.address_back, self.address, self.spot_panel, self.pilot_panel):  # the others fit by their anchor
             ui.fit(p)
         if self.shown:
             self.shown = False
@@ -234,6 +239,8 @@ class Hud:
             (g.append if on else g.remove)(self.stats_panel)
         if self._spot:
             (g.append if on else g.remove)(self.spot_panel)
+        if self._pilot:
+            (g.append if on else g.remove)(self.pilot_panel)
 
     def configure(self, units: str, minimap: bool) -> None:
         """km/h or mph, and the minimap shown or hidden; takes effect at once."""
@@ -312,6 +319,18 @@ class Hud:
         if self.shown and bool(had) != bool(name):
             (self.engine.gui.append if name else self.engine.gui.remove)(self.spot_panel)
 
+    def set_pilot(self, line: str) -> None:
+        """The pilot's line over the lamps ("40 km/h · recto"); "" takes it off."""
+        if line == self._pilot:
+            return
+        had, self._pilot = self._pilot, line
+        if not self.panels:
+            return
+        self.pilot_text.text = line
+        ui.refit(self.pilot_panel)
+        if self.shown and bool(had) != bool(line):
+            (self.engine.gui.append if line else self.engine.gui.remove)(self.pilot_panel)
+
     def set_address(self, street: str, line: str, place: str) -> None:
         """The street the car is on, the line under it ("entre L y M") and "barrio · municipio"."""
         if not self.panels or (street, line, place) == self._address:
@@ -382,3 +401,12 @@ class Hud:
             if image.svg != svg:
                 image.svg = svg
             panel.offset = (round(centre - right), round(centre + down))
+
+
+def pilot_line(wanted: float | None, turn: float | None, units: str = "kmh") -> str:
+    """The pilot's wanted speed and its next turn in words, for set_pilot; "" with the pilot off."""
+    if wanted is None:
+        return ""
+    where = ("recto" if turn is None or abs(turn) < math.radians(30)
+             else "dobla a la derecha" if turn > 0 else "dobla a la izquierda")
+    return f"{speed_text(wanted, units)} {'km/h' if units == 'kmh' else 'mph'} · {where}"

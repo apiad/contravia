@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import numpy as np
 from manifoldx.vehicles.assists import NARROW, NARROW_AT
 
-from contravia.traffic import LANE_SPEED, lane_geometry, lane_offsets
+from contravia.traffic import BRAKE, JUNCTION, LANE_SPEED, _idm, lane_geometry, lane_offsets
 
 # (name in the menu, what it does) by level, 0 the most help
 LEVELS = (
@@ -70,6 +70,7 @@ class Road:
         a = graph.a
         self.graph = graph
         self.lanes = a["g_lanes"].astype(np.int64)
+        self.vfree = a["g_vfree"].astype(np.float64)
         self.twoway, self.lane_w = lane_geometry(a)
         poly, starts = a["g_poly"].astype(np.float64), a["g_poly_start"].astype(np.int64)
         edge_of = np.repeat(np.arange(len(starts) - 1), np.diff(starts))
@@ -139,6 +140,11 @@ SWERVE = 0.6  # a steer past this is a swerve: the emergency brake lets the driv
 MARGIN = 0.3  # metres each side of the car's width that the brake keeps clear
 HOLD = 1.5  # metres: creeping this close to something in its path, the car is held
 STOP_AT = 2.0  # metres short of something in its path where the emergency brake aims to stop
+WANT_STEP = 3.0  # m/s per second the held accelerator or brake moves the pilot's wanted speed
+TURN_AT = 40.0  # metres before a corner where a tap of the wheel picks the pilot's exit
+STRAIGHT = np.radians(30)  # an exit within this of straight on is straight on
+TURN_LATERAL, TURN_RADIUS = 3.0, 8.0  # m/s² and metres the pilot takes a turn with
+GAS, BRAKING = 2.5, 8.0  # m/s² of the pilot's wanted acceleration that full throttle and full brake stand for
 
 
 def road_assists(level: int, locked=()) -> set[str]:
@@ -154,48 +160,139 @@ class DrivingHelp:
         self.road, self.max_steer, self.wheelbase = road, max_steer, wheelbase
         self.length, self.width = length, width
         self.yaw = None  # the last frame's, for the yaw rate
+        self.wanted = None  # m/s the pilot drives at most; None until it first drives
+        self.turn, self.turn_edge = 0, None  # the exit the driver picked at the end of that edge: -1 left, 1 right
+        self.manual, self.pressed = False, False  # handed back by the handbrake; the accelerator pressed since
+        self.exit = None  # (edge, signed turn in radians) the pilot takes next, for the HUD's arrow
         self.edge = self.lane = None  # the edge and the lane the car keeps to
         self.off = 0.0  # metres right of the centreline it aims at, easing toward its lane's
         self.held, self.held_lane, self.side = 0.0, 0, 0.0  # a long tap of the wheel: how long, from which lane
         self.lit = {name: False for name in ROAD_ASSISTS}
 
-    def apply(self, c, car, dt: float, level: int, locked=(), steer_strength: float = 1.0, obstacles=None):
+    def apply(self, c, car, dt: float, level: int, locked=(), steer_strength: float = 1.0, obstacles=None,
+              signal=None):
         """The controls after the road assists of this level; steer_strength is the chassis steering assist's,
         which narrows the wheel with speed. obstacles: (W, 2, 2) segments and their velocities (W, 2), what the
-        emergency brake must not hit."""
+        brake and the pilot must not hit. signal(edge, dist, v): whether the signal at the end of edge lets the
+        car go on (None: no signals, as with the traffic off)."""
+        from dataclasses import replace
+
         self.lit = {name: False for name in ROAD_ASSISTS}
         on = road_assists(level, locked)
         yaw_rate = 0.0 if self.yaw is None else ((car.yaw - self.yaw + np.pi) % (2 * np.pi) - np.pi) / dt
         self.yaw = car.yaw
-        out = self._keep_lane(c, car, dt, on, steer_strength)
-        if "brake" in on and obstacles is not None:
-            out = self._brake(out, c, car, yaw_rate, *obstacles)
+        p = self.road.locate(car.x, car.z, car.yaw) if on & {"lane", "pilot"} else None
+        pilot = "pilot" in on and p is not None and not self._handed_back(c)
+        if not pilot:
+            self.wanted, self.exit = None, None
+        steer = c
+        if pilot:
+            if p.edge != self.turn_edge:
+                self.turn, self.turn_edge = 0, p.edge
+            if self.road.graph.a["g_len"][p.edge] - p.s < TURN_AT and abs(c.steer) > CHANGE:
+                self.turn = int(np.sign(c.steer))  # a tap near the corner picks the exit, it does not steer
+                steer = replace(c, steer=0.0)
+        out = self._keep_lane(steer, car, dt, p if "lane" in on else None, steer_strength)
+        path = self._in_path(car, yaw_rate, *obstacles) if obstacles is not None else None
+        if pilot:
+            out = self._pilot(out, c, car, dt, p, path, signal)
+        if "brake" in on and path is not None:
+            out = self._brake(out, c, car, *path)
         return out
 
-    def _brake(self, out, c, car, yaw_rate: float, segs: np.ndarray, vel: np.ndarray):
-        """Brake when stopping short of a segment in the car's path would take more than A_SOFT, and hold a car
-        creeping within HOLD of one; never while the driver swerves or pulls the handbrake."""
-        from dataclasses import replace
+    def _handed_back(self, c) -> bool:
+        """Whether the handbrake handed the car back to the driver: from the pull until the accelerator is pressed
+        and released again."""
+        if c.handbrake:
+            self.manual, self.pressed = True, False
+        elif self.manual and c.throttle > 0:
+            self.pressed = True
+        elif self.manual and self.pressed:
+            self.manual = False
+        return self.manual
 
-        if not len(segs) or c.handbrake or abs(c.steer) > SWERVE or car.speed <= 0:
-            return out
+    def _in_path(self, car, yaw_rate: float, segs: np.ndarray, vel: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """The gap from the car's nose to each segment in its path (its width and MARGIN each side, bent by the
+        yaw rate) and that segment's speed along the car's heading; segments behind the car's middle left out."""
+        if not len(segs):
+            return np.zeros(0), np.zeros(0)
         f = np.array([np.cos(car.yaw), np.sin(car.yaw)])
         r = np.array([-f[1], f[0]])
         rel = np.asarray(segs, float) - (car.x, car.z)
         ahead, side = rel @ f, rel @ r  # (W, 2) each: metres ahead of and right of the car's middle
-        side = side - yaw_rate / car.speed * ahead ** 2 / 2  # right of the arc the car is turning on
+        side = side - yaw_rate / max(car.speed, 1.0) * ahead ** 2 / 2  # right of the arc the car is turning on
         w = self.width / 2 + MARGIN
         d0, d1 = side[:, 0], side[:, 1]
-        dd = np.where(np.abs(d1 - d0) < 1e-9, 1e-9, d1 - d0)
+        flat = np.abs(d1 - d0) < 1e-9
+        dd = np.where(flat, 1e-9, d1 - d0)
         ta, tb = (-w - d0) / dd, (w - d0) / dd
-        lo = np.where(np.abs(d1 - d0) < 1e-9, np.where(np.abs(d0) <= w, 0.0, 2.0), np.maximum(np.minimum(ta, tb), 0.0))
-        hi = np.where(np.abs(d1 - d0) < 1e-9, np.where(np.abs(d0) <= w, 1.0, -1.0), np.minimum(np.maximum(ta, tb), 1.0))
-        inside = lo <= hi  # the part of the segment within the car's path
+        lo = np.where(flat, np.where(np.abs(d0) <= w, 0.0, 2.0), np.maximum(np.minimum(ta, tb), 0.0))
+        hi = np.where(flat, np.where(np.abs(d0) <= w, 1.0, -1.0), np.minimum(np.maximum(ta, tb), 1.0))
         a0, a1 = ahead[:, 0], ahead[:, 1]
         gap = np.minimum(a0 + (a1 - a0) * lo, a0 + (a1 - a0) * hi) - self.length / 2
-        closing = car.speed - np.asarray(vel, float) @ f
-        hit = inside & (gap > -self.length / 2) & (closing > 0)
-        if not hit.any():
+        keep = (lo <= hi) & (gap > -self.length / 2)
+        return gap[keep], (np.asarray(vel, float) @ f)[keep]
+
+    def _pilot(self, out, c, car, dt: float, p: Place, path, signal):
+        """Throttle and brake by the intelligent driver model: behind the nearest thing in the car's path or a red
+        light's stop line, toward the street's speed capped by the wanted speed and slowed for a coming turn."""
+        from dataclasses import replace
+
+        e, length = p.edge, float(self.road.graph.a["g_len"][p.edge])
+        if self.wanted is None:
+            self.wanted = float(self.road.vfree[e])
+        self.wanted = float(np.clip(self.wanted + WANT_STEP * dt * ((c.throttle > 0) - (c.brake > 0)), 0.0, 40.0))
+        v0 = min(float(self.road.vfree[e]), self.wanted)
+        to_end = length - p.s
+        nxt = self._exit(e)
+        self.exit = nxt
+        if nxt is not None and abs(nxt[1]) > STRAIGHT:  # slow so as to turn at TURN_LATERAL
+            v0 = min(v0, float(np.sqrt(TURN_LATERAL * TURN_RADIUS + 2 * BRAKE * max(to_end - JUNCTION, 0.0))))
+        gap, lead = np.inf, 0.0
+        if path is not None and len(path[0]):
+            k = int(np.argmin(path[0]))
+            gap, lead = float(path[0][k]), float(path[1][k])
+        if signal is not None and not signal(e, to_end, car.speed) and to_end - 1.0 < gap:
+            gap, lead = max(to_end - 1.0, 0.0), 0.0  # a red light: a stopped car at the stop line
+        if v0 <= 0.1:
+            acc = -BRAKING
+        else:
+            acc = float(_idm(np.array([max(car.speed, 0.0)]), np.array([v0]), np.array([gap]), np.array([lead]))[0])
+        self.lit["pilot"] = True
+        throttle, brake = float(np.clip(acc / GAS, 0, 1)), float(np.clip(-acc / BRAKING, 0, 1))
+        return replace(out, throttle=throttle, brake=max(brake, c.brake))
+
+    def _exit(self, e: int):
+        """(edge, signed turn) the car takes at the end of edge e, right positive: the one the driver picked, else
+        the one closest to straight on, else the widest; None at a dead end."""
+        g = self.road.graph
+        exits = np.array(self.road.out.get(e, []), np.int64)
+        if not len(exits):
+            return None
+        _, _, end = g.points([e], [float(g.a["g_len"][e])], [0.0])
+        _, _, start = g.points(exits, np.zeros(len(exits)), np.zeros(len(exits)))
+        turn = (start - end + np.pi) % (2 * np.pi) - np.pi
+        ok = np.abs(turn) < np.radians(150)  # never a U-turn
+        exits, turn = exits[ok], turn[ok]
+        if not len(exits):
+            return None
+        side = turn * self.turn > STRAIGHT if self.turn and e == self.turn_edge else np.zeros(len(exits), bool)
+        if side.any():  # the first exit on the picked side
+            k = np.flatnonzero(side)[np.argmin(np.abs(turn[side]))]
+        elif np.abs(turn).min() < STRAIGHT:
+            k = int(np.argmin(np.abs(turn)))
+        else:
+            k = int(np.argmax(self.road.lanes[exits] * self.road.lane_w[exits]))
+        return int(exits[k]), float(turn[k])
+
+    def _brake(self, out, c, car, gap: np.ndarray, lead: np.ndarray):
+        """Brake when stopping short of something in the car's path would take more than A_SOFT, and hold a car
+        creeping within HOLD of one; never while the driver swerves or pulls the handbrake."""
+        from dataclasses import replace
+
+        closing = car.speed - lead
+        hit = closing > 0
+        if not hit.any() or c.handbrake or abs(c.steer) > SWERVE or car.speed <= 0:
             return out
         if car.speed < MOVING:  # creeping out of a jam: only a nose almost touching is held
             brake = 1.0 if gap[hit].min() < HOLD else 0.0
@@ -207,11 +304,10 @@ class DrivingHelp:
         self.lit["brake"] = True
         return replace(out, brake=max(out.brake, brake), throttle=0.0)
 
-    def _keep_lane(self, c, car, dt: float, on: set, steer_strength: float):
+    def _keep_lane(self, c, car, dt: float, p: Place | None, steer_strength: float):
         """Steer toward the lane's centre ahead while the driver's wheel is near the middle."""
         from dataclasses import replace
 
-        p = self.road.locate(car.x, car.z, car.yaw) if "lane" in on else None
         if p is None or car.speed < MOVING:
             self.edge = None
             return c
@@ -241,23 +337,17 @@ class DrivingHelp:
         return replace(c, steer=steer)
 
     def _ahead(self, e: int, s: float, off: float) -> tuple[float, float]:
-        """The point s metres along edge e, off metres right of its centreline; past its end, on the exit closest
-        to straight on, in the lane as far from the right."""
+        """The point s metres along edge e, off metres right of its centreline; past its end, on the exit the car
+        takes (_exit), in the lane as far from the right."""
         g, length = self.road.graph, float(self.road.graph.a["g_len"][e])
-        if s > length:
-            exits = self.road.out.get(e, [])
-            if exits:
-                _, _, end = g.points([e], [length], [0.0])
-                _, _, start = g.points(exits, np.zeros(len(exits)), np.zeros(len(exits)))
-                turn = np.abs((start - end + np.pi) % (2 * np.pi) - np.pi)
-                if turn.min() < np.radians(150):  # never a U-turn
-                    nxt = int(exits[int(np.argmin(turn))])
-                    lanes = lane_offsets(int(self.road.lanes[e]), float(self.road.lane_w[e]), bool(self.road.twoway[e]))
-                    lane = int(np.argmin(np.abs(lanes - off)))
-                    then = lane_offsets(int(self.road.lanes[nxt]), float(self.road.lane_w[nxt]),
-                                        bool(self.road.twoway[nxt]))
-                    x, z, _ = g.points([nxt], [s - length], [then[min(lane, len(then) - 1)]])
-                    return float(x[0]), float(z[0])
+        nxt = self._exit(e) if s > length else None
+        if nxt is not None:
+            lanes = lane_offsets(int(self.road.lanes[e]), float(self.road.lane_w[e]), bool(self.road.twoway[e]))
+            lane = int(np.argmin(np.abs(lanes - off)))
+            n = nxt[0]
+            then = lane_offsets(int(self.road.lanes[n]), float(self.road.lane_w[n]), bool(self.road.twoway[n]))
+            x, z, _ = g.points([n], [s - length], [then[min(lane, len(then) - 1)]])
+            return float(x[0]), float(z[0])
         x, z, _ = g.points([e], [min(s, length)], [off])
         return float(x[0]), float(z[0])
 

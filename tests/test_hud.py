@@ -22,10 +22,10 @@ def test_gearbox_shows_the_cars_own_gear_and_revs():
 
 def test_the_lamps_light_with_the_assists():
     car = CarState(0, 0, 0, 20.0, telemetry={"lit": {"steer": False, "traction": False, "abs": True,
-                                                       "stability": False, "lane": True, "brake": False}})
-    assert lamps_lit(car) == [False, False, True, False, True, False]
-    assert [label for _, label in LAMPS] == ["DIR", "TRC", "ABS", "EST", "SENDA", "FRENO"]
-    assert lamps_lit(CarState(0, 0, 0, 0.0)) == [False] * 6
+                                                       "stability": False, "lane": True, "brake": False, "pilot": True}})
+    assert lamps_lit(car) == [False, False, True, False, True, False, True]
+    assert [label for _, label in LAMPS] == ["DIR", "TRC", "ABS", "EST", "SENDA", "FRENO", "PILOTO"]
+    assert lamps_lit(CarState(0, 0, 0, 0.0)) == [False] * 7
 
 
 def test_speed_text_in_kmh_and_mph():
@@ -159,3 +159,12 @@ def test_the_minimap_marks_a_place_ahead_of_the_car_above_its_centre_and_hides_t
     centre = MARGIN + MINIMAP_SHOWN / 2 - MARK_PX / 2
     assert first.offset[0] == round(centre) and first.offset[1] < centre - 30
     assert "#" in image.svg and second.offset == OFF
+
+
+def test_the_pilot_line_says_its_speed_and_turn():
+    from contravia.hud import pilot_line
+
+    assert pilot_line(None, None) == ""
+    assert pilot_line(11.1, 0.1) == "40 km/h · recto"
+    assert pilot_line(11.1, 1.4) == "40 km/h · dobla a la derecha"
+    assert pilot_line(11.1, -1.4, "mph") == "25 mph · dobla a la izquierda"

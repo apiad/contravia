@@ -3,7 +3,7 @@ import math
 
 import numpy as np
 import pytest
-from graphs import make_graph, straight
+from graphs import four_way, make_graph, straight
 
 from contravia.driving_help import ROAD_ASSISTS as ROAD
 from contravia.driving_help import Road, chassis_strengths, level_from_realism
@@ -232,3 +232,60 @@ def test_the_emergency_brake_lets_a_swerve_a_slower_leader_and_a_bend_away_pass(
     help = DrivingHelp(road, 0.6, 2.7)
     help.apply(Controls(0, 0, 0.0, False), CarState(100.0, 1.5, -0.5 / 60, 15.0), 1 / 60, 1)
     assert help.apply(go, car, 1 / 60, 1, obstacles=ahead).brake == 0
+
+
+def pilot_run(graph, x, z, yaw, seconds, steer=lambda t: 0.0, ahead=None, signal=None, throttle=lambda t: 0.0):
+    """The moderno at level 0 from rest, the pilot driving; ahead(t) gives the obstacles at time t. The car's
+    state and place each frame."""
+    from manifoldx.vehicles import FlatGround
+
+    from contravia.car import CarState, Controls, Driven
+    from contravia.driving_help import DrivingHelp
+    from contravia.rules import fleet, handling
+
+    road = Road(graph)
+    d = Driven(handling.spec_for(fleet.moderno(), "moderno"), CarState(x, z, yaw, 0.0), FlatGround())
+    walls, k = np.zeros((0, 2, 2)), chassis_strengths(0)
+    d.run(Controls(0, 0, 0, False), 0.5, walls, k)
+    length, _, width = d.spec.size
+    help, car, dt, out = DrivingHelp(road, *d.steering(), length, width), d.state, 1 / 60, []
+    for i in range(int(seconds / dt)):
+        t = i * dt
+        c = Controls(throttle=throttle(t), brake=0, steer=steer(t), handbrake=False)
+        obstacles = ahead(t) if ahead else (np.zeros((0, 2, 2)), np.zeros((0, 2)))
+        sig = (lambda e, dist, v, t=t: signal(t)) if signal else None
+        car = d.step(help.apply(c, car, dt, 0, (), float(k[0]), obstacles, sig), dt, walls, k)
+        out.append((t, car, road.locate(car.x, car.z, car.yaw)))
+    return out, help
+
+
+def test_the_pilot_follows_a_slower_car_at_the_models_gap():
+    from contravia.traffic import HEADWAY, S0
+
+    def ahead(t):  # a car at 6 m/s, 40 m ahead at the start
+        segs, _ = box(140.0 + 6.0 * t, 1.5)
+        return segs, np.tile((6.0, 0.0), (4, 1))
+
+    run, _ = pilot_run(straight(), 100.0, 1.5, 0.0, 40.0, ahead=ahead)
+    t, car, _ = run[-1]
+    gap = 140.0 + 6.0 * t - 2.25 - car.x - 4.55 / 2
+    assert car.speed == pytest.approx(6.0, abs=0.5)
+    assert gap == pytest.approx(S0 + 6.0 * HEADWAY, abs=4.0)
+
+
+def test_the_pilot_stops_at_a_red_light_and_goes_on_green():
+    run, help = pilot_run(straight(), 120.0, 1.5, 0.0, 40.0, signal=lambda t: t > 25.0)
+    at_red = [car for t, car, _ in run if 22.0 < t < 25.0]
+    assert all(car.speed < 0.3 for car in at_red) and max(car.x for car in at_red) < 200.0 - 2.0
+    assert max(car.x for _, car, _ in run) > 220.0  # went on through the junction on green
+    assert help.lit["pilot"]
+
+
+@pytest.mark.parametrize("tap, edge", [(0.0, 5), (0.8, 7), (-0.8, 3)])
+def test_at_a_corner_the_pilot_goes_straight_or_where_the_wheel_tapped(tap, edge):
+    """four_way's east arm, westbound (edge 0, its lane at z = -1.5): straight on is the west arm (0 → 3, edge 5),
+    right is north (0 → 4, edge 7), left is south (0 → 2, edge 3)."""
+    run, _ = pilot_run(four_way(), 55.0, -1.5, math.pi, 30.0, steer=lambda t: tap if 5.0 < t < 5.3 else 0.0)
+    places = [p for _, _, p in run if p is not None]
+    assert places[-1].edge == edge
+    assert run[-1][1].speed > 3.0

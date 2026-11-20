@@ -653,8 +653,7 @@ class TrafficLayer:
                 if e in self.stored:
                     k = len(self.stored.pop(e))
                     self.runner.submit(lambda flow, e=e, k=k: flow.n.__setitem__(e, flow.n[e] + k))
-        t = when.hour * 3600 + when.minute * 60 + when.second + when.microsecond / 1e6
-        self.cars.step(dt, t, obstacles)
+        self.cars.step(dt, self._seconds(when), obstacles)
 
         out = ~self.owned[self.cars.edge]
         if out.any():
@@ -673,6 +672,19 @@ class TrafficLayer:
             self._take_arrivals(flow)
 
         self.runner.submit(report)
+
+    @staticmethod
+    def _seconds(when) -> float:
+        """The time of day in seconds, which the signals' phases run on."""
+        return when.hour * 3600 + when.minute * 60 + when.second + when.microsecond / 1e6
+
+    def signal_open(self, edge: int, dist: float, v: float) -> bool:
+        """Whether a vehicle dist metres before the end of edge at v m/s may go on: no signal there, green, or
+        amber too close to stop, as for the traffic."""
+        if self.cars.control[edge] != 1:
+            return True
+        t = self._seconds(self.runner.clock.now())
+        return bool(self.cars._signal_open(np.array([edge]), t, np.array([dist]), np.array([v]))[0])
 
     def accident(self, edge: int, minutes: float = 40.0) -> None:
         """Close an edge for `minutes`: its cars stop where they are and stay until it clears."""
