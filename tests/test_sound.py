@@ -97,8 +97,8 @@ def test_a_recorded_engine_follows_the_rpm(options, tmp_path):
     while time.time() - t < 30 and s.audio.state()["levels"]["engine"] < -60:  # until the engine is built
         s.frame(g)
         time.sleep(1 / 60)
-    t = time.time()
-    while time.time() - t < 2.5:
+    ready, t = s.audio.state()["time"], time.time()
+    while s.audio.state()["time"] < ready + 2.0 and time.time() - t < 60:  # two seconds of sound, however slow
         s.frame(g)
         time.sleep(1 / 60)
     s.close()
