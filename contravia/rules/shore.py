@@ -45,7 +45,7 @@ SHALLOW_Y = WATER_Y + 0.04  # the shallows' band, just over the water plane
 BEACH_SLOPE = 0.05  # rise over run of the sand from the water's edge
 # metres from an OSM feature that still take its type: OSM draws them on its own coast, which can lie some way
 # off the relief's, most of all along mangroves, whose tops the relief measures
-NEAR = {"beach": 60.0, "cliff": 60.0, "mangrove": 150.0}
+NEAR = {"beach": 60.0, "cliff": 120.0, "mangrove": 150.0}
 SHALLOWS = (30.0, 14.0, 10.0, 26.0)  # metres of lighter water off each type
 BAND = ((16.0, 26.0), (5.0, 12.0), (4.0, 9.0), (6.0, 18.0))  # metres inland where each type's colour gives way
 KEEP_NEAR, KEEP_FAR = 4.0, 12.0  # metres from anything built where the ground starts to take the shore's shape
