@@ -22,7 +22,7 @@ def pack(pbf, dem, out, provinces=None, worldcover=None) -> dict:
     """Write out/<slug>.src for each province (all by default): its part of the extract, its cleaned relief
     from the GLO-30 tiles in dem and, with worldcover, where the satellite sees buildings (contravia.builtup), from
     the WorldCover tiles there; tiles missing from either folder are downloaded. Returns {name: sizes in bytes}."""
-    from contravia import coast
+    from contravia import coast, shore
     from contravia.geo import PROVINCES
     from contravia.prepare import TERRAIN_STRIDE, province_boxes
     from contravia.terrain import read_terrain
@@ -32,6 +32,9 @@ def pack(pbf, dem, out, provinces=None, worldcover=None) -> dict:
         land, report = coast.read(pbf)
         sizes["coast"] = {"bytes": coast.save(land, Path(out) / coast.NAME), **report}
         print(f"coast: {json.dumps(sizes['coast'])}", flush=True)
+        features, report = shore.read(pbf, land)  # what the shore is made of, along that coast
+        sizes["shore"] = {"bytes": shore.save(features, Path(out) / shore.NAME), **report}
+        print(f"shore: {json.dumps(sizes['shore'])}", flush=True)
     for name, slug in PROVINCES:
         if provinces and name not in provinces and slug not in provinces:
             continue

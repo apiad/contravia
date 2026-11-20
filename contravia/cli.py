@@ -56,6 +56,11 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("pbf")
     p.add_argument("--out", default="data/cuba", help="the built island (its index is rewritten on the next load) or data/cuba-src")
 
+    p = sub.add_parser("shore", help="write what the shore is made of (OSM beaches, cliffs and wetlands near the coast) "
+                       "into a built island or the sources, beside coast.src")
+    p.add_argument("pbf")
+    p.add_argument("--out", default="data/cuba", help="the folder holding coast.src; shore.src is written beside it")
+
     p = sub.add_parser("cover", help="write what covers the land (ESA WorldCover 2021) over the coast into a built island or the sources")
     p.add_argument("--out", default="data/cuba", help="the folder holding coast.src; cover.src is written beside it")
     p.add_argument("--cache", default="~/.cache/worldcover", help="where the tiles are downloaded; each is deleted once read")
@@ -158,6 +163,15 @@ def main(argv: list[str] | None = None) -> None:
 
         land, report = coast.read(args.pbf)
         report["bytes"] = coast.save(land, Path(args.out) / coast.NAME)
+        print(json.dumps(report))
+    elif args.command == "shore":
+        import json
+        from pathlib import Path
+
+        from contravia import coast, shore
+
+        features, report = shore.read(args.pbf, coast.load(Path(args.out) / coast.NAME))
+        report["bytes"] = shore.save(features, Path(args.out) / shore.NAME)
         print(json.dumps(report))
     elif args.command == "cover":
         import json

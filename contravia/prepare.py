@@ -610,7 +610,7 @@ def main(pbf, out, dem=None, provinces=None, resume: bool = False, jobs: int = 1
     import multiprocessing
     from concurrent.futures import ProcessPoolExecutor, as_completed
 
-    from contravia import coast
+    from contravia import coast, shore
     from contravia.geo import PROVINCES
 
     boxes = province_boxes(pbf)
@@ -619,6 +619,8 @@ def main(pbf, out, dem=None, provinces=None, resume: bool = False, jobs: int = 1
         land, reports["coast"] = coast.read(pbf)
         if not land.is_empty:
             reports["coast"]["bytes"] = coast.save(land, Path(out) / coast.NAME)
+            features, reports["shore"] = shore.read(pbf, land)  # what the shore is made of, along that coast
+            reports["shore"]["bytes"] = shore.save(features, Path(out) / shore.NAME)
         print("coast", json.dumps(reports["coast"]), flush=True)
     todo = []
     for name, slug in PROVINCES:
