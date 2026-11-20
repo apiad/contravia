@@ -54,7 +54,7 @@ def open_run(city: World, when: str, pipeline: bool, size=(1920, 1080), sky: str
     engine._pipeline_on = bool(pipeline)
     engine._pipeline_frames = 0
     engine._fire_startup()  # run() fires it on its first frame: the HUD builds its panels and minimap there
-    assert game.hud.heading is not None
+    assert game.hud.panels
     return engine, game
 
 
