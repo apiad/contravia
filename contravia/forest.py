@@ -18,6 +18,7 @@ from time import perf_counter
 
 import numpy as np
 
+from contravia import regions
 from contravia.clearance import roads_around
 from contravia.grass import yard_trees
 from contravia.rules import trees
@@ -124,7 +125,7 @@ class Forest:
     def grow(self, i: int, j: int):
         """The (Trees) rows of cell (i, j): those the cell's rules grow and the car hits. On this thread too, the
         meshes of their species, which the main thread would otherwise stop for at their first spawn."""
-        c = self.landmarks.keep(i, j, self.city.cell(i, j))
+        c = regions.current().parks(self.landmarks.keep(i, j, self.city.cell(i, j)))
         near = roads_around(self.city, i, j)
         t = trees.cell_trees(i, j, c, self.city.terrain, near, trees.arrays_of(self.city, i, j),
                              yard_trees(self.city, i, j, self.landmarks), shore_of(self.city))

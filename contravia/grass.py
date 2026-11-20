@@ -21,7 +21,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 import numpy as np
 import shapely
 
-from contravia import parks
+from contravia import parks, regions
 from contravia.geo import CELL
 from contravia.rules import trees
 from contravia.rules.buildings import filler_rings
@@ -115,7 +115,8 @@ def lawns(city, i: int, j: int) -> list:
     for a in trees.arrays_of(city, i, j):
         if "park_kind" in a and len(a["park_kind"]):
             tree = parks._lookup(a)[0]
-            polys += list(tree.geometries.take(tree.query(box)))
+            laid = tree.geometries.take(tree.query(box))
+            polys += list(laid[regions.current().kept(shapely.get_coordinates(shapely.point_on_surface(laid)))])
     return polys
 
 
@@ -128,13 +129,13 @@ def open_ground(city, i: int, j: int, p, landmarks=None, clear=CLEAR, house_clea
     p = np.asarray(p, float).reshape(-1, 2)
     if not len(p):
         return np.zeros(0, bool)
-    c = city.cell(i, j)
+    c = regions.current().parks(city.cell(i, j))
     near = [city.cell(i + di, j + dj) for di in (-1, 0, 1) for dj in (-1, 0, 1)]
     reach = max(clear, house_clear, road_clear) + 1.0
     lo, hi = p.min(0) - reach, p.max(0) + reach
     houses = [r for n in near for r in n.buildings]
-    houses += [r for n in near for block, seed in zip(n.fillers, n.filler_seeds, strict=True)
-               for r in filler_rings(block, int(seed))]
+    houses += [r for n in near for block, seed, filled in zip(n.fillers, n.filler_seeds, regions.current().filled(n), strict=True)
+               if filled for r in filler_rings(block, int(seed))]
     if landmarks is not None:
         houses += landmarks.clear + landmarks.wall_rings
     houses = [r for r in (np.asarray(r, float) for r in houses)

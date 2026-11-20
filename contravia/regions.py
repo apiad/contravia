@@ -23,6 +23,9 @@ box, each polygon covers all of the cell or none of it, and the whole cell takes
 path). Otherwise each item's centroid is tested against the polygons that cross the box, one vectorised
 shapely.contains_xy call per polygon.
 
+A region's blocks group takes filler houses (blocks.fill, read by clearance.boxes) and the parks contravia
+prepare laid (blocks.parks, read through `parks` by the cells, the walls, the forest and the grass) away from it.
+
 Every process that builds cells loads the file once, on first use. Under contravia dev a reload imports this
 module afresh and starts new builder processes, so a reload always reads the file again.
 """
@@ -47,6 +50,7 @@ TOLERANCE = 0.5  # metres the polygons of regions.src are simplified to
 SHAPES = ("municipio", "barrio", "osm", "tag", "place", "polygon")  # the keys of where
 LAYER = {"municipio": 1, "tag": 2, "barrio": 3, "osm": 3, "place": 3, "polygon": 3}
 BUILDINGS = ("types", "storeys", "palette", "wear", "portal")  # the keys of a region's buildings group
+BLOCKS = {"fill": ("houses", "none"), "parks": ("keep", "drop")}  # the keys of a region's blocks group, and values
 MARGIN = 100.0  # metres around a cell's square that its items' footprints may reach
 CASE = ("kind", "above", "below", "types", "storeys")  # the keys of one case of buildings.types
 
@@ -93,6 +97,8 @@ class Params:
     palette: tuple[str, ...] | None = None
     wear: tuple[float, float] | None = None
     portal: bool = False  # eclectic and colonial buildings of two storeys or more stand on columns by main roads
+    fill: str = "houses"  # what a block left empty gets: filler houses, or nothing
+    parks: str = "keep"  # whether the parks contravia prepare laid stand, or are dropped
     regions: tuple[str, ...] = ()  # the names of the regions merged into these, lowest layer first
 
     def pick(self, kind: str, area: float) -> Case:
@@ -191,6 +197,21 @@ def _buildings(name, group, types) -> dict:
     return out
 
 
+def _blocks(name, group, shape) -> dict:
+    if not isinstance(group, dict):
+        _fail(name, "blocks", "must be a table")
+    out = {}
+    for key, v in group.items():
+        if key not in BLOCKS:
+            _fail(name, f"blocks.{key}", f"unknown key (known: {', '.join(BLOCKS)})")
+        if v not in BLOCKS[key]:
+            _fail(name, f"blocks.{key}", f"must be one of {', '.join(map(repr, BLOCKS[key]))}")
+        out[key] = v
+    if shape == "municipio" and "parks" in out:  # a laid park carries no municipio; parks() places it by shape
+        _fail(name, "blocks.parks", "a municipio region cannot set it: name the place by a shape")
+    return out
+
+
 def _polygon(name, where) -> shapely.Polygon:
     from contravia.geo import to_local
 
@@ -265,6 +286,8 @@ class Regions:
         for p in self.polygons:
             shapely.prepare(p)
         self.tree = shapely.STRtree(self.polygons) if len(self.polygons) else None
+        self.dropping = any(regions[k].fields.get("parks") == "drop" for k in shaped)
+        self.emptying = any(r.fields.get("fill") == "none" for r in regions)
         self._cache: dict[frozenset, Params] = {}
 
     @classmethod
@@ -296,13 +319,13 @@ class Regions:
             if name in names:
                 _fail(name, "name", "two regions have this name")
             names.add(name)
-            for bad in set(raw) - {"name", "where", "priority", "buildings"}:
-                _fail(name, bad, "unknown key (known: where, priority, buildings)")
+            for bad in set(raw) - {"name", "where", "priority", "buildings", "blocks"}:
+                _fail(name, bad, "unknown key (known: where, priority, buildings, blocks)")
             priority = raw.get("priority", 0)
             if not isinstance(priority, int):
                 _fail(name, "priority", "must be a whole number")
             shape, value, poly = _shape(name, raw.get("where"), src)
-            fields = _buildings(name, raw.get("buildings", {}), tuple(TYPES))
+            fields = _buildings(name, raw.get("buildings", {}), tuple(TYPES)) | _blocks(name, raw.get("blocks", {}), shape)
             if shape in ("barrio", "osm", "tag") and poly is None:  # no regions.src: nothing places it
                 continue
             regions.append(Region(name, shape, value, priority, fields, k))
@@ -384,6 +407,36 @@ class Regions:
         params = self._assign(whole, cut, lambda: np.array([np.asarray(r, float).mean(axis=0) for r in rings]),
                               munis + [zone] * len(cell.fillers))
         return params[:len(munis)], params[len(munis):]
+
+    def filled(self, cell) -> list[bool]:
+        """Whether each filler block of the cell gets its houses (blocks.fill), as clearance.boxes decides."""
+        if not self.emptying:
+            return [True] * len(cell.fillers)
+        return [p.fill == "houses" for p in self.cell(cell)[1]]
+
+    def kept(self, xz) -> np.ndarray:
+        """Whether each (N, 2) point of a laid park stands where its regions keep parks (blocks.parks). Only
+        shaped regions place a park, as a laid park carries no municipio."""
+        xz = np.asarray(xz, float).reshape(-1, 2)
+        if not self.dropping or not len(xz):
+            return np.ones(len(xz), bool)
+        return np.array([p.parks == "keep" for p in self.assign(xz, [None] * len(xz))], bool)
+
+    def parks(self, cell):
+        """The cell without the laid parks' motifs, walls and trees that stand where a region drops parks: each
+        motif triangle and wall placed by its middle, each tree by its spot. The cell itself where none does."""
+        if not self.dropping:
+            return cell
+        trees = self.kept(cell.trees)
+        if cell.park_tris is None:
+            return replace(cell, trees=cell.trees[trees]) if not trees.all() else cell
+        tris = self.kept(np.asarray(cell.park_tris, float)[:, :, [0, 2]].mean(axis=1))
+        walls = np.asarray(cell.park_walls, float).reshape(-1, 6)
+        walls = self.kept((walls[:, 0:2] + walls[:, 2:4]) / 2)
+        if trees.all() and tris.all() and walls.all():
+            return cell
+        return replace(cell, trees=cell.trees[trees], park_tris=cell.park_tris[tris], park_paint=cell.park_paint[tris],
+                     park_walls=cell.park_walls[walls])
 
 
 def read(pbf, names=()) -> tuple[dict, dict]:

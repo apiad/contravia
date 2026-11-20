@@ -9,6 +9,7 @@ clears are left out; the landmarks themselves are drawn once by the game, not pe
 
 import os
 
+from contravia import regions
 from contravia.clearance import boxes, roads_around, streets_around
 from contravia.geo import CELL
 from contravia.landmarks import Landmarks, cached
@@ -59,7 +60,7 @@ def build(i: int, j: int):
     """The MeshData of cell (i, j): its ground, its shore's rocks near the sea (rules/shore.py), roads, buildings
     and filler boxes. Its trees are not in it: the game draws them as instances (forest.py)."""
     global SKIPPED_ROOFS
-    c = landmarks().keep(i, j, city().cell(i, j))
+    c = regions.current().parks(landmarks().keep(i, j, city().cell(i, j)))  # without the parks a region drops
     x0, z0 = i * CELL, j * CELL
     mb = MeshBuilder()
     terrain = city().terrain

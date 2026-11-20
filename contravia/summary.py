@@ -79,6 +79,8 @@ def summarize(cells: list[tuple[int, int, Cell]], L: int, a: int, b: int, origin
             area = abs(signed_area(ring))
             add(sx, sz, area, facades.plan(int(osm_id), at, params, area), ring)
         for ring, seed, params in zip(c.fillers, c.filler_seeds, at_fillers, strict=True):
+            if params.fill == "none":
+                continue
             ring = np.asarray(ring, float)
             (sx, sz), = _square_of(ring.mean(axis=0), L, a, b, origin)
             area = abs(signed_area(ring)) * FILLER_SHARE
