@@ -26,7 +26,7 @@ from contravia import collect
 from contravia.album import Album
 from contravia.camera import chase
 from contravia.car import CarState, Controls, Driven, settle
-from contravia.driving_help import DEFAULT, chassis_strengths
+from contravia.driving_help import DEFAULT, DrivingHelp, Road, chassis_strengths, road_assists
 from contravia.forest import Forest
 from contravia.geo import CELL, to_local
 from contravia.grass import Grass
@@ -123,6 +123,7 @@ class Game:
         self.model = kept(engine.state, "player car", "CarParams()", _player_car)
         self.handles = spawn_car(engine, self.model)
         self.family, self.driven, self.help_level, self.locked_assists = "moderno", None, DEFAULT, ()
+        self.help = None  # the road assists, made on the first frame that needs them
         self.physics_ms = 0.0
         if "car" in engine.state:  # a reload under contravia dev: drive on from where the old code left the car
             self._resume(engine.state.car)
@@ -405,6 +406,17 @@ class Game:
         if c is None or c.driven is not self.driven:
             c = self.crashes = Crashes(self.driven)
         return c
+
+    def road_help(self, c: Controls) -> Controls:
+        """The controls after the driving help's road assists at the chosen level, on the province's graph."""
+        level, locked = getattr(self, "help_level", DEFAULT), getattr(self, "locked_assists", ())
+        graph = self.city.graph
+        if not road_assists(level, locked) or not len(graph):
+            self.help = None
+            return c
+        if getattr(self, "_help_for", None) != (id(graph), id(self.driven)):  # another province or vehicle
+            self.help, self._help_for = DrivingHelp(Road(graph), *self.driven.steering()), (id(graph), id(self.driven))
+        return self.help.apply(c, self.car, self._dt, level, locked, float(self.strengths()[0]))
 
     def strengths(self):
         """The chassis assists' strengths at the driving help's level."""
@@ -738,7 +750,7 @@ class Game:
             if inp.just_pressed("t"):
                 x, z, _ = self.walls.random_road(self._rng)
                 self.teleport(x, z)
-            c = self.autopilot(self.car) if self.autopilot else self.controls(self._dt)
+            c = self.autopilot(self.car) if self.autopilot else self.road_help(self.controls(self._dt))
             walls = self.walls.near(self.car.x, self.car.z, self.car.y)
             if self.layer:
                 walls = np.concatenate([walls.reshape(-1, 2, 2), self.layer.boxes_near(self.car.x, self.car.z)])
@@ -747,6 +759,8 @@ class Game:
             self._before = self.car
             t0 = time.perf_counter()
             self.car = self.driven.step(c, self._dt, walls, self.strengths(), self._crashes().controls())
+            if self.help and self.car.telemetry is not None:
+                self.car.telemetry.setdefault("lit", {}).update(self.help.lit)
             self.physics_ms = (time.perf_counter() - t0) * 1000
             self.km += math.hypot(self.car.x - self._before.x, self.car.z - self._before.z) / 1000
         # manifoldx turns +x toward -z for a positive yaw; the game turns it toward +z.

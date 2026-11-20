@@ -22,10 +22,10 @@ def test_gearbox_shows_the_cars_own_gear_and_revs():
 
 def test_the_lamps_light_with_the_assists():
     car = CarState(0, 0, 0, 20.0, telemetry={"lit": {"steer": False, "traction": False, "abs": True,
-                                                       "stability": False}})
-    assert lamps_lit(car) == [False, False, True, False]
-    assert len(LAMPS) == 4
-    assert lamps_lit(CarState(0, 0, 0, 0.0)) == [False] * 4
+                                                       "stability": False, "lane": True}})
+    assert lamps_lit(car) == [False, False, True, False, True]
+    assert [label for _, label in LAMPS] == ["DIR", "TRC", "ABS", "EST", "SENDA"]
+    assert lamps_lit(CarState(0, 0, 0, 0.0)) == [False] * 5
 
 
 def test_speed_text_in_kmh_and_mph():

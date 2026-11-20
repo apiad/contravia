@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 from graphs import make_graph, straight
 
+from contravia.driving_help import ROAD_ASSISTS as ROAD
 from contravia.driving_help import Road, chassis_strengths, level_from_realism
 from contravia.traffic import Cars, lane_geometry, lane_offsets
 
@@ -100,3 +101,68 @@ def test_the_grid_finds_what_a_search_of_every_segment_finds(city):
             found += 1
             assert (fast.edge, fast.lane) == (slow.edge, slow.lane) and fast.s == pytest.approx(slow.s)
     assert found > 100
+
+
+def arc_road(radius=120.0, pieces=64, lanes=1) -> "Road":
+    """A one-way street bending a quarter turn to the right (toward +z), as `pieces` straight edges. Fewer, longer
+    pieces and the car rounds their corners, up to their sagitta inside each (0.15 m for 16 pieces)."""
+    a = np.linspace(-math.pi / 2, 0, pieces + 1)
+    junctions = [(radius * math.cos(t), radius + radius * math.sin(t)) for t in a]
+    return Road(make_graph(junctions, [(k, k + 1) for k in range(pieces)], cls="primary", lanes=lanes))
+
+
+def drive(road, x, z, yaw, level, seconds, steer=lambda t: 0.0, speed=12.0):
+    """Drive the moderno at about `speed` with the road help of `level`; the places it was found at, each frame."""
+    from manifoldx.vehicles import FlatGround
+
+    from contravia.car import CarState, Controls, Driven
+    from contravia.driving_help import DrivingHelp
+    from contravia.rules import fleet, handling
+
+    d = Driven(handling.spec_for(fleet.moderno(), "moderno"), CarState(x, z, yaw, 0.0), FlatGround())
+    walls, k = np.zeros((0, 2, 2)), chassis_strengths(level)
+    d.run(Controls(0, 0, 0, False), 0.5, walls, k)
+    d.launch(speed)
+    help, car, dt, places = DrivingHelp(road, *d.steering()), d.state, 1 / 60, []
+    for i in range(int(seconds / dt)):
+        c = Controls(throttle=0.5 if car.speed < speed else 0.0, brake=0, steer=steer(i * dt), handbrake=False)
+        car = d.step(help.apply(c, car, dt, level, (), float(k[0])), dt, walls, k)
+        places.append(road.locate(car.x, car.z, car.yaw))
+    return places
+
+
+def test_with_the_wheel_released_the_car_keeps_its_lane_round_a_bend():
+    road = arc_road()
+    places = drive(road, 0.0, 1.0, 0.0, level=2, seconds=12)  # 1 m right of the lane's centre
+    assert all(p is not None and abs(p.right) < 1.5 for p in places)
+    assert all(abs(p.right) < 0.3 for p in places[-180:])
+    assert places[-1].edge >= 32  # it went round, not stopped
+
+
+def test_without_lane_keeping_the_car_leaves_the_bend():
+    places = drive(arc_road(), 0.0, 1.0, 0.0, level=3, seconds=12)
+    assert any(p is None or abs(p.right) > 1.5 for p in places)
+
+
+def test_a_long_tap_of_the_wheel_moves_to_the_next_lane():
+    road = Road(make_graph([(0, 0), (600, 0)], [(0, 1)], cls="primary", lanes=2))
+    left, right = lane_offsets(2, float(road.lane_w[0]), False)[::-1]
+    places = drive(road, 0.0, left, 0.0, level=2, seconds=10, steer=lambda t: 0.6 if 1.0 < t < 1.4 else 0.0)
+    assert places[50].lane == 1 and places[-1].lane == 0
+    assert abs(places[-1].right - right) < 0.3
+
+
+def test_the_driver_steering_or_off_the_road_gets_no_correction():
+    from contravia.car import CarState, Controls
+    from contravia.driving_help import DrivingHelp, road_assists
+
+    road = Road(straight())
+    help = DrivingHelp(road, 0.6, 2.7)
+    turn = Controls(0.5, 0, 0.3, False)
+    assert help.apply(turn, CarState(100.0, 2.5, 0.0, 12.0), 1 / 60, 2) == turn
+    assert not help.lit["lane"]
+    ahead = Controls(0.5, 0, 0.0, False)
+    assert help.apply(ahead, CarState(100.0, 40.0, 0.0, 12.0), 1 / 60, 2) == ahead
+    assert help.apply(ahead, CarState(100.0, 2.5, 0.0, 12.0), 1 / 60, 3) == ahead
+    assert help.apply(ahead, CarState(100.0, 2.5, 0.0, 12.0), 1 / 60, 2).steer < 0  # back left, toward 1.5
+    assert road_assists(2) == {"lane"} and road_assists(0) == set(ROAD) and road_assists(1, ("lane",)) == {"brake"}

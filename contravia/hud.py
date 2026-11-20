@@ -58,7 +58,8 @@ def gearbox(car, idle: float, redline: float) -> tuple[str, float]:
     return name, float(min(1.0, max(0.0, (car.rpm - idle) / max(redline - idle, 1.0))))
 
 
-LAMPS = (("steer", "DIR"), ("traction", "TRC"), ("abs", "ABS"), ("stability", "EST"))  # the assists' lamps
+LAMPS = (("steer", "DIR"), ("traction", "TRC"), ("abs", "ABS"), ("stability", "EST"),
+         ("lane", "SENDA"))  # the assists' lamps
 
 
 def lamps_lit(car) -> list[bool]:
@@ -195,7 +196,7 @@ class Hud:
         gear_panel = Panel([gear], anchor="bottom-right", offset=(MARGIN, MARGIN + 92), style_overrides=CLEAR)
         tail = Panel([self.units_text, self.revs], anchor="bottom-right", offset=(MARGIN, MARGIN),
                      style_overrides={**CLEAR, "gap": 4})
-        lamps = Panel(self.lamp_texts, anchor="bottom-right", offset=(MARGIN + 52, MARGIN + 98),
+        lamps = Panel(self.lamp_texts, anchor="bottom-right", offset=(MARGIN, MARGIN + 140),
                       style_overrides={**CLEAR, "gap": 6, "direction": "h"})
         # Bottom centre, while a place without a photo is in reach and in sight: its name and the key F.
         self.spot_text = Text(self._spot, style_overrides={"font": ui.BOLD, "font_size": 17, "fg": ui.PAPER})

@@ -119,6 +119,13 @@ class Driven:
             self.step(c, 1 / fps, walls, strengths)
         return self.state
 
+    def steering(self) -> tuple[float, float]:
+        """The wheel's full lock in radians and the wheelbase in metres, for a driver that steers by geometry."""
+        p = self.fleet.p
+        x = p.mount[0, :, 0]
+        front, rear = x[p.steered[0]].max(), x[p.wheel_mask[0]].min()
+        return float(p.max_steer[0]), float(front - rear)
+
     def pose(self) -> dict:
         """What place_car needs to draw the car between the last two steps."""
         f = self.fleet
