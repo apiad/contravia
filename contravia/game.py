@@ -458,9 +458,9 @@ class Game:
         level, locked = getattr(self, "help_level", DEFAULT), getattr(self, "locked_assists", ())
         graph = self.city.graph
         if not road_assists(level, locked) or not len(graph):
-            self.help = None
+            self.help, self._help_for = None, None  # a level with road assists again builds a new one
             return c
-        if getattr(self, "_help_for", None) != (id(graph), id(self.driven)):  # another province or vehicle
+        if getattr(self, "help", None) is None or getattr(self, "_help_for", None) != (id(graph), id(self.driven)):  # another province or vehicle
             length, _, width = self.driven.spec.size
             self.help = DrivingHelp(Road(graph), *self.driven.steering(), length, width)
             self._help_for = (id(graph), id(self.driven))

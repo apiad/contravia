@@ -466,3 +466,23 @@ def test_l_in_drive_mode_turns_the_driving_help_and_saves_it(city_npz):
         assert game.help_level == 4  # a menu on the screen does not read L
     finally:
         game._shutdown()
+
+
+def test_road_help_comes_back_after_a_level_without_it(city_npz):
+    """L from almost autopilot (0) round through the real car (5) and back drops the road help and builds it again."""
+    import manifoldx as mx
+
+    from contravia.game import Game
+    from contravia.world import World
+    from contravia.car import Controls
+
+    engine = mx.Engine("help-again", width=64, height=48)
+    game = Game(engine, World.load(str(city_npz)), clock=Clock(at=parse_at("Tue 10:00")))
+    try:
+        engine.render_frame(supersample=1)
+        for level in (0, 5, 0):
+            game.help_level = level
+            game.road_help(Controls(0.0, 0.0, 0.0, False))
+            assert (game.help is None) == (level == 5)
+    finally:
+        game._shutdown()
