@@ -112,15 +112,21 @@ def _download(url: str, path: Path, fetch=None) -> bool:
     import urllib.request
 
     path.parent.mkdir(parents=True, exist_ok=True)
+    part = path.with_name(path.name + ".part")  # a cut download never passes for a tile
     try:
         if fetch is not None:
-            fetch(url, path)
+            fetch(url, part)
         else:
-            urllib.request.urlretrieve(url, path)
+            urllib.request.urlretrieve(url, part)
     except urllib.error.HTTPError as e:
+        part.unlink(missing_ok=True)
         if e.code in (403, 404):
             return False
         raise
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
+    part.replace(path)
     return True
 
 
