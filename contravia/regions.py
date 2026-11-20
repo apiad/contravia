@@ -25,6 +25,7 @@ shapely.contains_xy call per polygon.
 
 A region's blocks group takes filler houses (blocks.fill, read by clearance.boxes) and the parks contravia
 prepare laid (blocks.parks, read through `parks` by the cells, the walls, the forest and the grass) away from it.
+regions.src also keeps OSM's service roads and footways inside every cemetery ("lanes:main", "lanes:path").
 
 Every process that builds cells loads the file once, on first use. Under contravia dev a reload imports this
 module afresh and starts new builder processes, so a reload always reads the file again.
@@ -46,6 +47,9 @@ PATH = Path(__file__).with_name("regions.toml")
 NAME = "regions.src"  # the OSM polygons the file names, beside coast.src in the sources and in the built island
 VERSION = 1
 TAGS = ("landuse=cemetery",)  # tags regions.src always holds, whether the file names them or not
+LANES = {"lanes:main": ("service", "track", "unclassified", "residential", "living_street"),
+         "lanes:path": ("footway", "path", "pedestrian", "steps", "cycleway")}  # the ways regions.src keeps
+                                                                                 # inside cemeteries, by kind
 TOLERANCE = 0.5  # metres the polygons of regions.src are simplified to
 SHAPES = ("municipio", "barrio", "osm", "tag", "place", "polygon")  # the keys of where
 LAYER = {"municipio": 1, "tag": 2, "barrio": 3, "osm": 3, "place": 3, "polygon": 3}
@@ -271,8 +275,10 @@ def _key(names) -> frozenset:
 class Regions:
     """The regions of one file: municipio regions by name, the others in an STRtree, and the merged Params."""
 
-    def __init__(self, regions: list[Region], polygons: list[shapely.Geometry], version: str = ""):
+    def __init__(self, regions: list[Region], polygons: list[shapely.Geometry], version: str = "",
+                 lanes: dict | None = None):
         self.regions = regions
+        self.lanes = lanes or {}  # "lanes:main" and "lanes:path": OSM's ways inside cemeteries (regions.src)
         self.version = version  # a hash of the file's bytes and the side file's time
         self.by_muni: dict[str, list[int]] = {}
         for k, r in enumerate(regions):
@@ -331,7 +337,7 @@ class Regions:
             regions.append(Region(name, shape, value, priority, fields, k))
             if poly is not None:
                 polygons.append(poly)
-        return cls(regions, polygons, version)
+        return cls(regions, polygons, version, {k: v for k, v in (src or {}).items() if k.startswith("lanes:")})
 
     def municipios(self) -> set[str]:
         """The municipio names the file's regions match."""
@@ -474,7 +480,37 @@ def read(pbf, names=()) -> tuple[dict, dict]:
         g = shapely.simplify(_local(shapely.make_valid(shapely.union_all(geoms))), TOLERANCE, preserve_topology=True)
         out[key] = g
         report[key] = {"found": len(geoms), "parts": len(shapely.get_parts(g)), "ha": round(g.area / 1e4, 1)}
+    yards = shapely.make_valid(shapely.union_all(found["tag:landuse=cemetery"]))
+    if not yards.is_empty:
+        for key, lines in _lanes(pbf, yards).items():
+            g = shapely.simplify(_local(lines), TOLERANCE)
+            out[key] = g
+            report[key] = {"found": len(shapely.get_parts(g)), "km": round(g.length / 1e3, 1)}
     return out, report
+
+
+def _lanes(pbf, yards) -> dict:
+    """{"lanes:main" or "lanes:path": the lines, in (lon, lat), of OSM's ways of LANES that run inside yards}."""
+    import osmium
+
+    shapely.prepare(yards)
+    wkb = osmium.geom.WKBFactory()
+    found: dict[str, list] = {k: [] for k in LANES}
+
+    class Handler(osmium.SimpleHandler):
+        def way(self, w):
+            kind = next((k for k, v in LANES.items() if w.tags.get("highway") in v), None)
+            if kind is None:
+                return
+            try:
+                line = shapely.from_wkb(wkb.create_linestring(w))
+            except (osmium.InvalidLocationError, RuntimeError):
+                return
+            if yards.intersects(line):
+                found[kind].append(line)
+
+    Handler().apply_file(str(pbf), locations=True)
+    return {k: shapely.intersection(shapely.union_all(v), yards) for k, v in found.items() if v}
 
 
 def named(path: Path | str = PATH) -> list[str]:

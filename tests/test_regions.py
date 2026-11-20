@@ -241,16 +241,20 @@ def test_regions_src_holds_the_tags_and_ids_the_file_names(tmp_path):
 
     osm = tmp_path / "tiny.osm"
     nodes = [(1, 23.10, -82.40), (2, 23.10, -82.39), (3, 23.11, -82.39), (4, 23.11, -82.40),
-             (5, 23.20, -82.40), (6, 23.20, -82.39), (7, 23.21, -82.39)]
+             (5, 23.20, -82.40), (6, 23.20, -82.39), (7, 23.21, -82.39), (8, 23.105, -82.398), (9, 23.105, -82.392),
+             (10, 23.30, -82.40), (11, 23.30, -82.39)]
     osm.write_text("<?xml version='1.0' encoding='UTF-8'?>\n<osm version='0.6'>\n"
                    + "".join(f"<node id='{i}' version='1' lat='{la}' lon='{lo}'/>\n" for i, la, lo in nodes)
                    + "<way id='10' version='1'><nd ref='1'/><nd ref='2'/><nd ref='3'/><nd ref='4'/><nd ref='1'/>"
                    "<tag k='landuse' v='cemetery'/></way>\n"
                    "<way id='11' version='1'><nd ref='5'/><nd ref='6'/><nd ref='7'/><nd ref='5'/></way>\n"
                    "<relation id='20' version='1'><member type='way' ref='11' role='outer'/>"
-                   "<tag k='type' v='multipolygon'/><tag k='landuse' v='grass'/></relation>\n</osm>\n")
+                   "<tag k='type' v='multipolygon'/><tag k='landuse' v='grass'/></relation>\n"
+                   "<way id='12' version='1'><nd ref='8'/><nd ref='9'/><tag k='highway' v='footway'/></way>\n"
+                   "<way id='13' version='1'><nd ref='10'/><nd ref='11'/><tag k='highway' v='service'/></way>\n</osm>\n")
     shapes, report = module.read(osm, ["osm:relation/20", "tag:landuse=cemetery"])
-    assert set(shapes) == {"tag:landuse=cemetery", "osm:relation/20"} and report["osm:relation/20"]["found"] == 1
+    assert set(shapes) == {"tag:landuse=cemetery", "osm:relation/20", "lanes:path"}  # the service road lies outside
+    assert report["osm:relation/20"]["found"] == 1 and 550 < shapes["lanes:path"].length < 650  # 0.006 degrees
     assert 1000 * 1000 < shapes["tag:landuse=cemetery"].area < 1100 * 1200  # about 1 km by 1.1 km, in metres
     module.save(shapes, tmp_path / module.NAME)
     back = module.load_src(tmp_path / module.NAME)
