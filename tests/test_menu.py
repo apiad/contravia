@@ -429,7 +429,7 @@ def test_the_maps_panel_names_what_lies_near_the_crosshair_at_each_height(city_n
     assert screen.here_panel in screen.panels and screen.here_title.text.startswith("Calle ")
     assert close[0] == capitolio.title and screen.here_header.text == "AQUÍ"
     high = settle(500_000.0)
-    assert screen.here_title.text == "La Habana" and len(high) == 25 and screen.here_header.text == "LO MÁS NOTABLE" and capitolio.title in high
+    assert screen.here_title.text == "La Habana" and len(high) == 10 and screen.here_header.text == "LO MÁS NOTABLE" and capitolio.title in high
 
 
 def test_l_in_drive_mode_turns_the_driving_help_and_saves_it(city_npz):

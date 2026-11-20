@@ -588,7 +588,7 @@ class MapScreen(Screen):
 
         if self.menu.current_before not in ("map", "card"):  # a resized window or a card rebuilds it from the map
             self.back_to = "pause" if self.menu.current_before == "pause" else "main"
-        self.marks, self.under, self.choice, self.picked = [], None, None, 0
+        self.marks, self.under, self.choice, self.picked, self.marks_for = [], None, None, 0, None
         for _ in range(MAP_MARKS):
             image = Image(placemarks.icon("lugar", False, MARK_PX), style_overrides={"width": MARK_PX})
             count = _text("", ui.BOLD, 13, ui.PAPER)
@@ -718,6 +718,9 @@ class MapScreen(Screen):
     def _place_marks(self) -> None:
         """Put the places' marks where the camera sees them and name the one under the crosshair."""
         g = self.menu.game
+        if getattr(self, "marks_for", None) == (g.map, self.width):
+            return  # the camera did not move: the marks stand
+        self.marks_for = (g.map, self.width)
         marks = placemarks.on_map(g.places, g.album.has, g.map, self.width, ui.DESIGN_H)
         for k, (panel, image, count) in enumerate(self.marks):
             if k >= len(marks):
