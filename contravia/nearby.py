@@ -30,7 +30,7 @@ class Band:
 
 
 BANDS = (  # highest first
-    Band("isla", 100_000.0, 25, 1.3, 0.0, 0.0, "LO MÁS NOTABLE"),
+    Band("isla", 100_000.0, 10, 1.3, 0.0, 0.0, "LO MÁS NOTABLE"),
     Band("ciudad", 13_000.0, 12, 0.6, 0.0, 0.0, "NOTABLE CERCA"),
     Band("barrio", 1_600.0, 8, 0.5, 800.0, 0.6, "CERCA"),
     Band("calle", 0.0, 5, 0.5, 300.0, 1.0, "AQUÍ"),

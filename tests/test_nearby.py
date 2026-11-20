@@ -42,10 +42,10 @@ def test_at_sea_or_off_the_streets_it_says_what_it_knows():
     assert (rural.title, rural.line, rural.header, rural.items) == ("Viñales", "Pinar del Río", "", ())
 
 
-def test_from_high_up_the_most_important_places_on_screen_come_first_and_at_most_25():
+def test_from_high_up_the_most_important_places_on_screen_come_first_and_at_most_10():
     recs = [place(k * 1000.0, 0, f"p{k:02d}", float(k % 15)) for k in range(40)]
     here = nearby.choose(collect.Places(recs), SPOT, 0, 0, 500_000)
-    assert len(here.items) == 25 and here.header == "LO MÁS NOTABLE"
+    assert len(here.items) == 10 and here.header == "LO MÁS NOTABLE"
     scores = [int(i.id[1:]) % 15 for i in here.items]
     assert scores == sorted(scores, reverse=True) and scores[0] == 14
     assert all(i.distance == "" for i in here.items)

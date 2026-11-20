@@ -159,8 +159,16 @@ def fit(panel):
 
 
 def refit(panel):
-    """Size a panel again, with the panels inside it, after its text changed."""
+    """Size a panel again, with the panels inside it, after its text changed. In a pipelined frame the new text
+    and children only land when the frame applies its commands, so the measure is queued after them; measured
+    now it would size the panel for its old content (the map's panel drawn narrow, its rows past the edge)."""
+    from manifoldx import _deferred
     from manifoldx.gui import Panel
+
+    engine = _deferred.current()
+    if engine is not None:
+        _deferred.defer(engine, refit, panel)
+        return panel
 
     def drop(p):
         p.style_overrides = {k: v for k, v in p.style_overrides.items() if k not in ("width", "height")}
