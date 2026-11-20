@@ -201,7 +201,7 @@ prepare = [
 
 [package.metadata]
 requires-dist = [
-    { name = "manifold-gfx", extras = ["desktop", "svg"], git = "https://github.com/gia-uh/manifoldx?branch=feat%2Fvehicle-contacts" },
+    { name = "manifold-gfx", extras = ["desktop", "svg"], git = "https://github.com/gia-uh/manifoldx?branch=main" },
     { name = "numpy" },
     { name = "pillow" },
     { name = "shapely" },
@@ -302,7 +302,7 @@ wheels = [
 [[package]]
 name = "manifold-gfx"
 version = "0.10.0"
-source = { git = "https://github.com/gia-uh/manifoldx?branch=feat%2Fvehicle-contacts#583136cca71f055be37eb7a0ebdda176f644d6f3" }
+source = { git = "https://github.com/gia-uh/manifoldx?branch=main#de5298eae8ba296030afea1f471c7dcc8afb7460" }
 dependencies = [
     { name = "numpy" },
     { name = "rendercanvas" },
