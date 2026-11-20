@@ -85,14 +85,7 @@ class Cars:
         d_start = poly[starts[:-1] + 1] - poly[starts[:-1]]
         self.end_dir = d_end / np.maximum(np.hypot(*d_end.T), 1e-9)[:, None]
         self.start_dir = d_start / np.maximum(np.hypot(*d_start.T), 1e-9)[:, None]
-        # Lane offsets: a street with a reverse edge is two-way, its lanes right of the centreline.
-        pair = {(int(f), int(t), int(w)) for f, t, w in zip(a["g_from"], a["g_to"], a["g_way"])}
-        self.twoway = np.array([(int(t), int(f), int(w)) in pair for f, t, w in zip(a["g_from"], a["g_to"], a["g_way"])],
-                               bool)
-        width = (a["g_width"].astype(np.float64) if "g_width" in a
-                 else np.array([WIDTHS[CLASSES[c]] for c in a["g_class"]]))
-        per_dir = np.where(self.twoway, width / 2, width) / np.maximum(self.lanes, 1)
-        self.lane_w = np.minimum(LANE_WIDTH, per_dir)
+        self.twoway, self.lane_w = lane_geometry(a)
         # Signal groups: at each signal, edges on the axis of the first edge entering it are group 0.
         self.group = np.zeros(E, np.int64)
         self.offset = np.zeros(E)
@@ -441,6 +434,23 @@ class Cars:
         bx, bz = x - np.cos(heading) * L / 2, z - np.sin(heading) * L / 2
         pitch = np.arctan2(surface.height(fx, fz) - surface.height(bx, bz), L)
         return np.stack([x, y, z], axis=1), heading, pitch
+
+
+def lane_geometry(a: dict) -> tuple[np.ndarray, np.ndarray]:
+    """Each edge's two-way flag and lane width, from the graph's arrays: a street with a reverse edge is two-way,
+    its lanes right of the centreline."""
+    pair = {(int(f), int(t), int(w)) for f, t, w in zip(a["g_from"], a["g_to"], a["g_way"])}
+    twoway = np.array([(int(t), int(f), int(w)) in pair for f, t, w in zip(a["g_from"], a["g_to"], a["g_way"])], bool)
+    width = (a["g_width"].astype(np.float64) if "g_width" in a
+             else np.array([WIDTHS[CLASSES[c]] for c in a["g_class"]]))
+    per_dir = np.where(twoway, width / 2, width) / np.maximum(a["g_lanes"].astype(np.int64), 1)
+    return twoway, np.minimum(LANE_WIDTH, per_dir)
+
+
+def lane_offsets(lanes: int, lane_w: float, twoway: bool) -> np.ndarray:
+    """The centres of an edge's lanes, 0 the rightmost, in metres right of its centreline."""
+    offs = (lanes - np.arange(lanes) - 0.5) * lane_w
+    return offs if twoway else offs - lanes * lane_w / 2
 
 
 def _idm(v, v0, gap, lead_v):

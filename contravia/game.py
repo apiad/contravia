@@ -26,6 +26,7 @@ from contravia import collect
 from contravia.album import Album
 from contravia.camera import chase
 from contravia.car import CarState, Controls, Driven, settle
+from contravia.driving_help import DEFAULT, chassis_strengths
 from contravia.forest import Forest
 from contravia.geo import CELL, to_local
 from contravia.hud import Hud
@@ -118,7 +119,7 @@ class Game:
         self.shadow = self._spawn_shadow()
         self.model = kept(engine.state, "player car", "CarParams()", _player_car)
         self.handles = spawn_car(engine, self.model)
-        self.family, self.driven, self.realism, self.locked_assists = "moderno", None, 30.0, ()
+        self.family, self.driven, self.help_level, self.locked_assists = "moderno", None, DEFAULT, ()
         self.physics_ms = 0.0
         if "car" in engine.state:  # a reload under contravia dev: drive on from where the old code left the car
             self._resume(engine.state.car)
@@ -403,10 +404,8 @@ class Game:
         return c
 
     def strengths(self):
-        """The assists' strengths from the realism option."""
-        from manifoldx.vehicles import strengths_for
-
-        return strengths_for(getattr(self, "realism", 30.0), getattr(self, "locked_assists", ()))
+        """The chassis assists' strengths at the driving help's level."""
+        return chassis_strengths(getattr(self, "help_level", DEFAULT), getattr(self, "locked_assists", ()))
 
     def _follow_province(self) -> None:
         """When the car is in another province, drive on that province's graph: its traffic starts over there."""
@@ -530,7 +529,7 @@ class Game:
         self.tau_range = options["view"].value
         self.streamer.tau = min(max(self.streamer.tau, self.tau_range[0]), self.tau_range[1])
         self.rain_on = options["rain"].value
-        self.realism, self.locked_assists = options["realism"].value, options.locked_assists
+        self.help_level, self.locked_assists = options["help"].value, options.locked_assists
         self.hud.configure(options["units"].value, options["minimap"].value)
 
     def _find_area(self, now: float) -> None:

@@ -1,7 +1,7 @@
 """The car: a manifoldx.vehicles rigid body on ray wheels, seen through the game's CarState and Controls.
 
 The physics lives in manifoldx: springs, tyres that grip and slide, engine, gearbox, brakes, walls, and the
-assists that the realism option sets (spec docs/superpowers/specs/2026-11-18-vehicle-physics-design.html). This
+assists that the driving help's level sets (spec docs/superpowers/specs/2026-11-18-vehicle-physics-design.html). This
 module keeps the game's view of it: CarState with yaw 0 facing +x and a positive yaw turning toward +z, Controls as
 the driver's hands and feet, and settle, the pose of a footprint resting on the ground, for teleports and checks.
 """

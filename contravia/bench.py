@@ -175,7 +175,7 @@ def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: st
     engine = mx.Engine("contravia-bench", width=size[0], height=size[1])
     game = Game(engine, city, clock=Clock(at=parse_at(when)), with_traffic=True)
     game.tune = False  # a fixed tau, so runs compare
-    game.realism = 0.0  # every assist on: the autopilot steers like a keyboard
+    game.help_level = 3  # the four chassis assists, no road assist: the autopilot steers like a keyboard
     game.atmosphere.prepare(wait=True)
     frame_ms, waits, wait_start = [], [], None
     traffic_ms, cars, sky_ms, physics_ms = [], [], [], []
