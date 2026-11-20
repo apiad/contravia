@@ -3,6 +3,11 @@
 Each car is a row in a few arrays, never an object: the edge it is on, how far along it its front is (s), its
 lane (0 is the rightmost), speed, look (and so kind), the edge it takes next, and how long it has waited at a junction.
 
+A car's drawn path is smooth: its sideways offset eases toward its lane's at LANE_SPEED, and the last metres of
+an edge and the first of the next are joined by a quadratic curve, so it neither jumps across a junction nor
+turns at every vertex of the street. On a street with several lanes a car changes lane by MOBIL: when the other
+lane lets it go faster than it loses the car behind there, or to reach the lane of its coming turn.
+
 Every frame each car finds what is ahead of it in its lane (another car, a stop line, the player) and
 accelerates by the intelligent driver model: toward the street's free speed, keeping a gap that grows with
 speed, braking smoothly. At the end of an edge a car may enter the junction if its signal is green, or, without
@@ -35,6 +40,11 @@ ARRIVING = 3.0  # seconds: a moving car this close in time to the junction is ab
 BOX = 6.0  # metres: a car this far into an edge leaving the junction is still inside it
 SPACING_QUEUE = 7.0  # metres between queued cars placed from the flow
 HEIGHT_STEP = 2.0  # metres between the road heights kept along each edge
+JUNCTION = 7.0  # metres before and after a junction over which a car's path curves from one edge to the next
+LANE_SPEED = 1.1  # m/s: how fast a car's offset moves toward its lane's, so a lane change takes about 3 s
+POLITE, GAIN, SAFE = 0.3, 0.4, 3.0  # MOBIL: politeness, m/s² of gain to change, the most braking it may impose
+SETTLE = 4.0  # seconds after a lane change before a car considers another
+DECIDE = 0.2  # seconds between lane-change decisions, each toward one side, the next toward the other
 
 
 class Cars:
@@ -123,6 +133,10 @@ class Cars:
         self.wait = np.zeros(0)
         self.stopped = np.zeros(0, bool)
         self.cleared = np.zeros(0, bool)  # allowed into the junction at the end of its edge
+        self.prev_edge = np.zeros(0, np.int64)  # the edge it came from, -1 when it was placed here
+        self.want = np.zeros(0, np.int64)  # the lane of its coming turn, -1 when any lane goes there
+        self.off = np.zeros(0)  # its drawn offset right of the centreline, easing toward offsets(); NaN: not yet
+        self.since = np.zeros(0)  # seconds since its last lane change
 
     def __len__(self) -> int:
         return len(self.edge)
@@ -143,16 +157,19 @@ class Cars:
                 out[k] = self.turns[e][self.rng.choice(len(w), p=w / w.sum())]
         return out
 
-    def _lane_for(self, edges: np.ndarray, nxt: np.ndarray) -> np.ndarray:
-        """The lane of the coming turn: rightmost for a right turn, leftmost for a left, any for straight on."""
+    def _turn_lane(self, edges: np.ndarray, nxt: np.ndarray) -> np.ndarray:
+        """The lane of the coming turn: rightmost for a right turn, leftmost for a left, -1 (any) for straight on."""
         lanes = self.lanes[edges]
-        lane = self.rng.integers(0, np.maximum(lanes, 1))
         ok = nxt >= 0
         d0, d1 = self.end_dir[edges], self.start_dir[np.where(ok, nxt, 0)]
         cross = d0[:, 0] * d1[:, 1] - d0[:, 1] * d1[:, 0]  # > 0: turning right (x east, z south)
-        lane = np.where(ok & (cross > 0.5), 0, lane)
-        lane = np.where(ok & (cross < -0.5), lanes - 1, lane)
-        return lane
+        want = np.where(ok & (cross > 0.5), 0, -1)
+        return np.where(ok & (cross < -0.5), lanes - 1, want)
+
+    def _lane_for(self, edges: np.ndarray, nxt: np.ndarray) -> np.ndarray:
+        """A lane for a car placed on edges: that of its coming turn, or any for straight on."""
+        want = self._turn_lane(edges, nxt)
+        return np.where(want >= 0, want, self.rng.integers(0, np.maximum(self.lanes[edges], 1)))
 
     def add(self, edges, s, v, looks) -> None:
         """Add cars on these edges at these distances and speeds; their next edge and lane are drawn."""
@@ -167,11 +184,16 @@ class Cars:
         self.wait = np.r_[self.wait, np.zeros(len(edges))]
         self.stopped = np.r_[self.stopped, np.zeros(len(edges), bool)]
         self.cleared = np.r_[self.cleared, np.zeros(len(edges), bool)]
+        self.prev_edge = np.r_[self.prev_edge, np.full(len(edges), -1, np.int64)]
+        self.want = np.r_[self.want, self._turn_lane(edges, nxt)]
+        self.off = np.r_[self.off, np.full(len(edges), np.nan)]
+        self.since = np.r_[self.since, np.full(len(edges), SETTLE)]
 
     def remove(self, mask) -> None:
         """Drop the cars where mask is True."""
         keep = ~np.asarray(mask, bool)
-        for name in ("edge", "s", "lane", "v", "look", "next_edge", "wait", "stopped", "cleared"):
+        for name in ("edge", "s", "lane", "v", "look", "next_edge", "wait", "stopped", "cleared", "prev_edge", "want",
+                     "off", "since"):
             setattr(self, name, getattr(self, name)[keep])
 
     def offsets(self) -> np.ndarray:
@@ -235,9 +257,14 @@ class Cars:
         N = len(self)
         if N == 0 or dt <= 0:
             return
+        ob = np.array([(o[0], o[1], o[2], o[3] if len(o) > 3 else 0.0) for o in obstacles], float).reshape(-1, 4)
+        self._decide = getattr(self, "_decide", 0.0) + dt
+        if self._decide >= DECIDE:
+            self._side = -getattr(self, "_side", 1)
+            self._change_lanes(self._decide, ob, self._side)
+            self._decide = 0.0
         L = self.length
         # Leaders: sort by (edge, lane, s); the next row in the same edge and lane is the car ahead.
-        ob = np.array([(o[0], o[1], o[2], o[3] if len(o) > 3 else 0.0) for o in obstacles], float).reshape(-1, 4)
         e_all = np.r_[self.edge, ob[:, 0].astype(np.int64)]
         l_all = np.r_[self.lane, ob[:, 1].astype(np.int64)]
         s_all = np.r_[self.s, ob[:, 2]]
@@ -273,10 +300,7 @@ class Cars:
                 lead_v[i] = 0.0 if self.stopped[k] else self.v[k]
 
         # Intelligent driver model.
-        v0 = self.vfree[self.edge]
-        dv = self.v - lead_v
-        s_star = S0 + np.maximum(0.0, self.v * HEADWAY + self.v * dv / (2 * np.sqrt(ACCEL * BRAKE)))
-        acc = ACCEL * (1 - (self.v / v0) ** 4 - (s_star / np.maximum(gap, 0.1)) ** 2)
+        acc = _idm(self.v, self.vfree[self.edge], gap, lead_v)
         v_new = np.maximum(0.0, self.v + acc * dt)
         v_new = np.where(self.stopped, 0.0, v_new)
         advance = np.minimum(v_new * dt, np.maximum(gap - S0 * 0.5, 0.0))  # never into the car ahead
@@ -289,12 +313,76 @@ class Cars:
         if len(over):
             rest = self.s[over] - self.len[self.edge[over]]
             nxt = self.next_edge[over]
+            self.prev_edge[over] = self.edge[over]
             self.edge[over] = nxt
             self.s[over] = rest
             self.next_edge[over] = self._draw_next(nxt)
-            self.lane[over] = self._lane_for(nxt, self.next_edge[over])
+            self.lane[over] = np.minimum(self.lane[over], self.lanes[nxt] - 1)  # it keeps its side of the street
+            self.want[over] = self._turn_lane(nxt, self.next_edge[over])
             self.cleared[over] = False
             self.wait[over] = 0.0
+
+        target = self.offsets()
+        off = np.where(np.isnan(self.off), target, self.off)
+        self.off = off + np.clip(target - off, -LANE_SPEED * dt, LANE_SPEED * dt)
+
+    def _change_lanes(self, dt: float, ob: np.ndarray, side: int) -> None:
+        """MOBIL, toward the left (side 1, a higher lane) or the right (-1) only, so two cars never take the same
+        gap from both sides at once. A car with a turn ahead moves toward its lane whenever it is safe and takes
+        it anyway LOOK metres before the end; any other car changes when its gain, less POLITE times what the car
+        behind there loses, passes GAIN. Never into a gap under S0, or making the car behind brake past SAFE."""
+        self.since += dt
+        to_end = self.len[self.edge] - self.s
+        force = (self.want >= 0) & (self.lane != self.want) & (to_end < LOOK)
+        self.lane = np.where(force, self.want, self.lane)
+        self.since[force] = 0.0
+        target = self.lane + side
+        heading = np.where(self.want >= 0, np.sign(self.want - self.lane) == side, True)
+        cand = np.flatnonzero((self.lanes[self.edge] > 1) & (target >= 0) & (target < self.lanes[self.edge])
+                              & heading & ~self.stopped & ~self.cleared & (to_end > LOOK) & (self.since > SETTLE))
+        if not len(cand):
+            return
+        # Every vehicle, the obstacles too, sorted by (edge, lane, s) as one key.
+        e_all = np.r_[self.edge, ob[:, 0].astype(np.int64)]
+        l_all = np.r_[self.lane, ob[:, 1].astype(np.int64)]
+        s_all = np.r_[self.s, ob[:, 2]]
+        v_all = np.r_[np.where(self.stopped, 0.0, self.v), ob[:, 3]]
+        len_all = np.r_[self.length, np.full(len(ob), 4.5)]
+        group = e_all * 64 + l_all
+        order = np.argsort(group * 1e5 + s_all)
+        keys, groups = (group * 1e5 + s_all)[order], group[order]
+
+        def around(g, at):
+            """The rows just ahead of and just behind position at in lane group g, -1 where there is none."""
+            k = np.searchsorted(keys, g * 1e5 + at, side="right")
+            ahead = np.where((k < len(keys)) & (groups[np.minimum(k, len(keys) - 1)] == g),
+                             order[np.minimum(k, len(keys) - 1)], -1)
+            k = k - 1  # in its own lane that is the car itself: only other lanes are asked for the car behind
+            behind = np.where((k >= 0) & (groups[np.maximum(k, 0)] == g), order[np.maximum(k, 0)], -1)
+            return ahead, behind
+
+        def gap_to(front, back_s):
+            return np.where(front >= 0, s_all[front] - len_all[front] - back_s, np.inf)
+
+        s, v, v0, ln = self.s[cand], self.v[cand], self.vfree[self.edge[cand]], self.length[cand]
+        own_ahead, _ = around(group[cand], s)
+        new_ahead, new_behind = around(self.edge[cand] * 64 + target[cand], s)
+        a_now = _idm(v, v0, gap_to(own_ahead, s), np.where(own_ahead >= 0, v_all[own_ahead], 0.0))
+        gap_new = gap_to(new_ahead, s)
+        a_new = _idm(v, v0, gap_new, np.where(new_ahead >= 0, v_all[new_ahead], 0.0))
+        has_f = new_behind >= 0
+        f = np.where(has_f, new_behind, 0)
+        f_s, f_v, f_v0 = s_all[f], v_all[f], self.vfree[e_all[f]]
+        f_gap_new = np.where(has_f, s - ln - f_s, np.inf)
+        a_f_new = np.where(has_f, _idm(f_v, f_v0, f_gap_new, v), 0.0)
+        a_f_old = np.where(has_f, _idm(f_v, f_v0, gap_to(new_ahead, f_s),
+                                       np.where(new_ahead >= 0, v_all[new_ahead], 0.0)), 0.0)
+        safe = (gap_new > S0) & (f_gap_new > S0) & (a_f_new > -SAFE)
+        gain = a_new - a_now + POLITE * (a_f_new - a_f_old)
+        go = safe & np.where(self.want[cand] >= 0, True, (gain > GAIN) & (v > 1.0))
+        moved = cand[go]
+        self.lane[moved] = target[moved]
+        self.since[moved] = 0.0
 
     def _height(self, s: np.ndarray) -> np.ndarray:
         """The road's height at distance s along each car's edge, between the two kept heights around it."""
@@ -307,10 +395,41 @@ class Cars:
         f = np.clip((s - k * HEIGHT_STEP) / span, 0.0, 1.0)
         return self.h[i] + (self.h[i + 1] - self.h[i]) * f
 
+    def _span(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
+        """How many metres before and after the junction from edge a to edge b the path curves."""
+        return np.minimum(JUNCTION, 0.45 * np.minimum(self.len[a], self.len[b]))
+
+    def path(self, s: np.ndarray, off: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """(x, z, heading) of the point s metres along each car's edge (s < 0 is on the edge it came from), off
+        metres right of the centreline (its drawn offset by default). Within _span of a junction the point lies on
+        the quadratic curve from the edge before it to the edge after, so a car turns smoothly through it."""
+        if off is None:
+            off = np.where(np.isnan(self.off), self.offsets(), self.off)
+        e, prev, nxt = self.edge.copy(), self.prev_edge.copy(), self.next_edge.copy()
+        s = np.asarray(s, float).copy()
+        back = (s < 0) & (prev >= 0)  # behind its edge's start: on the edge it came from
+        nxt[back], e[back], s[back] = e[back], prev[back], s[back] + self.len[prev[back]]
+        prev[back] = -1
+        x, z, heading = self.g.points(e, s, off)
+        a, b, u = np.full(len(e), -1), np.zeros(len(e), np.int64), np.zeros(len(e))
+        tail = nxt >= 0
+        j = self._span(e, np.where(tail, nxt, e))
+        tail &= s > self.len[e] - j
+        a[tail], b[tail], u[tail] = e[tail], nxt[tail], (s[tail] - self.len[e[tail]] + j[tail]) / (2 * j[tail])
+        head = ~tail & (prev >= 0)
+        j = self._span(np.where(head, prev, e), e)
+        head &= s < j
+        a[head], b[head], u[head] = prev[head], e[head], (s[head] + j[head]) / (2 * j[head])
+        k = np.flatnonzero(a >= 0)
+        if len(k):
+            x[k], z[k], heading[k] = _curve(self.g, a[k], b[k], self._span(a[k], b[k]), np.clip(u[k], 0, 1),
+                                            off[k], self.len)
+        return x, z, heading
+
     def world(self, surface=None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Each car's centre (x, y, z) in metres, its heading and its pitch (positive nose up)."""
         L = self.length
-        x, z, heading = self.g.points(self.edge, self.s - L / 2, self.offsets())
+        x, z, heading = self.path(self.s - L / 2)
         if self.h_start is not None:  # the prepared road profile: exact on level-across roads
             y = self._height(self.s - L / 2)
             pitch = np.arctan2(self._height(self.s) - self._height(self.s - L), L)
@@ -322,6 +441,32 @@ class Cars:
         bx, bz = x - np.cos(heading) * L / 2, z - np.sin(heading) * L / 2
         pitch = np.arctan2(surface.height(fx, fz) - surface.height(bx, bz), L)
         return np.stack([x, y, z], axis=1), heading, pitch
+
+
+def _idm(v, v0, gap, lead_v):
+    """The intelligent driver model's acceleration at speed v toward v0, gap metres behind a car at lead_v."""
+    s_star = S0 + np.maximum(0.0, v * HEADWAY + v * (v - lead_v) / (2 * np.sqrt(ACCEL * BRAKE)))
+    return ACCEL * (1 - (v / v0) ** 4 - (s_star / np.maximum(gap, 0.1)) ** 2)
+
+
+def _curve(g, a, b, span, u, off, length):
+    """(x, z, heading) at u in [0, 1] along the quadratic curve from span metres before the end of edge a to span
+    metres into edge b, off metres right of both. Its middle point is where the two directions meet; when they
+    are nearly parallel (straight on, or a U-turn) it is the middle of the ends pushed span/2 ahead."""
+    x0, z0, h0 = g.points(a, length[a] - span, off)
+    x2, z2, h2 = g.points(b, span, off)
+    p0, p2 = np.stack([x0, z0], 1), np.stack([x2, z2], 1)
+    t0, t2 = np.stack([np.cos(h0), np.sin(h0)], 1), np.stack([np.cos(h2), np.sin(h2)], 1)
+    cross = t0[:, 0] * t2[:, 1] - t0[:, 1] * t2[:, 0]
+    d = p2 - p0
+    ahead = (d[:, 0] * t2[:, 1] - d[:, 1] * t2[:, 0]) / np.where(np.abs(cross) > 1e-6, cross, 1.0)
+    meet = p0 + t0 * ahead[:, None]
+    bent = (np.abs(cross) > 0.2) & (ahead > 0) & (ahead < 3 * span)
+    p1 = np.where(bent[:, None], meet, (p0 + p2) / 2 + (t0 - t2) * (span / 4)[:, None])
+    w = u[:, None]
+    p = (1 - w) ** 2 * p0 + 2 * w * (1 - w) * p1 + w ** 2 * p2
+    tangent = 2 * (1 - w) * (p1 - p0) + 2 * w * (p2 - p1)
+    return p[:, 0], p[:, 1], np.arctan2(tangent[:, 1], tangent[:, 0])
 
 
 class TrafficLayer:

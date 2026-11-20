@@ -266,6 +266,47 @@ def _ground(mb, land, x0, z0, sq, side, terrain, colours, sea, L: int) -> None:
                (np.arange(len(quads))[:, None, None] * 4 + np.array([[0, 1, 2], [0, 2, 3]])).reshape(-1, 3))
 
 
+def _boxes(mb, s: dict, x0: float, z0: float, sq: float, terrain, node) -> None:
+    """At most one box per built square of the node: its side the square root of the built area, its height the
+    mean height, four walls with the facade of the square's dominant type and a flat roof, in one
+    MeshBuilder.add."""
+    built, height, color = s["built"], s["height"], _get(s, "color")
+    storeys, types = _get(s, "storeys"), _get(s, "types")
+    rows, cols = np.nonzero(built > 0)
+    if not len(rows):
+        return
+    cx, cz = x0 + (cols + 0.5) * sq, z0 + (rows + 0.5) * sq
+    y = terrain.height(cx, cz) if terrain is not None else np.zeros(len(cx))
+    w = np.minimum(np.sqrt(built[rows, cols]), 0.9 * sq) / 2
+    top = y + height[rows, cols]
+    corners = np.stack([cx[:, None] + w[:, None] * (-1, 1, 1, -1), cz[:, None] + w[:, None] * (-1, -1, 1, 1)], -1)
+    ends = np.roll(corners, -1, axis=1)
+    k = len(rows)
+    low, high = np.broadcast_to(y[:, None], (k, 4)), np.broadcast_to(top[:, None], (k, 4))
+    walls = np.stack([np.stack([corners[..., 0], low, corners[..., 1]], -1),
+                      np.stack([ends[..., 0], low, ends[..., 1]], -1),
+                      np.stack([ends[..., 0], high, ends[..., 1]], -1),
+                      np.stack([corners[..., 0], high, corners[..., 1]], -1)], 2)  # (K, wall, corner, 3)
+    roof = np.stack([corners[..., 0], high, corners[..., 1]], -1)
+    pos = np.concatenate([walls.reshape(k, 16, 3), roof], 1)  # per box: 4 walls, then the roof
+    nrm = np.repeat(np.array([(0, 0, -1), (1, 0, 0), (0, 0, 1), (-1, 0, 0), (0, 1, 0)], float), 4, axis=0)
+    tone = np.where(color[rows, cols].any(axis=1)[:, None], color[rows, cols], BOX)
+    roof_tone = np.broadcast_to(np.multiply(facades.ROOF, 0.95), (k, 4, 3))
+    col = np.concatenate([np.repeat(tone[:, None], 16, 1), roof_tone], 1)
+    quad = (np.arange(5)[:, None, None] * 4 + np.array([[0, 1, 2], [0, 2, 3]])).reshape(-1, 3)
+    tris = (np.arange(k)[:, None, None] * 20 + quad).reshape(-1, 3)
+    faces = [_facade(types[r, c], storeys[r, c], 2 * w_, (*node, r, c))
+             for r, c, w_ in zip(rows, cols, w, strict=True)]
+    facade = None
+    if any(f is not None for f in faces):
+        facade = np.zeros((k, 20, 4))
+        for n, f in enumerate(faces):
+            if f is not None:
+                facade[n, :16] = np.tile(f, (4, 1))
+    mb.add(pos.reshape(-1, 3), np.tile(nrm, (k, 1)), col.reshape(-1, 3), tris,
+           None if facade is None else facade.reshape(-1, 4))
+
+
 def summary_mesh(s: dict, L: int, a: int, b: int, origin, terrain=None) -> MeshData:
     """The node's land as one continuous ground, at most one box per square and the summary's widest roads,
     as one MeshData.
@@ -277,8 +318,7 @@ def summary_mesh(s: dict, L: int, a: int, b: int, origin, terrain=None) -> MeshD
     side = (1 << L) * CELL
     sq = side / GRID
     mb = MeshBuilder()
-    built, height, green = s["built"], s["height"], s["green"]
-    color, storeys, types = _get(s, "color"), _get(s, "storeys"), _get(s, "types")
+    green = s["green"]
     sea = terrain is not None and relief(terrain)
     leaf_share = np.minimum(green * 60.0 / (sq * sq), 1.0)  # a tree shades about 60 m²
     leaves = far_green(today())
@@ -289,23 +329,8 @@ def summary_mesh(s: dict, L: int, a: int, b: int, origin, terrain=None) -> MeshD
     _ground(mb, land, x0, z0, sq, side, terrain, colours, sea, L)
     if "block_height" in s:  # the city's blocks (_blocks_mesh) instead of one box per square
         _blocks_mesh(mb, s, L, a, b, origin, terrain, sea)
-        built = np.zeros_like(built)
-    rows, cols = np.nonzero(built > 0)
-    cx, cz = x0 + (cols + 0.5) * sq, z0 + (rows + 0.5) * sq
-    ys = terrain.height(cx, cz) if terrain is not None else np.zeros(len(cx))
-    for r, c, x, z, y in zip(rows, cols, cx, cz, ys, strict=True):
-        w = min(np.sqrt(built[r, c]), 0.9 * sq) / 2
-        top = y + height[r, c]
-        tone = tuple(color[r, c]) if color[r, c].any() else BOX
-        corners = [(x - w, z - w), (x + w, z - w), (x + w, z + w), (x - w, z + w)]
-        facade = _facade(types[r, c], storeys[r, c], 2 * w, (L, a, b, r, c))
-        for k in range(4):
-            (ax, az), (bx, bz) = corners[k], corners[(k + 1) % 4]
-            n = (np.sign(bz - az), 0.0, -np.sign(bx - ax))
-            mb.add([(ax, y, az), (bx, y, bz), (bx, top, bz), (ax, top, az)], [n] * 4, tone,
-                   [(0, 1, 2), (0, 2, 3)], facade)
-        roof = tuple(np.multiply(facades.ROOF, 0.95))
-        mb.add([(cx_, top, cz_) for cx_, cz_ in corners], [(0, 1, 0)] * 4, roof, [(0, 1, 2), (0, 2, 3)])
+    else:
+        _boxes(mb, s, x0, z0, sq, terrain, (L, a, b))
     roads = np.asarray(s["roads"], float)
     if len(roads):
         length = np.hypot(roads[:, 2] - roads[:, 0], roads[:, 3] - roads[:, 1])

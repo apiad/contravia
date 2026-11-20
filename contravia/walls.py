@@ -22,6 +22,15 @@ def _edges(ring) -> np.ndarray:
     return np.stack([ring, np.roll(ring, -1, axis=0)], axis=1)
 
 
+def around(walls, x: float, z: float, reach: float) -> np.ndarray:
+    """The (W, 2, 2) segments that pass within reach metres of (x, z)."""
+    walls = np.asarray(walls, float).reshape(-1, 2, 2)
+    a, ab = walls[:, 0], walls[:, 1] - walls[:, 0]
+    rx, rz = x - a[:, 0], z - a[:, 1]
+    t = np.clip((rx * ab[:, 0] + rz * ab[:, 1]) / np.maximum((ab * ab).sum(1), 1e-12), 0.0, 1.0)
+    return walls[np.hypot(rx - ab[:, 0] * t, rz - ab[:, 1] * t) <= reach]
+
+
 class Walls:
     """Wall segments by cell, cached, and road points for respawns and teleports."""
 
@@ -31,6 +40,7 @@ class Walls:
         self._cache: dict[tuple[int, int], np.ndarray] = {}
         self._pending: dict[tuple[int, int], Future] = {}  # cells being built ahead of the car
         self._pool = ThreadPoolExecutor(1, thread_name_prefix="walls")
+        self._joined = None  # ((i, j), the 3x3 cells' walls, their structure walls) for the car's last cell
         r = city.a["roads"]
         self._mid = (r[:, 0:2] + r[:, 2:4]) / 2
         self._yaw = np.arctan2(r[:, 3] - r[:, 1], r[:, 2] - r[:, 0])
@@ -56,10 +66,13 @@ class Walls:
         height y, the walls of bridges and tunnels it is level with join them: a bridge's parapet does not stop
         a car on the street under it."""
         i, j = int(np.floor(x / CELL)), int(np.floor(z / CELL))
-        walls = np.concatenate([self._cell(i + di, j + dj) for di in (-1, 0, 1) for dj in (-1, 0, 1)])
-        if y is not None:
+        if self._joined is None or self._joined[0] != (i, j):  # the car stays in a cell for many frames
+            walls = np.concatenate([self._cell(i + di, j + dj) for di in (-1, 0, 1) for dj in (-1, 0, 1)])
             s = [self.city.cell(i + di, j + dj).struct_walls for di in (-1, 0, 1) for dj in (-1, 0, 1)]
             s = np.concatenate([w for w in s if w is not None] or [np.zeros((0, 6), np.float32)])
+            self._joined = ((i, j), walls, s)
+        _, walls, s = self._joined
+        if y is not None:
             s = s[(s[:, 4] - 0.5 <= y) & (y <= s[:, 5])]
             walls = np.concatenate([walls.reshape(-1, 2, 2), s[:, :4].reshape(-1, 2, 2)])
         for di in range(-2, 3):
