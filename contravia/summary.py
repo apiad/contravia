@@ -20,10 +20,10 @@ from contravia.geo import CELL
 from contravia.mesh import MeshBuilder, signed_area
 from contravia.rules import facades
 from contravia.rules.cover import colours as cover_colours
-from contravia.rules.cover import exaggeration, shade, tint
+from contravia.rules.cover import exaggeration, mapped, shade, tint
 from contravia.rules.ground import GROUND, SEA, WATER_Y, relief
 from contravia.rules.roads import ROAD
-from contravia.rules.trees import TREE_EVERY, far_green, today
+from contravia.rules.trees import TREE_EVERY, today
 
 GRID = 16
 FILLER_SHARE = 0.6  # the share of a filler block's area its boxes cover, at the mean filler height
@@ -32,6 +32,8 @@ ROAD_CAP = 1000  # segments a summary mesh draws, widest first
 BOX = (0.78, 0.76, 0.72)  # the colour of a square prepared before summaries kept colours
 TYPES = list(facades.TYPES)
 LIFT = 0.2  # metres: with relief, a summary's land never stands lower than this over the water
+RELIEF_STEP = 50.0  # metres: the ground's squares are cut down toward this, so the relief reads from the air
+RELIEF_SUB = 4  # at most this many pieces a side per square
 ROAD_LIFT = 0.15  # metres a summary's road stands over its own ground: still under a cell's ground (BELOW)
 
 
@@ -223,35 +225,41 @@ def _blend(colours, xz, x0, z0, sq) -> np.ndarray:
     return top * (1 - tz) + bottom * tz
 
 
+def relief_sub(sq: float) -> int:
+    """Pieces a side each ground square of side sq is cut into: none near the car, where the cells draw the
+    ground, and down toward RELIEF_STEP from 100 m squares up, so the hills and valleys the DEM holds show."""
+    return int(np.clip(sq // RELIEF_STEP, 1, RELIEF_SUB))
+
+
 def _ground(mb, land, x0, z0, sq, side, terrain, colours, sea, L: int) -> np.ndarray:
-    """The ground over land: each of the GRID x GRID squares inside it as two triangles, those it crosses cut
-    along the coast, coloured between its squares' centres and shaded by its slope (rules.cover.shade); and a skirt side / 64
-    deep down the node's edges under land. Returns the ground's (T, 3, 3) triangles, for the roads to lie on."""
+    """The ground over land: each of the GRID x GRID squares inside it cut into relief_sub(sq) a side, each piece
+    two triangles, those the coast crosses cut along it, coloured between its squares' centres and shaded by its
+    slope (rules.cover.shade); and a skirt side / 64 deep down the node's edges under land. Returns the ground's
+    (T, 3, 3) triangles, for the roads to lie on."""
     import shapely
 
     if land.is_empty:
         return np.zeros((0, 3, 3))
-    r, c = np.divmod(np.arange(GRID * GRID), GRID)
-    tiles = shapely.box(x0 + c * sq, z0 + r * sq, x0 + (c + 1) * sq, z0 + (r + 1) * sq)
+    n = GRID * (relief_sub(sq) if sea else 1)  # flat data has no relief to show
+    step = side / n
+    r, c = np.divmod(np.arange(n * n), n)
+    tiles = shapely.box(x0 + c * step, z0 + r * step, x0 + (c + 1) * step, z0 + (r + 1) * step)
     shapely.prepare(land)
     inside = shapely.contains(land, tiles)
     cross = ~inside & shapely.intersects(land, tiles)
-    tris = []
+    tris = [_triangles(shapely.intersection(tiles[cross], land)).reshape(-1, 3, 2)]
     k = np.nonzero(inside)[0]
     if len(k):
-        a = np.stack([x0 + c[k] * sq, z0 + r[k] * sq], 1)
-        b, d, e = a + (sq, 0), a + (sq, sq), a + (0, sq)
+        a = np.stack([x0 + c[k] * step, z0 + r[k] * step], 1)
+        b, d, e = a + (step, 0), a + (step, step), a + (0, step)
         tris += [np.stack([a, b, d], 1), np.stack([a, d, e], 1)]
-    for j in np.nonzero(cross)[0]:
-        t = _triangles(shapely.intersection(tiles[j], land))
-        tris.append(t)
     t = np.concatenate(tris).reshape(-1, 2)
     pos = np.c_[t[:, 0], _heights(t, terrain, sea), t[:, 1]]
-    normals = _normals(t, terrain, sq / 2)
-    steep = _normals(t, terrain, sq / 2, exaggeration(L))  # the slope as the map stretches it at this level
+    normals = _normals(t, terrain, step / 2)
+    steep = _normals(t, terrain, step / 2, exaggeration(L))  # the slope as the map stretches it at this level
     colour = shade(tint(_blend(colours, t, x0, z0, sq), pos[:, 1], L), steep, L)
     mb.add(pos, normals, colour, np.arange(len(t)).reshape(-1, 3))
-    edge = shapely.segmentize(shapely.intersection(shapely.box(x0, z0, x0 + side, z0 + side).boundary, land), sq)
+    edge = shapely.segmentize(shapely.intersection(shapely.box(x0, z0, x0 + side, z0 + side).boundary, land), step)
     for line in shapely.get_parts(shapely.line_merge(edge) if not edge.is_empty else edge):
         p = shapely.get_coordinates(line)
         if len(p) < 2:
@@ -337,7 +345,8 @@ def _clip(polys: np.ndarray, tris: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     j = np.arange(1, m - 1)
     row, col = np.nonzero(j[None] + 1 < n[:, None])
     out = np.stack([pts[row, 0], pts[row, j[col]], pts[row, j[col] + 1]], 1)
-    return out, row
+    real = np.abs(_cross(out[:, 1] - out[:, 0], out[:, 2] - out[:, 0])) > 1e-6  # no slivers where a cut met a corner
+    return out[real], row[real]
 
 
 def _boxes(mb, s: dict, x0: float, z0: float, sq: float, terrain, node) -> None:
@@ -394,9 +403,7 @@ def summary_mesh(s: dict, L: int, a: int, b: int, origin, terrain=None) -> MeshD
     mb = MeshBuilder()
     green = s["green"]
     sea = terrain is not None and relief(terrain)
-    leaf_share = np.minimum(green * 60.0 / (sq * sq), 1.0)  # a tree shades about 60 m²
-    leaves = far_green(today())
-    colours = np.add(np.multiply.outer(1 - leaf_share, GROUND), np.multiply.outer(leaf_share, leaves))  # (GRID, GRID, 3)
+    colours = mapped(green, s["built"], sq, today())  # (GRID, GRID, 3): woods, towns and open country
     if "cover" in s:  # what WorldCover says covers each square (contravia.cover), in the atlas palette
         colours = cover_colours(s["cover"], today())
     land = _land(s, x0, z0, sq, terrain, sea)

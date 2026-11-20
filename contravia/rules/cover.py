@@ -10,7 +10,7 @@ at the levels drawn from high up, so the mountains read from the whole island ev
 import numpy as np
 
 from contravia.rules.ground import GROUND
-from contravia.rules.trees import far_green
+from contravia.rules.trees import TREE_EVERY, far_green
 
 TONES = {
     20: (0.47, 0.53, 0.31),  # shrubs
@@ -28,6 +28,7 @@ LIGHT = np.array([-0.5, 0.7071, -0.5])  # toward the light: north-west (-x, -z),
 SHADE_FROM, SHADE_TO, SHADE_MAX = 3, 9, 0.35  # levels where the shading starts and reaches its strength
 TINTS = ((0.0, (0.42, 0.58, 0.32)), (150.0, (0.64, 0.68, 0.40)), (400.0, (0.74, 0.62, 0.38)),
          (800.0, (0.58, 0.43, 0.29)), (1500.0, (0.60, 0.53, 0.48)))  # (metres, tone): an atlas's height tints
+BUILT_SPREAD = 2.5  # built land per m² of footprint: streets, yards and gaps between the buildings
 TINT_FROM, TINT_TO, TINT_MAX = 5, 9, 0.55  # levels where the tints start (the city stage) and reach their share
 
 
@@ -48,6 +49,17 @@ def colours(shares, when) -> np.ndarray:
     total = s.sum(axis=-1, keepdims=True)
     mixed = s @ palette(when) / np.maximum(total, 1e-9)
     return np.where(total > 0, mixed, np.asarray(GROUND, float))
+
+
+def mapped(green, built, sq: float, when) -> np.ndarray:
+    """(..., 3) colours of squares of side sq with no cover data, from what the city data maps in them: their
+    green (one tree per TREE_EVERY m²) in the far leaf tone, their built land (BUILT_SPREAD times the footprint)
+    in the built-up tone and the rest, open country, in the grass tone, the same tones as the cover palette."""
+    area = sq * sq
+    g = np.clip(np.asarray(green, float) * TREE_EVERY / area, 0.0, 1.0)
+    b = np.clip(np.asarray(built, float) * BUILT_SPREAD / area, 0.0, 1.0 - g)
+    tones = np.array([TONES[30], far_green(when), TONES[50]], float)
+    return np.stack([1.0 - g - b, g, b], axis=-1) @ tones
 
 
 def tint(colour, heights, L: int) -> np.ndarray:
