@@ -142,4 +142,4 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   with a profile of a few minutes at most, before and after each change; never wait on the full bench to learn
   what a profile already shows, and never run it on every iteration.
 - Checks: `rift check` (tests and lint). Run the tests in parallel, `uv run pytest -n auto -m "not slow"`. CI
-  (`.github/workflows/test.yml`) runs them whole on main and, in a PR, only those testmap picks from the diff.
+  (`.github/workflows/test.yml`) runs `fastci`: whole on main and, in a PR, only the tests the diff can break.
