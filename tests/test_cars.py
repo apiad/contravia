@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
-from graphs import four_way, straight
+from graphs import four_way, make_graph, straight
 
-from contravia.traffic import S0, Cars
+from contravia.traffic import LANE_SPEED, S0, Cars
 
 LOOK = 0  # the first look is a car, 4.5 m
 
@@ -130,3 +130,65 @@ def test_kept_heights_match_the_graph_profile(city):
     old_pitch = np.arctan2(g.heights(cars.edge, cars.s) - g.heights(cars.edge, cars.s - L), L)
     assert np.abs(xyz[:, 1] - old_y).max() < 0.03
     assert np.abs(pitch - old_pitch).max() < np.radians(0.5)
+
+
+def two_lanes(length=600.0):
+    """A one-way road east with two lanes, 0 → 1 → 2, turned around at the ends."""
+    return make_graph([(0, 0), (length / 2, 0), (length, 0)], [(0, 1), (1, 2), (2, 1), (1, 0)], lanes=2,
+                      uturns=True)
+
+
+def test_a_turning_car_moves_smoothly_through_the_junction():
+    g = four_way()
+    cars = Cars(g, seed=2)
+    east_in = next(e for e in range(len(g)) if g.a["g_from"][e] == 1 and g.a["g_to"][e] == 0)
+    cars.add([east_in], [100.0], [8.0], [LOOK])
+    xyz, heading, _ = cars.world()
+    biggest_step, biggest_turn, edges = 0.0, 0.0, {east_in}
+    for k in range(150):
+        cars.step(0.05, k * 0.05, [])
+        now, h, _ = cars.world()
+        biggest_step = max(biggest_step, float(np.hypot(*(now - xyz)[0, [0, 2]])) / max(cars.v[0] * 0.05, 0.01))
+        biggest_turn = max(biggest_turn, abs(float(np.angle(np.exp(1j * (h[0] - heading[0]))))))
+        xyz, heading = now, h
+        edges.add(int(cars.edge[0]))
+    assert len(edges) > 1  # it went through
+    assert biggest_step < 1.3  # never a jump: each step at most a little over what its speed covers
+    assert biggest_turn < 0.12  # radians per 0.05 s: no snap of the heading at the junction
+
+
+def test_the_drawn_offset_eases_toward_a_new_lane():
+    cars = Cars(two_lanes(), seed=1)
+    cars.add([0], [50.0], [5.0], [LOOK])
+    cars.step(0.1, 0.0, [])
+    before = cars.off[0]
+    cars.lane[0] = 1 - cars.lane[0]
+    cars.step(0.1, 0.1, [])
+    assert abs(cars.off[0] - before) <= LANE_SPEED * 0.1 + 1e-9
+    run(cars, 5.0, t0=0.2)
+    assert cars.off[0] == pytest.approx(cars.offsets()[0])
+
+
+def test_a_fast_car_overtakes_a_slow_one_by_changing_lane():
+    cars = Cars(two_lanes(), seed=1)
+    cars.add([0, 0], [20.0, 60.0], [11.0, 3.0], [LOOK, LOOK])
+    cars.lane[:] = 0
+    cars.want[:] = -1
+    cars.vfree = cars.vfree.copy()
+    slow = cars.v[1]
+    passed = False
+    for k in range(300):
+        cars.v[1] = slow  # the car ahead keeps crawling
+        cars.step(0.1, k * 0.1, [])
+        if cars.edge[0] == cars.edge[1] and cars.s[0] > cars.s[1] + 5:
+            passed = True
+            break
+    assert passed and cars.lane[0] == 1
+
+
+def test_a_car_reaches_its_turn_lane_before_the_junction():
+    cars = Cars(two_lanes(), seed=1)
+    cars.add([0], [10.0], [8.0], [LOOK])
+    cars.lane[0], cars.want[0] = 1, 0
+    run(cars, 12.0)
+    assert cars.edge[0] == 0 and cars.lane[0] == 0
