@@ -115,7 +115,7 @@ def test_a_menu_screen_draws_its_yellow_stripe(city_npz, tmp_path, screen, top):
 def test_the_map_opens_from_the_pause_and_the_main_menu_and_drives_at_its_crosshair(city_npz, tmp_path, monkeypatch):
     import manifoldx as mx
 
-    from contravia import mapview
+    from contravia import flight, mapview
     from contravia.game import FAR, Game
     from contravia.menu import Menu
     from contravia.world import World
@@ -134,10 +134,17 @@ def test_the_map_opens_from_the_pause_and_the_main_menu_and_drives_at_its_crossh
     menu.press("ArrowUp")  # Modo libre
     menu.press("Enter")
     menu.press("Enter")  # Arrancar
+    engine.render_frame(supersample=1)
     menu.press("Escape")
     menu.press("ArrowDown")  # Mapa
+    eye = game.eye.copy()
     menu.press("Enter")
-    assert menu.current == "map" and game.clock.paused
+    assert menu.current == "map" and game.clock.paused and game.flight is not None
+    assert game.map.h == flight.UP_H and (game.map.x, game.map.z) == (game.car.x, game.car.z)
+    engine.render_frame(supersample=1, dt=0.05)
+    assert np.linalg.norm(game.eye - eye) < 5.0  # the flight up starts on the chase camera
+    _fly(engine, game)
+    assert np.allclose(game.eye, mapview.pose(game.map)[0])
     game.map = mapview.zoom(game.map, 20.0)
     engine.render_frame(supersample=1)
     assert engine.camera.far > FAR and game.eye[1] == pytest.approx(game.map.h)
@@ -145,15 +152,32 @@ def test_the_map_opens_from_the_pause_and_the_main_menu_and_drives_at_its_crossh
     assert menu.current == "pause"
 
     menu.press("Enter")  # the map again: the pause keeps Mapa chosen
+    _fly(engine, game)
     x, z = game.car.x, game.car.z
     road = game.walls.random_road(np.random.default_rng(3))[:2]
     game.map = mapview.MapCam(float(road[0]), float(road[1]), 800.0, 0.0)
+    engine.render_frame(supersample=1)
     menu.press("Enter")  # Manejar aquí
-    assert menu.current is None and game.mode == "drive" and not game.clock.paused and game.map is None
+    assert menu.current is None and game.flight is not None and game.map is None
+    engine.render_frame(supersample=1, dt=0.05)
+    assert (game.car.x, game.car.z) == (x, z) and game.eye[1] > 100.0  # the car waits for the camera to land
+    _fly(engine, game)
+    assert game.mode == "drive" and not game.clock.paused
     assert np.hypot(game.car.x - road[0], game.car.z - road[1]) < 30.0
-    assert (game.car.x, game.car.z) != (x, z)
+    landed = game.eye.copy()
+    engine.render_frame(supersample=1, dt=0.05)
+    assert np.linalg.norm(game.eye - landed) < 1.0  # the chase camera takes over with no jump
     game.streamer.close()
     game.detail.close()
+
+
+def _fly(engine, game, frames=200):
+    """Render frames until the camera's flight lands."""
+    for _ in range(frames):
+        if game.flight is None:
+            return
+        engine.render_frame(supersample=1, dt=0.05)
+    raise AssertionError("the flight never landed")
 
 
 def _place_at(game, pid, dx, dz, side=8.0, h=10.0):

@@ -22,7 +22,7 @@ import time
 
 import numpy as np
 
-from contravia import collect
+from contravia import collect, flight
 from contravia.album import Album
 from contravia.camera import Orbit, chase, orbit, seen_from
 from contravia.car import CarState, Controls, Driven, settle
@@ -150,6 +150,8 @@ class Game:
         self.mode = "drive"  # or "menu", "paused", "photo", "map", "garage": see contravia/menu.py
         self.photo = None  # the photo mode's and the Garaje's camera around the car: (yaw, pitch, distance)
         self.map = None  # the map's camera, a contravia.mapview.MapCam, while the map shows
+        self.flight = None  # the camera's flight between the street and the map (contravia/flight.py), while it flies
+        self._target = None  # the point the camera looked at last frame
         self.km, self.area, self._area_at = 0.0, "", 0.0
         self.address = ("", "", "")
         self.weather_state = None
@@ -513,35 +515,49 @@ class Game:
         self.photo = self.photo or (self.car.yaw + 2.4, 0.22, 9.0)
 
     def open_map(self) -> None:
-        """Fly the map's camera up over the car, the car and the clock stopped where they are."""
+        """Show the map, the car and the clock stopped where they are; opened from the game, the camera flies up
+        from behind the car to the map flight.UP_H metres over it."""
         from contravia import mapview
 
+        from_game = self.mode in ("paused", "drive") and self.map is None and self._target is not None
         self.mode, self.photo = "map", None
         self.clock.pause()
+        if from_game:
+            self.map = mapview.MapCam(self.car.x, self.car.z, flight.UP_H, 0.0)
+            self.flight = flight.up((self.eye.copy(), self._target.copy()), mapview.pose(self.map))
         self.map = self.map or mapview.MapCam(self.car.x, self.car.z, 2500.0, 0.0)
 
     def drive_to(self, p: collect.Place) -> str | None:
-        """Leave the map driving on a street from which the place frames well (go_near); the error if none."""
-        self.go_near(p)
-        error = self.engine.state.teleport.get("error")
-        if error:
-            return error
-        self.map = None
-        self.km, self.area, self.address = 0.0, "", ("", "", "")
-        self.resume()
-        return None
+        """Leave the map driving on a street from which the place frames well (near_spot); the error if none."""
+        return self.fly_down(*self.near_spot(p))
 
     def drive_here(self) -> str | None:
         """Leave the map driving on the road nearest the point under its crosshair; the error if there is none."""
-        x, z = self.map.x, self.map.z
-        self.teleport(x, z)
-        error = self.engine.state.teleport.get("error")
-        if error:
-            return error
+        return self.fly_down(self.map.x, self.map.z)
+
+    def fly_down(self, x: float, z: float) -> str | None:
+        """Leave the map for the road nearest (x, z): the camera flies down to the chase camera's place behind
+        where the car will stand, and the car is put there only when it lands (_land); the error if no road."""
+        from contravia import mapview
+
+        found = self.walls.nearest_road(x, z)
+        if found is None:
+            self.engine.state.teleport = {"to": [x, z], "error": "no road within 5 km"}
+            return self.engine.state.teleport["error"]
+        x, z, yaw = found
+        _, eye, target = chase(None, settle(CarState(x, z, yaw, 0.0, y=0.0), self.surface), 0.0, self.surface)
+        self.flight = flight.down(mapview.pose(self.map), (eye, target), (x, z))
         self.map = None
+        return None
+
+    def _land(self) -> None:
+        """The flight down landed: the car on its road and driving, the chase camera on from the flight's eye."""
+        eye, (x, z) = self.eye, self.flight.dest
+        self.flight = None
+        self.teleport(x, z)
+        self.eye = eye  # teleport puts the eye over the car; the chase starts from the flight's last one instead
         self.km, self.area, self.address = 0.0, "", ("", "", "")
         self.resume()
-        return None
 
     def pause(self) -> None:
         """Stop the car, the traffic and the clock where they are."""
@@ -596,8 +612,12 @@ class Game:
         return (self.car.x, self.car.y + collect.EYE_HEIGHT, self.car.z)
 
     def go_near(self, p: collect.Place) -> None:
-        """Put the car on a street outside a place's box from which it frames well, trying sixteen directions at
-        a photo's distance; the nearest street to the place when none does."""
+        """Put the car on the street near_spot picks for a place."""
+        self.teleport(*self.near_spot(p))
+
+    def near_spot(self, p: collect.Place) -> tuple[float, float]:
+        """A point on a street outside a place's box from which it frames well, trying sixteen directions at a
+        photo's distance; the place itself (its nearest street) when none does."""
         ground = self.ground_of(p)
         box = collect.corners(p, ground)
         reach = min(collect.REACH_MAX, max(40.0, 1.6 * max(p.w, p.d, p.h)))
@@ -617,7 +637,7 @@ class Game:
             score = (f.verdict != "good", abs(f.size - collect.ZOOM_FILL))
             if best is None or score < best[0]:
                 best = (score, x, z)
-        self.teleport(*(best[1:] if best else (p.x, p.z)))
+        return best[1:] if best else (p.x, p.z)
 
     def start_aim(self) -> bool:
         """Stop the car and the clock and point the photo camera at the spot, zoomed to frame it; False with no spot."""
@@ -732,11 +752,12 @@ class Game:
             ox, oz = self.engine.origin
         return np.array([ox, 0.0, oz])
 
-    def waiting(self) -> int:
-        """Cells within one cell of the car that hold something and are not drawn yet, in the city's streamer
-        or in the detail ring."""
+    def waiting(self, at: tuple[float, float] | None = None) -> int:
+        """Cells within one cell of the car (or of the point `at`) that hold something and are not drawn yet, in
+        the city's streamer or in the detail ring."""
         o = self.city.tree.origin
-        ci, cj = math.floor(self.car.x / CELL), math.floor(self.car.z / CELL)
+        x, z = at if at is not None else (self.car.x, self.car.z)
+        ci, cj = math.floor(x / CELL), math.floor(z / CELL)
         drawn, ring, r = self.streamer.drawn(), self.detail.drawn(), self.detail.radius
         cells = [(ci + a, cj + b) for a in (-1, 0, 1) for b in (-1, 0, 1)]
         full = [(i, j) for i, j in cells if self.city.exists(0, i - o[0], j - o[1])]
@@ -794,9 +815,13 @@ class Game:
         captured = self.mode == "drive" and not self.camera_override  # the mouse turns the camera while driving
         if inp.pointer_captured != captured:
             inp.capture_pointer(captured)
+        if self.flight is not None and self.flight.dest is None and (self.mode != "map" or self.map is None):
+            self.flight = None  # the map closed before the flight up reached it
         if self.camera_override:
             eye, target = self.camera_override()
             self.eye, target = np.asarray(eye, float), np.asarray(target, float)
+        elif self.flight is not None:
+            self.eye, target = self._fly()
         elif self.mode == "map" and self.map:
             from contravia import mapview
 
@@ -821,6 +846,7 @@ class Game:
                 self.mouse_orbit = orbit(self.mouse_orbit, *inp.mouse_delta, seen.speed, self._dt)
             self.rig, self.eye, target = chase(self.rig, seen, self._dt, self.surface, self.mouse_orbit)
             self._chased = self.eye
+        self._target = np.asarray(target, float)
         self.o = self._recentre()
         if not self._sea:
             self.base.transform.pos = (float(self.eye[0]), FLAT_BASE_Y, float(self.eye[2]))
@@ -856,6 +882,25 @@ class Game:
         st.grade = round(math.tan(self.car.pitch) * 100, 1)  # percent, positive uphill
         st.frame_ms = round(self.frame_ms, 2)
 
+    def _fly(self) -> tuple[np.ndarray, np.ndarray]:
+        """This frame's (eye, target) on the camera's flight. Going up it ends on the map's pose as it is now;
+        going down it slows near the end while the cells round the destination are not drawn (flight.step), and
+        when it lands the car is put there (_land)."""
+        from contravia import mapview
+
+        f = self.flight
+        end = mapview.pose(self.map) if f.dest is None else None
+        self.flight = flight.step(f, self._dt, ready=f.dest is None or self.waiting(f.dest) == 0)
+        eye, target = self.flight.pose(end)
+        eye[1] = max(eye[1], float(np.ravel(self.surface.height(eye[0], eye[2], near=float(target[1])))[0]) + 1.5)
+        if self.flight.done:
+            if self.flight.dest is None:
+                self.flight = None
+            else:
+                self.eye = eye
+                self._land()
+        return eye, target
+
     def _tune(self) -> None:
         """Every TUNE_EVERY frames, trade the streamer's detail for frame time: a median frame over TARGET_MS
         raises tau (fewer, coarser nodes), one well under it lowers tau back, within TAU."""
@@ -878,7 +923,8 @@ class Game:
         self._tune()
         self.streamer.focus(self.eye[0], self.eye[2], height=max(float(self.eye[1]), 1.0))
         self.detail.radius = 0 if self.streamer.tau >= self.tau_range[1] else 1
-        self.detail.focus(self.car.x, self.car.z)
+        # going down to the map's crosshair, the detail ring builds the cells there from the flight's start
+        self.detail.focus(*(self.flight.dest if self.flight is not None and self.flight.dest else (self.car.x, self.car.z)))
         o = self.city.tree.origin
         full = {(o[0] + a, o[1] + b) for L, a, b in self.streamer.drawn() if L == 0}
         self.forest.update(full, self.eye)
@@ -954,10 +1000,12 @@ class Game:
         eye = self.eye - self.o  # these write render-frame positions
         self.atmosphere.apply(self.look, eye)
         self.engine.camera.far = FAR
-        if self.mode == "map" and self.map:  # from high up the horizon is far: push the far plane and the fog out
+        view = flight.view((self.eye, self._target)) if self.flight is not None and self._target is not None \
+            else self.map if self.mode == "map" else None
+        if view:  # from high up the horizon is far: push the far plane and the fog out
             from contravia import mapview
 
-            far, fog = mapview.far_and_fog(self.map)
+            far, fog = mapview.far_and_fog(view)
             self.engine.camera.far = max(FAR, far)
             self.engine.fog_start, self.engine.fog_end = max(self.look.fog[0], fog[0]), max(self.look.fog[1], fog[1])
         self.stars_shown = self.nightsky.update(when, eye, self.look, moon, sun)

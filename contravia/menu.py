@@ -615,6 +615,8 @@ class MapScreen(Screen):
 
     def key(self, k):
         g = self.menu.game
+        if g.flight is not None and k != "back":
+            return  # the camera is still flying to the map
         if self.choice is not None:
             if k in ("up", "down"):
                 self.picked = 1 - self.picked
@@ -653,7 +655,7 @@ class MapScreen(Screen):
 
     def tick(self, dt):
         g = self.menu.game
-        if g.map is None:
+        if g.map is None or g.flight is not None:
             return
         if self.choice is None:
             self._move(dt)
