@@ -3,7 +3,19 @@ from types import SimpleNamespace
 import numpy as np
 import shapely
 
-from contravia.grass import FAR, MOVE, NEAR, ROAD_CLEAR, STEP, Grass, Lawn, patch, spots
+from contravia.grass import (
+    FAR,
+    HOUSE_CLEAR,
+    MOVE,
+    NEAR,
+    ROAD_CLEAR,
+    STEP,
+    Grass,
+    Lawn,
+    patch,
+    spots,
+    yard_trees,
+)
 from contravia.rules.buildings import filler_rings
 
 
@@ -147,3 +159,37 @@ def test_a_bare_lot_grows_shorter_drier_grass_than_a_lawn():
     assert lawn.height[bare].max() < lawn.height[~bare].min()
     assert (lawn.tint[bare, 2] < 0.7 * lawn.tint[bare, 0]).all()  # straw: red over blue
     assert np.array_equal(Lawn(xz, flat).height[~bare], lawn.height[~bare])  # a lawn is as it was
+
+
+def test_built_lots_grow_an_odd_tree_off_the_houses_and_the_road():
+    """A built cell's yards and lots grow a few trees, seeded from the cell, clear of every house and road."""
+    city = _City()
+    t = yard_trees(city, 0, 1)
+    assert 20 < len(t) < 120  # about one per 500 m² of open ground, not a wood
+    x, z = t[:, 0], t[:, 1]
+    houses = [np.array([(20, 220), (40, 220), (40, 240), (20, 240)], float), *filler_rings(LOT_BLOCK, 11)]
+    for r in houses:
+        assert not shapely.contains_xy(shapely.Polygon(r).buffer(HOUSE_CLEAR - 0.01), x, z).any()
+    assert not (np.abs(z - 300) < 4 + 3).any()  # the road's 8 m and a wild tree's margin
+    assert ((t >= (0, 200)) & (t < (200, 400))).all()
+    assert np.array_equal(t, yard_trees(city, 0, 1))  # same cell, same trees
+    assert not len(yard_trees(city, 0, 0)) and not len(yard_trees(city, 5, 5))  # no houses: green and wild trees
+
+
+def test_the_car_hits_every_yard_tree_the_cell_draws():
+    from contravia.citydata import CityData
+    from contravia.rules import trees
+    from contravia.rules.species import SPECIES, TRUNK_R
+    from contravia.walls import Walls
+
+    road = [[0.0, 100.0, 200.0, 100.0, 6.0]]
+    house = np.array([[60.0, 40.0], [80.0, 40.0], [80.0, 60.0], [60.0, 60.0]])
+    city = CityData.from_features(road, [house], [1], [], [], np.zeros((0, 2)))
+    walls = Walls(city)
+    yards = yard_trees(city, 0, 0, walls.landmarks)
+    assert len(yards)
+    drawn = trees.cell_trees(0, 0, city.cell(0, 0), city.terrain, [], trees.arrays_of(city, 0, 0), yards)
+    assert len(drawn) == len(yards)
+    for (x, z), s, k in list(zip(drawn.xz, drawn.species, drawn.scale, strict=True))[:10]:
+        mids = walls.near(x, z).mean(axis=1)
+        assert (np.abs(mids - (x, z)).max(axis=1) <= TRUNK_R[SPECIES[s]] * k + 1e-3).sum() == 4

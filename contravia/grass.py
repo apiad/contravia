@@ -21,6 +21,7 @@ import shapely
 
 from contravia import parks
 from contravia.geo import CELL
+from contravia.rules import trees
 from contravia.rules.buildings import filler_rings
 from contravia.rules.ground import SEA, relief
 
@@ -32,6 +33,9 @@ CLEAR = 1.0  # metres between a patch's centre and a street, pavement, motif, bu
 ROAD_CLEAR = 1.5  # metres between a patch's centre and a road's edge
 TUFT = 8.0  # metres: a bare lot's grass grows in tufts about this wide
 BARE_SHARE = 0.55  # of a bare lot's spots, about this share holds a patch
+YARD_STEP, YARD_SHARE = 12.0, 0.3  # metres between a yard tree's candidate spots, and the share that grow one
+HOUSE_CLEAR = 3.0  # metres between a yard tree's trunk and a house, so its crown stands off the wall
+TREE_CLEAR = 1.5  # metres between a yard tree's trunk and a street or pavement
 BASE, TIP = (0.10, 0.22, 0.04), (0.45, 0.62, 0.18)  # linear colours of a blade's foot and tip
 BENDER = (2.6, 0.9)  # radius and strength of the parting round the car
 
@@ -99,31 +103,31 @@ def _rings(rings) -> list:
     return [shapely.Polygon(r) for r in (np.asarray(r, float) for r in rings) if len(r) >= 3]
 
 
-def park_lawns(city, i: int, j: int) -> list:
-    """The polygons of the parks contravia.parks laid out that meet cell (i, j); they have no OSM green under
-    them, and their kerbs and paths are pavements, which spots() leaves out."""
+def lawns(city, i: int, j: int) -> list:
+    """The polygons of cell (i, j)'s green and of the parks contravia.parks laid out that meet it; the laid parks
+    have no OSM green under them, and their kerbs and paths are pavements, which open_ground() leaves out."""
     box = shapely.box(i * CELL, j * CELL, (i + 1) * CELL, (j + 1) * CELL)
-    polys = []
-    for k in city.provinces_of(i, j):
-        a = city.province(k).a
+    polys = _tris(city.cell(i, j).green_tris)
+    for a in trees.arrays_of(city, i, j):
         if "park_kind" in a and len(a["park_kind"]):
             tree = parks._lookup(a)[0]
             polys += list(tree.geometries.take(tree.query(box)))
     return polys
 
 
-def spots(city, i: int, j: int, landmarks=None) -> tuple[np.ndarray, np.ndarray]:
-    """The (N, 2) centres of cell (i, j)'s patches and whether each stands on a bare lot rather than a lawn.
-
-    A lawn is the cell's green and its laid parks; every other spot of land is a bare lot, which keeps only its
-    tufts (about BARE_SHARE of it). No spot stands within CLEAR metres of the cell's streets, pavements, park motifs,
-    bridges, cuts, the buildings and filler houses of it and its neighbours, or a landmark's rings, within
-    ROAD_CLEAR metres of a road's edge, or on the sea."""
+def open_ground(city, i: int, j: int, p, landmarks=None, clear=CLEAR, house_clear=CLEAR,
+                road_clear=ROAD_CLEAR) -> np.ndarray:
+    """Whether each (x, z) of p, points of cell (i, j), stands on open land: `clear` metres off the cell's streets,
+    pavements, park motifs, bridges and cuts, `house_clear` metres off the buildings and filler houses of it and
+    its neighbours and off a landmark's rings, `road_clear` metres off a road's edge, and over the sea. A house is
+    its whole ring: clearance.boxes only drops a ring or cuts it back off the street, never grows it."""
+    p = np.asarray(p, float).reshape(-1, 2)
+    if not len(p):
+        return np.zeros(0, bool)
     c = city.cell(i, j)
-    p = grid(i, j)
-    lawn = _hit(p, _tris(c.green_tris) + park_lawns(city, i, j))
     near = [city.cell(i + di, j + dj) for di in (-1, 0, 1) for dj in (-1, 0, 1)]
-    lo, hi = p.min(0) - 2 * CLEAR, p.max(0) + 2 * CLEAR
+    reach = max(clear, house_clear, road_clear) + 1.0
+    lo, hi = p.min(0) - reach, p.max(0) + reach
     houses = [r for n in near for r in n.buildings]
     houses += [r for n in near for block, seed in zip(n.fillers, n.filler_seeds, strict=True)
                for r in filler_rings(block, int(seed))]
@@ -132,21 +136,48 @@ def spots(city, i: int, j: int, landmarks=None) -> tuple[np.ndarray, np.ndarray]
     houses = [r for r in (np.asarray(r, float) for r in houses)
               if len(r) and (r.min(0) <= hi).all() and (r.max(0) >= lo).all()]
     roads = np.concatenate([n.roads for n in near]).reshape(-1, 5).astype(float)
-    pad = roads[:, 4:5] / 2 + ROAD_CLEAR
+    pad = roads[:, 4:5] / 2 + road_clear
     roads = roads[((np.minimum(roads[:, 0:2], roads[:, 2:4]) - pad <= hi).all(1)
                    & (np.maximum(roads[:, 0:2], roads[:, 2:4]) + pad >= lo).all(1))]
     lines = shapely.linestrings(roads[:, :4].reshape(-1, 2, 2)) if len(roads) else []
-    # A road's edge stands ROAD_CLEAR from a spot when its strip widened by ROAD_CLEAR - CLEAR is CLEAR away.
-    strips = list(shapely.buffer(lines, roads[:, 4] / 2 + ROAD_CLEAR - CLEAR, quad_segs=2)) if len(roads) else []
+    # A road's edge stands road_clear from a spot when its strip widened by road_clear - clear is clear away.
+    strips = list(shapely.buffer(lines, roads[:, 4] / 2 + road_clear - clear, quad_segs=2)) if len(roads) else []
     paved = (_tris(c.street_tris) + _tris(c.walk_tris) + _tris(c.park_tris) + _tris(c.struct_tris)
-             + _tris(c.street_cuts) + _rings(houses) + strips)
-    keep = ~_hit(p, paved, CLEAR)
+             + _tris(c.street_cuts) + strips)
+    keep = ~_hit(p, paved, clear) & ~_hit(p, _rings(houses), house_clear)
     if relief(city.terrain):
         keep &= city.terrain.height(p[:, 0], p[:, 1]) >= SEA
-    bare = ~lawn
+    return keep
+
+
+def spots(city, i: int, j: int, landmarks=None) -> tuple[np.ndarray, np.ndarray]:
+    """The (N, 2) centres of cell (i, j)'s patches and whether each stands on a bare lot rather than a lawn.
+
+    A lawn is the cell's green and its laid parks; every other spot of open ground (open_ground) is a bare lot,
+    which keeps only its tufts (about BARE_SHARE of it)."""
+    p = grid(i, j)
+    lawn = _hit(p, lawns(city, i, j))
     tuft = 0.6 * _hash(np.floor(p / TUFT) * TUFT) + 0.4 * _hash(p)
-    keep &= lawn | (tuft < BARE_SHARE)
-    return p[keep], bare[keep]
+    keep = (lawn | (tuft < BARE_SHARE)) & open_ground(city, i, j, p, landmarks)
+    return p[keep], ~lawn[keep]
+
+
+def yard_trees(city, i: int, j: int, landmarks=None) -> np.ndarray:
+    """(N, 2) the trees of a built cell's yards and lots: about one per YARD_STEP square in YARD_SHARE of them,
+    jittered and seeded from the cell, on open ground off its green and laid parks (which grow their own trees),
+    HOUSE_CLEAR metres off every house and landmark, TREE_CLEAR off pavements and streets and WILD_CLEAR off a
+    road's edge. A cell with no buildings or filler houses has none: it grows wild trees instead."""
+    c = city.cell(i, j)
+    if not (len(c.buildings) or len(c.fillers)):
+        return np.zeros((0, 2))
+    rng = np.random.default_rng(abs(i * 1_000_003 + j) + 29)
+    step = CELL / round(CELL / YARD_STEP)  # a whole number of squares a side, so no jitter leaves the cell
+    t = (np.arange(round(CELL / YARD_STEP)) + 0.5) * step
+    gx, gz = np.meshgrid(i * CELL + t, j * CELL + t)
+    p = np.stack([gx.ravel(), gz.ravel()], 1) + rng.uniform(-0.45, 0.45, (gx.size, 2)) * step
+    p = p[rng.random(len(p)) < YARD_SHARE]
+    p = p[~_hit(p, lawns(city, i, j))]
+    return p[open_ground(city, i, j, p, landmarks, TREE_CLEAR, HOUSE_CLEAR, trees.WILD_CLEAR)]
 
 
 class Lawn:

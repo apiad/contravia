@@ -245,10 +245,13 @@ def grow(xz, terrain, zone: int, arrays=()) -> Trees:
     return Trees(xz, y, species, scale, yaw, shift, unit(seeds, 5))
 
 
-def cell_trees(i: int, j: int, c, terrain, near, arrays=()) -> Trees:
-    """Every tree cell (i, j) draws and its car hits: its parks' trees, the trees its green grows and, on land OSM
-    says nothing about, the wild ones; each clear of the streets, with its species and look from grow()."""
+def cell_trees(i: int, j: int, c, terrain, near, arrays=(), yards=None) -> Trees:
+    """Every tree cell (i, j) draws and its car hits: its parks' trees, the trees its green grows, the (N, 2) yard
+    trees of its built blocks (contravia.grass.yard_trees, already off the streets and houses) and, on land OSM says
+    nothing about, the wild ones; each clear of the streets, with its species and look from grow()."""
     parts = [c.trees[off_streets(c.trees, c.street_tris)]]
+    if yards is not None:
+        parts.append(yards)
     has_green = c.green_tris is not None and len(c.green_tris)
     if has_green:
         g = in_green(c.green_tris, c.green_seeds)

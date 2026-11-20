@@ -13,6 +13,7 @@ import numpy as np
 from contravia.citydata import CityData
 from contravia.clearance import boxes, roads_around, streets_around
 from contravia.geo import CELL
+from contravia.grass import yard_trees
 from contravia.landmarks import cached
 from contravia.rules import trees
 
@@ -51,7 +52,8 @@ class Walls:
         near = roads_around(self.city, i, j)
         rings = [ring for ring, *_ in boxes(c, near, streets_around(self.city, i, j))]
         parks = [] if c.park_walls is None else [np.asarray(c.park_walls[:, :4], np.float32).reshape(-1, 2, 2)]
-        grown = trees.cell_trees(i, j, c, self.city.terrain, near, trees.arrays_of(self.city, i, j))
+        grown = trees.cell_trees(i, j, c, self.city.terrain, near, trees.arrays_of(self.city, i, j),
+                                 yard_trees(self.city, i, j, self.landmarks))
         return np.concatenate([_edges(r) for r in rings] + [self.landmarks.walls(i, j)] + parks + [trees.trunks(grown)])
 
     def _cell(self, i: int, j: int) -> np.ndarray:

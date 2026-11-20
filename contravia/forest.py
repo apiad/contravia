@@ -19,6 +19,7 @@ from time import perf_counter
 import numpy as np
 
 from contravia.clearance import roads_around
+from contravia.grass import yard_trees
 from contravia.rules import trees
 from contravia.rules.species import CROWNS, SPECIES, season
 from contravia.rules.treegrammar import LODS, PARTS, VARIANTS, meshes
@@ -124,7 +125,8 @@ class Forest:
         meshes of their species, which the main thread would otherwise stop for at their first spawn."""
         c = self.landmarks.keep(i, j, self.city.cell(i, j))
         near = roads_around(self.city, i, j)
-        t = trees.cell_trees(i, j, c, self.city.terrain, near, trees.arrays_of(self.city, i, j))
+        t = trees.cell_trees(i, j, c, self.city.terrain, near, trees.arrays_of(self.city, i, j),
+                             yard_trees(self.city, i, j, self.landmarks))
         warm(np.unique(t.species))
         return t
 
