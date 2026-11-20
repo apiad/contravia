@@ -33,7 +33,7 @@ for name, slug in PROVINCES:
         source.load(path)
     except (OSError, ValueError) as e:
         bad.append(f"  {name}: {e}")
-from contravia import coast, cover, shore
+from contravia import coast, cover, regions, shore
 try:
     coast.load(Path(sys.argv[1]) / coast.NAME)
 except (OSError, ValueError) as e:
@@ -42,6 +42,10 @@ try:
     shore.load(Path(sys.argv[1]) / shore.NAME)
 except (OSError, ValueError) as e:
     bad.append(f"  the shore: {e}; write it with: contravia shore <cuba-latest.osm.pbf> --out {sys.argv[1]}")
+try:
+    regions.Regions.load(src=regions.load_src(Path(sys.argv[1]) / regions.NAME))
+except (OSError, ValueError) as e:
+    bad.append(f"  the regions: {e}; write them with: contravia regions <cuba-latest.osm.pbf> --out {sys.argv[1]}")
 try:
     cover.load(Path(sys.argv[1]) / cover.NAME)
 except (OSError, ValueError) as e:

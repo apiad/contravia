@@ -6,13 +6,18 @@ winning field by field and, inside a layer, the higher priority winning:
 
 1. the defaults, Params() below;
 2. the municipio regions, matched by the municipio name each building already carries;
-3. the tag regions (where = { tag = "k=v" }), polygons from data/cuba/regions.src;
+3. the tag regions (where = { tag = "k=v" }), polygons from regions.src;
 4. the named regions: barrio, OSM id, place or polygon.
+
+regions.src, beside coast.src in the sources and in the built island, holds the OSM polygons the file names by tag
+or OSM id, every landuse=cemetery included, in the island's metres: `contravia regions <pbf>` writes it (`read`,
+`save`). Without it, the regions it would place are left out; with it, a tag or id it lacks stops the load.
 
 A field is replaced whole: a weights table is never mixed with another. The merged Params are cached by the set
 of regions that made them, so the thousands of houses of a cell share a handful of objects.
 
-Polygons are projected into the island's metres (geo.to_local) when the file loads and kept in one STRtree. A
+Polygons are projected into the island's metres (geo.to_local) when the file loads and kept, part by part (a
+tag's hundreds of cemeteries are one region), in one STRtree. A
 cell asks the tree once for the polygons that touch the box around its items: when none has an edge inside that
 box, each polygon covers all of the cell or none of it, and the whole cell takes one set of regions (the fast
 path). Otherwise each item's centroid is tested against the polygons that cross the box, one vectorised
@@ -22,7 +27,10 @@ Every process that builds cells loads the file once, on first use. Under contrav
 module afresh and starts new builder processes, so a reload always reads the file again.
 """
 
+import os
+import pickle
 import tomllib
+from compression import zstd
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -32,6 +40,10 @@ import shapely
 from contravia.geo import CELL
 
 PATH = Path(__file__).with_name("regions.toml")
+NAME = "regions.src"  # the OSM polygons the file names, beside coast.src in the sources and in the built island
+VERSION = 1
+TAGS = ("landuse=cemetery",)  # tags regions.src always holds, whether the file names them or not
+TOLERANCE = 0.5  # metres the polygons of regions.src are simplified to
 SHAPES = ("municipio", "barrio", "osm", "tag", "place", "polygon")  # the keys of where
 LAYER = {"municipio": 1, "tag": 2, "barrio": 3, "osm": 3, "place": 3, "polygon": 3}
 BUILDINGS = ("types", "storeys", "palette", "wear", "portal")  # the keys of a region's buildings group
@@ -223,7 +235,9 @@ def _shape(name, where, src):
         return shape, where["place"], _place(name, where)
     # barrio, osm and tag read their polygons from regions.src, which `contravia regions <pbf>` writes
     value = where[shape]
-    found = (src or {}).get(f"{shape}:{value}")
+    if src is None:
+        return shape, value, None
+    found = src.get(f"{shape}:{value}")
     if found is None:
         _fail(name, f"where.{shape}", f"{value!r} resolves to no polygon in regions.src")
     return shape, value, found
@@ -238,27 +252,30 @@ class Regions:
 
     def __init__(self, regions: list[Region], polygons: list[shapely.Geometry], version: str = ""):
         self.regions = regions
-        self.version = version  # a hash of the file's bytes
+        self.version = version  # a hash of the file's bytes and the side file's time
         self.by_muni: dict[str, list[int]] = {}
         for k, r in enumerate(regions):
             if r.shape == "municipio":
                 self.by_muni.setdefault(r.value, []).append(k)
-        self.shaped = [k for k, r in enumerate(regions) if r.shape != "municipio"]  # aligned with the polygons
-        self.polygons = np.array(polygons, dtype=object)
-        self.edges = np.array([p.boundary for p in polygons], dtype=object)
+        shaped = [k for k, r in enumerate(regions) if r.shape != "municipio"]  # aligned with polygons
+        parts = [[g for g in shapely.get_parts(p) if g.geom_type == "Polygon" and g.area > 0] for p in polygons]
+        self.shaped = [k for k, ps in zip(shaped, parts, strict=True) for _ in ps]  # each part's region
+        self.polygons = np.array([g for ps in parts for g in ps], dtype=object)
+        self.edges = np.array([p.boundary for p in self.polygons], dtype=object)
         for p in self.polygons:
             shapely.prepare(p)
-        self.tree = shapely.STRtree(self.polygons) if len(polygons) else None
+        self.tree = shapely.STRtree(self.polygons) if len(self.polygons) else None
         self._cache: dict[frozenset, Params] = {}
 
     @classmethod
-    def load(cls, path: Path | str = PATH, src: dict | None = None) -> Regions:
+    def load(cls, path: Path | str = PATH, src: dict | None = None, stamp: str = "") -> Regions:
         """Read and check a regions file. src maps "tag:k=v", "osm:way/…" and "barrio:…" to polygons in the
-        island's metres (regions.src); without it, a region with such a shape stops the load."""
+        island's metres (regions.src, `load_src`); a region whose shape src lacks stops the load, and without
+        src such regions are left out. stamp (the side file's time) joins the version."""
         import hashlib
 
         data = Path(path).read_bytes()
-        return cls.parse(data.decode(), src, hashlib.sha1(data).hexdigest()[:12])
+        return cls.parse(data.decode(), src, hashlib.sha1(data + stamp.encode()).hexdigest()[:12])
 
     @classmethod
     def parse(cls, text: str, src: dict | None = None, version: str = "") -> Regions:
@@ -286,6 +303,8 @@ class Regions:
                 _fail(name, "priority", "must be a whole number")
             shape, value, poly = _shape(name, raw.get("where"), src)
             fields = _buildings(name, raw.get("buildings", {}), tuple(TYPES))
+            if shape in ("barrio", "osm", "tag") and poly is None:  # no regions.src: nothing places it
+                continue
             regions.append(Region(name, shape, value, priority, fields, k))
             if poly is not None:
                 polygons.append(poly)
@@ -367,12 +386,80 @@ class Regions:
         return params[:len(munis)], params[len(munis):]
 
 
+def read(pbf, names=()) -> tuple[dict, dict]:
+    """({"tag:k=v" or "osm:way/…": shapely geometry in local metres}, report) from an OSM file: every area with
+    one of TAGS or of the tags in names, and every way or relation names gives by id (a list of "tag:k=v" and
+    "osm:way/…" keys, as `named` gives)."""
+    import osmium
+
+    from contravia.coast import _local
+
+    tags = {k.split(":", 1)[1] for k in names if k.startswith("tag:")} | set(TAGS)
+    tags = {tuple(t.split("=", 1)) for t in tags}
+    ids = {k.split(":", 1)[1] for k in names if k.startswith("osm:")}
+    found: dict[str, list] = {f"tag:{k}={v}": [] for k, v in tags} | {f"osm:{i}": [] for i in ids}
+    wkb = osmium.geom.WKBFactory()
+
+    class Handler(osmium.SimpleHandler):
+        def area(self, a):
+            osm = f"{'way' if a.from_way() else 'relation'}/{a.orig_id()}"
+            keys = [f"tag:{k}={v}" for k, v in tags if a.tags.get(k) == v] + ([f"osm:{osm}"] if osm in ids else [])
+            if keys:
+                try:
+                    g = shapely.from_wkb(wkb.create_multipolygon(a))
+                except (osmium.InvalidLocationError, RuntimeError):
+                    return
+                for key in keys:
+                    found[key].append(g)
+
+    Handler().apply_file(str(pbf), locations=True)
+    out, report = {}, {}
+    for key, geoms in found.items():
+        if not geoms:
+            report[key] = {"found": 0}
+            continue
+        g = shapely.simplify(_local(shapely.make_valid(shapely.union_all(geoms))), TOLERANCE, preserve_topology=True)
+        out[key] = g
+        report[key] = {"found": len(geoms), "parts": len(shapely.get_parts(g)), "ha": round(g.area / 1e4, 1)}
+    return out, report
+
+
+def named(path: Path | str = PATH) -> list[str]:
+    """The "tag:k=v" and "osm:way/…" keys the regions of a file name, which regions.src must hold."""
+    doc = tomllib.loads(Path(path).read_text())
+    return sorted({f"{k}:{r['where'][k]}" for r in doc.get("region", []) for k in ("tag", "osm")
+                   if isinstance(r.get("where"), dict) and k in r["where"]})
+
+
+def save(shapes: dict, path) -> int:
+    """Write the shapes to path; returns its size in bytes."""
+    body = {"version": VERSION, "shapes": {k: shapely.to_wkb(g) for k, g in shapes.items()}}
+    data = zstd.compress(pickle.dumps(body), level=19)
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_bytes(data)
+    return len(data)
+
+
+def load_src(path) -> dict:
+    """The shapes saved at path, {"tag:k=v" or "osm:way/…": shapely geometry}."""
+    body = pickle.loads(zstd.decompress(Path(path).read_bytes()))
+    if body.get("version") != VERSION:
+        raise ValueError(f"{path}: regions version {body.get('version')}, this game reads {VERSION}")
+    return {k: shapely.from_wkb(g) for k, g in body["shapes"].items()}
+
+
 _current: Regions | None = None
 
 
 def current() -> Regions:
-    """This process's regions, read from regions.toml on first use (regions.src beside the data comes in step 3)."""
+    """This process's regions, read on first use from regions.toml and, where there is one, the regions.src of the
+    island HAVANA_DATA names (the folder, or a province file's folder)."""
     global _current
     if _current is None:
-        _current = Regions.load()
+        data = Path(os.environ.get("HAVANA_DATA", "data/cuba"))
+        side = (data if data.is_dir() else data.parent) / NAME
+        if side.exists():
+            _current = Regions.load(src=load_src(side), stamp=str(side.stat().st_mtime_ns))
+        else:
+            _current = Regions.load()
     return _current

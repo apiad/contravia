@@ -61,6 +61,11 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("pbf")
     p.add_argument("--out", default="data/cuba", help="the folder holding coast.src; shore.src is written beside it")
 
+    p = sub.add_parser("regions", help="write the OSM polygons contravia/regions.toml names (by tag or OSM id, every "
+                       "landuse=cemetery too) into a built island or the sources, beside coast.src")
+    p.add_argument("pbf")
+    p.add_argument("--out", default="data/cuba", help="the built island or data/cuba-src; regions.src is written there")
+
     p = sub.add_parser("cover", help="write what covers the land (ESA WorldCover 2021) over the coast into a built island or the sources")
     p.add_argument("--out", default="data/cuba", help="the folder holding coast.src; cover.src is written beside it")
     p.add_argument("--cache", default="~/.cache/worldcover", help="where the tiles are downloaded; each is deleted once read")
@@ -172,6 +177,15 @@ def main(argv: list[str] | None = None) -> None:
 
         features, report = shore.read(args.pbf, coast.load(Path(args.out) / coast.NAME))
         report["bytes"] = shore.save(features, Path(args.out) / shore.NAME)
+        print(json.dumps(report))
+    elif args.command == "regions":
+        import json
+        from pathlib import Path
+
+        from contravia import regions
+
+        shapes, report = regions.read(args.pbf, regions.named())
+        report["bytes"] = regions.save(shapes, Path(args.out) / regions.NAME)
         print(json.dumps(report))
     elif args.command == "cover":
         import json
