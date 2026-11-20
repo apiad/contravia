@@ -472,7 +472,8 @@ def main(path) -> dict:
 
     t0 = time.perf_counter()
     city = CityData.load(path)
-    report = {**add_to(city), **parks.add_to(city)}
+    covered = parks.drop_covered(city)  # before the walks, which pave the parks left
+    report = {**covered, **add_to(city), **parks.add_to(city)}
     city.save(path)
     report["seconds"] = round(time.perf_counter() - t0, 1)
     print(json.dumps(report, indent=2))

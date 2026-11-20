@@ -76,7 +76,9 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   `docs/superpowers/specs/2026-11-18-parks-design.html`): city parks with paths, plaza and centrepiece, paseos, the paved
   Prado and wild parks outside the city, some with a lake. `contravia/props.py` builds their motifs as `park_tris`, the
   car hits `park_walls`, and `contravia walks` rebuilds them with the pavements. Land OSM tags as a cemetery, industry,
-  a school or a sports ground never becomes a park.
+  a school or a sports ground never becomes a park. A park the drawn street surface covers more than half of
+  (`parks.COVERED`, such as the strip between an avenue's carriageways that `streets.py` joins) is left out before
+  the walks pave it, and no motif, bench, lamp or lake stands on the street triangles (`clearance.cell_streets`).
 - OSM lacks the houses of whole towns (Guanabacoa, Cotorro), so an empty block is not trusted to be a park:
   `prepare --worldcover DIR` and `source --worldcover DIR` (required) read ESA WorldCover's built-up class on a 20 m
   grid over each province (`contravia/builtup.py`, tiles downloaded into DIR) and keep it in the province's `Raw`;

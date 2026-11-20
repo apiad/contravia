@@ -113,26 +113,29 @@ def roads_around(city, i: int, j: int) -> np.ndarray:
     return np.concatenate([city.cell(i + di, j + dj).roads for di in (-1, 0, 1) for dj in (-1, 0, 1)]).reshape(-1, 5)
 
 
+def cell_streets(city, i: int, j: int) -> np.ndarray:
+    """(T, 3, 2) x, z of the street surface cell (i, j) draws, covered tunnels left out: a street deeper than
+    UNDER under the ground is a tunnel, unless it runs in an open cut, where it is still seen."""
+    c = city.cell(i, j)
+    t = c.street_tris
+    if t is None or not len(t):
+        return np.zeros((0, 3, 2))
+    t = np.asarray(t, float)
+    mid = t.mean(axis=1)
+    keep = mid[:, 1] > city.terrain.height(mid[:, 0], mid[:, 2]) - UNDER
+    cuts = c.street_cuts
+    if not keep.all() and cuts is not None and len(cuts):
+        deep = np.flatnonzero(~keep)
+        k, _ = shapely.STRtree(shapely.polygons(np.asarray(cuts, float))).query(
+            shapely.points(mid[deep][:, [0, 2]]), predicate="intersects")
+        keep[deep[k]] = True
+    return t[keep][:, :, [0, 2]]
+
+
 def streets_around(city, i: int, j: int) -> np.ndarray:
-    """(T, 3, 2) x, z of the street surface cell (i, j) and its eight neighbours draw, covered tunnels left out:
-    the surface is cut per cell, so a box near a cell's edge may reach a street of the next cell."""
-    parts = []
-    for di in (-1, 0, 1):
-        for dj in (-1, 0, 1):
-            t = city.cell(i + di, j + dj).street_tris
-            if t is None or not len(t):
-                continue
-            t = np.asarray(t, float)
-            mid = t.mean(axis=1)
-            keep = mid[:, 1] > city.terrain.height(mid[:, 0], mid[:, 2]) - UNDER
-            cuts = city.cell(i + di, j + dj).street_cuts
-            if not keep.all() and cuts is not None and len(cuts):  # a deep street in an open cut is still seen
-                deep = np.flatnonzero(~keep)
-                k, _ = shapely.STRtree(shapely.polygons(np.asarray(cuts, float))).query(
-                    shapely.points(mid[deep][:, [0, 2]]), predicate="intersects")
-                keep[deep[k]] = True
-            parts.append(t[keep][:, :, [0, 2]])
-    return np.concatenate(parts) if parts else np.zeros((0, 3, 2))
+    """(T, 3, 2) x, z of the street surface cell (i, j) and its eight neighbours draw (cell_streets): the
+    surface is cut per cell, so a box near a cell's edge may reach a street of the next cell."""
+    return np.concatenate([cell_streets(city, i + di, j + dj) for di in (-1, 0, 1) for dj in (-1, 0, 1)])
 
 
 def off_streets(rings: list, streets: np.ndarray) -> list:

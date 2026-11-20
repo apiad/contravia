@@ -379,7 +379,8 @@ def add_walks(city: CityData) -> dict:
     """The pavements and the buildings' platforms, over the streets, and the parks' motifs on them."""
     from contravia import walks
 
-    return {**walks.add_to(city), **parks.add_to(city)}
+    covered = parks.drop_covered(city)  # a park the street surface covers is asphalt: not paved, no motifs
+    return {**covered, **walks.add_to(city), **parks.add_to(city)}
 
 
 def green_pieces(green) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
