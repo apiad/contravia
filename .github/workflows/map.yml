@@ -1,6 +1,6 @@
 # Records on every push to main which lines and files each test touches, for test.yml to pick a pull request's
 # tests from. It never gates: recording makes the suite slower and a timing test may fail under it.
-name: testmap
+name: map
 
 on:
   push:
@@ -11,11 +11,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: testmap-main
+  group: map-main
   cancel-in-progress: true
 
 env:
-  TESTMAP: "testmap @ git+https://github.com/syalia-srl/testmap@v0.1.0"
+  FASTCI: "git+https://github.com/syalia-srl/fastci@v0.2.1"
 
 jobs:
   record:
@@ -31,10 +31,10 @@ jobs:
       - run: uv sync --locked --group dev
       - name: Record the map
         run: |
-          uv run --with "$TESTMAP" testmap record --out "$RUNNER_TEMP/testmap/map.json.gz" -- -n auto -m "not slow" \
-            || echo "::warning title=testmap::suite failed under recording"
+          uvx --from "$FASTCI" fastci map record --out "$RUNNER_TEMP/fastci/map.json.gz" -- -n auto -m "not slow" \
+            || echo "::warning title=fastci::suite failed under recording"
       - uses: actions/upload-artifact@v7
         with:
-          name: testmap
-          path: ${{ runner.temp }}/testmap/map.json.gz
+          name: fastci
+          path: ${{ runner.temp }}/fastci/map.json.gz
           retention-days: 14

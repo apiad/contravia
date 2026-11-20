@@ -190,5 +190,5 @@ shore's grid (`rules.shore.vegetated`). The
   15 minutes a run) runs only before a release. To make something faster, measure only the part being optimised,
   with a profile of a few minutes at most, before and after each change; never wait on the full bench to learn
   what a profile already shows, and never run it on every iteration.
-- Checks: `rift check` (tests and lint). Run the tests in parallel, `uv run pytest -n auto -m "not slow"`. CI
-  (`.github/workflows/test.yml`) runs them whole on main and, in a PR, only those testmap picks from the diff.
+- Checks: `rift check` (tests and lint). Before you push, run `fastci` (install it once with `uv tool install git+https://github.com/syalia-srl/fastci@v0.2.1`): the tests your change can break, about 3x faster than `uv run pytest -n auto -m "not slow"`. CI
+  (`.github/workflows/test.yml`) runs `fastci`: whole on main and, in a PR, only the tests the diff can break.

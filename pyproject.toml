@@ -31,5 +31,16 @@ packages = ["contravia"]
 line-length = 110
 target-version = "py314"
 
+# fastci runs the checks and the tests a change can break (https://syalia.com/fastci/).
+# format and lint are off until the repo is ruff-clean: 126 files would be
+# reformatted and ruff check finds 24 errors on main.
+[tool.fastci.tests]
+args = ["-n", "auto", "-rs"]
+
+[tool.fastci.stages]
+format = ""
+lint = ""
+rift = { run = "uvx --from git+https://github.com/apiad/rift@v0.9.0 rift check", after = "lock" }
+
 [tool.pytest.ini_options]
 markers = ["slow: timing tests on city-sized inputs"]
