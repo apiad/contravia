@@ -19,10 +19,11 @@ BUSES = ("engine", "effects", "ambience", "music", "ui")
 ROWS = {"engine": "vol_engine", "effects": "vol_effects", "ambience": "vol_ambience", "music": "vol_music"}
 PAUSED_MUSIC = 10 ** (-10 / 20)  # the pause lowers the music by 10 dB
 DRIVING = ("drive", "aim")  # modes in which the car and the world are heard
-MODULES = ["contravia.rules.sound", "contravia.audio.engine", "contravia.audio"]  # re-imported in the sound process on a reload
+MODULES = ["contravia.rules.sound", "contravia.audio.engine", "contravia.audio.car", "contravia.audio"]  # re-imported in the sound process on a reload
 
 # Every control the game writes. A process started with fewer (by older code) is replaced.
-CONTROLS = (*pose_names("car"), "car.rpm", "car.throttle", "car.speed")
+CONTROLS = (*pose_names("car"), "car.rpm", "car.throttle", "car.speed", "car.slip", "car.wet", "car.surface",
+            "car.horn", "car.cabin")
 
 
 class Sound:
@@ -31,6 +32,8 @@ class Sound:
     def __init__(self, audio: Audio, names: tuple):
         self.audio, self.names = audio, names
         self._mode, self._gains, self._published = None, {b: 1.0 for b in BUSES}, 0.0
+        self._frame, self._crash_at, self._bump_at, self._travel = 0, -100, -100, None
+        self._surface_at, self._surface_code, self._horn_was = 0.0, 0.0, False
 
     @classmethod
     def start(cls, state, options, backend: str = "device", path=None) -> Sound:
@@ -52,6 +55,15 @@ class Sound:
     def attach(self, game) -> None:
         """Register every source and voice of this game in the sound process: at the start, after a
         reload, and again when the player takes another vehicle."""
+        from contravia.audio import car
+
+        a = self.audio
+        a.source("roll", car.roll, "effects", placed=("car", 5.0, 300.0))
+        a.source("squeal", car.squeal, "effects", placed=("car", 5.0, 300.0))
+        a.source("wind", car.wind, "effects")
+        a.voice("crash", car.crash, "effects", cap=4, placed=True)
+        a.voice("bump", car.bump, "effects", cap=2, placed=True)
+        a.voice("bell", car.bell, "effects", cap=1, placed=True)
         self.vehicle(game)
 
     def vehicle(self, game) -> None:
@@ -63,6 +75,10 @@ class Sound:
         seed = zlib.crc32(game.family.encode())
         self.audio.source("engine", functools.partial(player_engine, game.family, float(idle), float(red), seed),
                           "engine", placed=("car", 5.0, 300.0))
+        from contravia.audio import car
+
+        self.audio.source("horn", functools.partial(car.horn, game.family), "effects", placed=("car", 5.0, 300.0))
+        self._bicycle = game.family in ("bicitaxi", "bicicleta")
 
     @staticmethod
     def gains(options) -> dict:
@@ -109,11 +125,71 @@ class Sound:
         a.set("car.speed", abs(car.speed))
         c = getattr(game, "controls_now", None)
         a.set("car.throttle", 0.0 if c is None or getattr(game, "sinking", None) is not None else c.throttle)
+        a.set("car.slip", slip_past_peak(game))
+        now_w = getattr(game, "weather_now", None)
+        a.set("car.wet", now_w.wet if now_w is not None else 0.0)
+        a.set("car.surface", self._surface(game))
+        horn = game.mode == "drive" and game.engine.input.is_pressed("h") if hasattr(game.engine, "input") else False
+        if horn and getattr(self, "_bicycle", False):
+            if not self._horn_was:
+                a.event("bell", seed=self._frame, x=car.x, y=car.y, z=car.z)
+            horn_on = 0.0
+        else:
+            horn_on = 1.0 if horn else 0.0
+        self._horn_was = horn
+        a.set("car.horn", horn_on)
+        a.set("car.cabin", 0.0)  # the camera follows the car from outside; there is no cabin view yet
+        self._events(game)
         a.tick()
         now = time.monotonic()
         if now - self._published > 0.5:
             self._published = now
             game.engine.state.audio = a.state()
 
+    def _surface(self, game) -> float:
+        """0 on a street, 2 off it; checked four times a second."""
+        now = time.monotonic()
+        if now - self._surface_at > 0.25:
+            self._surface_at = now
+            help = getattr(game, "help", None)
+            on = help is not None and help.road.locate(game.car.x, game.car.z, game.car.yaw) is not None
+            self._surface_code = 0.0 if on or help is None else 2.0
+        return self._surface_code
+
+    def _events(self, game) -> None:
+        """A crash from the frame's contact impulse, a bump from the suspension's travel."""
+        self._frame += 1
+        t = getattr(game.car, "telemetry", None) or {}
+        car, a = game.car, self.audio
+        impulse = float(t.get("impulse", 0.0))
+        from contravia.audio.car import CRASH_MIN
+
+        if impulse >= CRASH_MIN and self._frame - self._crash_at > 6:
+            self._crash_at = self._frame
+            a.event("crash", impulse=impulse, seed=self._frame, x=car.x, y=car.y, z=car.z)
+            a.duck("music", 6.0, 1.5)
+        travel = t.get("travel")
+        if travel is not None:
+            travel = list(travel)
+            if self._travel is not None and len(travel) == len(self._travel):
+                jump = max(abs(x - y) for x, y in zip(travel, self._travel))
+                if jump > 0.02 and self._frame - self._bump_at > 10:
+                    self._bump_at = self._frame
+                    a.event("bump", depth=jump, seed=self._frame, x=car.x, y=car.y, z=car.z)
+            self._travel = travel
+
     def close(self) -> None:
         self.audio.close()
+
+
+def slip_past_peak(game) -> float:
+    """How far the worst wheel is past its tyre's peak slip (0 below the peak), from the telemetry."""
+    t = getattr(game.car, "telemetry", None) or {}
+    slip = t.get("slip")
+    if not slip or game.driven is None:
+        return 0.0
+    p = game.driven.fleet.p
+    worst = 0.0
+    for w, (k, a) in enumerate(slip):
+        worst = max(worst, abs(k) / float(p.kappa_peak[0, w]), abs(a) / float(p.alpha_peak[0, w]))
+    return max(0.0, worst - 1.0)

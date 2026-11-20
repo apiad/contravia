@@ -1091,6 +1091,7 @@ class Game:
             self.engine.fog_start, self.engine.fog_end = max(self.look.fog[0], fog[0]), max(self.look.fog[1], fog[1])
         self.stars_shown = self.nightsky.update(when, eye, self.look, moon, sun)
         self.weather_state = now.state
+        self.weather_now, self.sun_now, self.when_now = now, sun, when  # for the sound
         self.rain.update(self._dt, eye, now.rain if self.rain_on else 0.0, tuple(1.4 * v for v in self.look.horizon))
         t = time.perf_counter()
         if t - self._sky_state_at > 0.5:

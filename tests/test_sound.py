@@ -107,3 +107,39 @@ def test_a_recorded_engine_follows_the_rpm(options, tmp_path):
     firing = 2400 * 4 / 120  # a four-cylinder four-stroke at 2400 rpm: 80 Hz
     peaks = f[band][np.argsort(spec[band])[-3:]]
     assert np.abs(x).max() > 0.01 and any(abs(p / firing - round(p / firing)) < 0.05 for p in peaks)
+
+
+class Recorder:
+    """Stands in for manifoldx.audio.Audio and keeps what the game asked of it."""
+
+    def __init__(self):
+        self.calls, self.values, self.alive = [], {}, True
+
+    def set(self, name, value):
+        self.values[name] = value
+
+    def __getattr__(self, name):
+        return lambda *a, **k: self.calls.append((name, a, k))
+
+
+def test_a_hard_hit_fires_a_crash_and_ducks_the_music():
+    from contravia.audio import CONTROLS
+
+    s = Sound(Recorder(), CONTROLS)
+    g = fake_game(2000.0)
+    g.car.telemetry = {"impulse": 50.0, "travel": [0.1] * 4}
+    s.frame(g)
+    g.car.telemetry = {"impulse": 900.0, "travel": [0.1, 0.1, 0.15, 0.1]}
+    s.frame(g)
+    names = [(c[0], c[1][0]) for c in s.audio.calls if c[0] in ("event", "duck")]
+    assert ("event", "crash") in names and ("duck", "music") in names and ("event", "bump") in names
+
+
+def test_a_light_touch_is_not_a_crash():
+    from contravia.audio import CONTROLS
+
+    s = Sound(Recorder(), CONTROLS)
+    g = fake_game(2000.0)
+    g.car.telemetry = {"impulse": 100.0}
+    s.frame(g)
+    assert not [c for c in s.audio.calls if c[0] == "event"]
