@@ -70,6 +70,7 @@ class Form:
     taper: float  # the top radius over the base's
     lean: float = 0.0  # metres the top leans off the base, along x
     buttress: int = 0  # root flares round the base (the ceiba)
+    roots: int = 0  # stilt roots arching from the trunk down into the water (the mangle)
     levels: tuple[Level, ...] = ()
     crown: Crown | None = None
     palm: Palm | None = None
@@ -90,6 +91,9 @@ FORMS = {
     # Cocotero: a slender leaning stem, nuts under a head of drooping fronds.
     "coco": Form(11.0, 0.3, 0.6, lean=2.2, palm=Palm(10, 5.0, 1.2, 3.4, 8, crownshaft=False)),
     # Ceiba: buttress roots, a thick column and a few huge horizontal limbs under a flat crown.
+    # Mangle rojo: a short trunk on arching stilt roots, standing in the shallows, under a low dense crown.
+    "mangle": Form(1.8, 0.16, 0.7, roots=7, levels=(Level(5, 2.0, 58, 0.6, 0.6), Level(3, 0.6, 35, 0.5, 0.6)),
+                   crown=Crown(4, (1.1, 0.75, 1.1), 1.1)),
     "ceiba": Form(12.0, 1.4, 0.45, buttress=5,
                   levels=(Level(5, 6.5, 70, 0.8, 0.45), Level(3, 0.6, 30, 0.5, 0.55)),
                   crown=Crown(5, (1.9, 0.8, 1.9), 2.2)),
@@ -264,12 +268,34 @@ def _trunk(m: _Mesh, form: Form, lod: int, species: str):
             m.two_sided(foot, up - side, up + side, TRUNK, BARK[species])
 
 
+def _stilts(m: _Mesh, form: Form, lod: int, species: str):
+    """A mangle's stilt roots: each leaves the trunk part way up and arches out and down to the ground, in two
+    bends near and one far."""
+    count = form.roots if lod < 2 else 3
+    sides = 3
+    for k in range(count):
+        a = 2 * np.pi * k / count + 0.3 * np.sin(3.1 * k)
+        out = np.array((np.cos(a), 0.0, np.sin(a)))
+        reach = 1.0 + 0.35 * ((k * 7) % 3)
+        start = np.array((0.0, form.height * (0.55 + 0.1 * (k % 2)), 0.0))
+        knee = start + out * reach * 0.55 + (0.0, 0.25, 0.0)
+        foot = out * reach + (0.0, -0.3, 0.0)
+        r = form.radius * 0.35
+        if lod == 0:
+            m.prism(start, knee, r, r * 0.9, sides, TRUNK, BARK[species])
+            m.prism(knee, foot, r * 0.9, r * 0.8, sides, TRUNK, BARK[species])
+        else:
+            m.prism(start, foot, r, r * 0.8, sides, TRUNK, BARK[species])
+
+
 def build(species: str, lod: int, crown: str = "full", variant: int = 0) -> _Mesh:
     """The mesh of a species at a level of detail, with a full, sparse or bare crown, standing at the origin."""
     form = FORMS[species]
     sk = skeleton(species, variant)
     m = _Mesh()
     _trunk(m, form, lod, species)
+    if form.roots:
+        _stilts(m, form, lod, species)
     if form.palm is not None:
         _palm_head(m, form, lod, crown, species)
         return m

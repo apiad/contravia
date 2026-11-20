@@ -9,11 +9,14 @@ clears are left out; the landmarks themselves are drawn once by the game, not pe
 
 import os
 
-from contravia.clearance import boxes, roads_around
+from contravia import cemetery, regions
+from contravia.clearance import boxes, roads_around, streets_around
 from contravia.geo import CELL
 from contravia.landmarks import Landmarks, cached
 from contravia.mesh import MeshBuilder
 from contravia.rules import buildings, detail, facades, ground, roads
+from contravia.rules import shore as shore_rules
+from contravia.shore import of as shore_of
 from contravia.terrain import seat
 from contravia.world import World
 
@@ -41,26 +44,31 @@ def landmarks() -> Landmarks:
 
 
 def warm() -> None:
-    """What a builder loads once, run when it starts while the game is still loading: the world, its landmarks and
-    the parks lookup of the focused province, which its first cell would otherwise wait for."""
-    from contravia import parks
+    """What a builder loads once, run when it starts while the game is still loading: the world, its landmarks,
+    the regions and the parks lookup of the focused province, which its first cell would otherwise wait for."""
+    from contravia import parks, regions
 
     w = city()
     landmarks()
+    regions.current()
     a = w.province(w.names.index(w.focused)).a
     if "park_kind" in a and len(a["park_kind"]):
         parks._lookup(a)
 
 
 def build(i: int, j: int):
-    """The MeshData of cell (i, j): its ground, roads, buildings and filler boxes. Its trees are not in it: the
-    game draws them as instances (forest.py)."""
+    """The MeshData of cell (i, j): its ground, its shore's rocks near the sea (rules/shore.py), roads, buildings,
+    filler boxes and a cemetery's wall. Its trees, tombs and pantheons are not in it: the game draws them as
+    instances (forest.py, graveyard.py)."""
     global SKIPPED_ROOFS
-    c = landmarks().keep(i, j, city().cell(i, j))
+    c = regions.current().parks(landmarks().keep(i, j, city().cell(i, j)))  # without the parks a region drops
     x0, z0 = i * CELL, j * CELL
     mb = MeshBuilder()
     terrain = city().terrain
-    ground.ground(mb, i, j, terrain, c.street_cuts)
+    shore = shore_of(city())
+    ground.ground(mb, i, j, terrain, c.street_cuts, shore)
+    if shore is not None and (f := shore.field(i, j)) is not None:
+        shore_rules.dress(mb, f)
     if c.street_tris is None:
         roads.ribbon(mb, c.roads, terrain)
     else:
@@ -72,10 +80,11 @@ def build(i: int, j: int):
         if c.park_tris is not None:
             roads.structures(mb, c.park_tris, c.park_paint)
     near = roads_around(city(), i, j)
-    for ring, style_id, plan in boxes(c, near):
+    for ring, style_id, plan in boxes(c, near, streets_around(city(), i, j)):
         portals = facades.portal_walls(ring, near) if plan.portal else None
         if not buildings.box(mb, ring, style_id, base=seat(ring, terrain), plan=plan, portals=portals):
             SKIPPED_ROOFS += 1
+    cemetery.dress(mb, cemetery.yard(city(), i, j, landmarks(), plots=False, pantheons=False), terrain)
     return mb.to_meshdata(x0, z0)
 
 
@@ -86,7 +95,7 @@ def build_detail(i: int, j: int):
     terrain = city().terrain
     near = roads_around(city(), i, j)
     mb = MeshBuilder()
-    for ring, style_id, plan in boxes(c, near):
+    for ring, style_id, plan in boxes(c, near, streets_around(city(), i, j)):
         portals = facades.portal_walls(ring, near) if plan.portal else None
         detail.dress(mb, ring, style_id, seat(ring, terrain), plan, near, portals)
     if not mb._pos:
@@ -102,4 +111,15 @@ def build_node(L: int, a: int, b: int):
     i, j = w.tree.origin[0] + (a << L), w.tree.origin[1] + (b << L)
     if L == 0:
         return build(i, j)
-    return summary_mesh(w.summary(L, a, b), L, a, b, w.tree.origin, w.terrain)
+    return summary_mesh(w.summary(L, a, b), L, a, b, w.tree.origin, w.terrain, _pantheons(L, i, j))
+
+
+def _pantheons(L: int, i: int, j: int):
+    """The pantheons of the cemeteries in node (L, i, j)'s cells, which its summary draws as boxes up to
+    cemetery.FAR_LEVEL; None past it or where no cemetery meets the node."""
+    if L > cemetery.FAR_LEVEL or not cemetery.touching(i * CELL, j * CELL, (i + (1 << L)) * CELL, (j + (1 << L)) * CELL):
+        return None
+    yards = [cemetery.yard(city(), i + di, j + dj, landmarks(), plots=False)
+             for di in range(1 << L) for dj in range(1 << L)
+             if cemetery.touching((i + di) * CELL, (j + dj) * CELL, (i + di + 1) * CELL, (j + dj + 1) * CELL)]
+    return cemetery.joined(yards)

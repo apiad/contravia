@@ -98,3 +98,16 @@ def test_height_tints_come_in_from_the_city_stage_green_low_and_brown_high():
 
 def test_the_shading_sees_the_slope_as_the_map_stretches_it():
     assert rules.exaggeration(6) == 1.0 and rules.exaggeration(9) == 8.0 and rules.exaggeration(13) == 20.0
+
+
+def test_squares_without_cover_take_the_palette_from_their_woods_and_towns():
+    from contravia.rules.trees import TREE_EVERY, far_green, today
+
+    sq = 400.0
+    green = np.array([0.0, sq * sq / TREE_EVERY, 0.0, sq * sq / TREE_EVERY / 2])
+    built = np.array([0.0, 0.0, sq * sq, sq * sq / rules.BUILT_SPREAD / 2])
+    c = rules.mapped(green, built, sq, today())
+    assert np.allclose(c[0], rules.TONES[30])  # open country
+    assert np.allclose(c[1], far_green(today()))  # all wood
+    assert np.allclose(c[2], rules.TONES[50])  # all town
+    assert np.allclose(c[3], (far_green(today()) + np.asarray(rules.TONES[50])) / 2)

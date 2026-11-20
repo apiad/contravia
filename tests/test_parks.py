@@ -14,8 +14,9 @@ def _rect(w, h, turn=0.0, at=(1000.0, 2000.0)):
     return p @ np.array([[c, s], [-s, c]]) + at
 
 
-def _kind(ring, built=0.0, buildings=0, green=0.0, city=True, boulevard=False, prado=False):
-    return parks.classify([Polygon(ring)], [built], [buildings], [green], [city], [boulevard], [prado])[0]
+def _kind(ring, built=0.0, buildings=0, green=0.0, city=True, boulevard=False, prado=False, seen=None):
+    return parks.classify([Polygon(ring)], [built], [buildings], [green], [city], [boulevard], [prado],
+                          None if seen is None else [seen])[0]
 
 
 def test_an_empty_city_block_is_a_city_park_with_a_centrepiece_on_its_plaza():
@@ -52,6 +53,15 @@ def test_built_blocks_are_not_parks_unless_osm_calls_them_green():
     assert _kind(ring, built=0.08 * 8000, buildings=6, green=6000) == parks.CITY
     assert _kind(_rect(30, 30)) == parks.NONE  # under 1 500 m²
     assert _kind(_rect(200, 12)) == parks.NONE  # too narrow
+
+
+def test_a_block_the_satellite_sees_built_is_houses_osm_lacks_not_a_park():
+    ring = _rect(100, 80)
+    assert _kind(ring, seen=0.4) == parks.CITY
+    assert _kind(ring, seen=parks.SEEN_BUILT) == parks.NONE
+    assert _kind(_rect(120, 100), city=False, seen=0.9) == parks.NONE
+    assert _kind(ring, green=6000, seen=0.9) == parks.CITY  # OSM's green wins
+    assert _kind(_rect(300, 35), prado=True, seen=0.9) == parks.PRADO
 
 
 def test_the_same_block_gives_the_same_park():
@@ -135,3 +145,41 @@ def test_a_block_that_splits_when_shrunk_still_lays_out():
         for seed in range(6):
             park = parks.layout(ring, kind, seed)
             assert len(park.trees) or kind == parks.PRADO
+
+
+def _street_city(ring, kind, band):
+    """A CityData in cell (0, 0) holding one park of the given kind on the block `ring` and a drawn street
+    surface over the box `band` (x0, z0, x1, z1), as streets.py lays one wider than the block's edge."""
+    from contravia.citydata import CityData
+    from contravia.terrain import Terrain
+
+    x0, z0, x1, z1 = band
+    t = np.array([[(x0, 0, z0), (x1, 0, z0), (x1, 0, z1)], [(x0, 0, z0), (x1, 0, z1), (x0, 0, z1)]], np.float32)
+    city = CityData.from_features(np.zeros((0, 5)), [], np.zeros(0), [], np.zeros(0), np.zeros((0, 2)), Terrain.flat())
+    city.add_kind("street_tris", t, np.zeros((2, 2), int))
+    city.add_kind("street_edges", np.zeros((0, 2, 3)), np.zeros((0, 2), int))
+    ring = np.asarray(ring, np.float32)
+    city.a.update(park_verts=ring, park_starts=np.array([0, len(ring)]), park_kind=np.array([kind], np.uint8),
+                  park_zone=np.array([1], np.uint8), park_seed=np.array([parks.seed_of(Polygon(ring))]))
+    return city
+
+
+def test_no_motif_stands_on_the_drawn_street():
+    ring = np.array([(5, 5), (95, 5), (95, 95), (5, 95)], float)
+    city = _street_city(ring, parks.CITY, (0, 0, 22, 200))  # the street covers the park's west strip
+    report = parks.add_to(city)
+    tris = np.asarray(city.a["park_tris"], float)
+    walls = np.asarray(city.a["park_walls"], float)
+    assert len(tris) and len(walls)
+    assert tris[:, :, 0].min() >= 22 - 1e-6  # no triangle of any motif reaches onto the street
+    assert walls[:, [0, 2]].min() >= 22 - 1e-6
+    assert report["props_on_streets"] > 0 and report["benches"] > 0  # some were left out, the rest stand
+
+
+def test_a_park_the_drawn_street_mostly_covers_is_not_laid_out():
+    strip = np.array([(0, 0), (300, 0), (300, 20), (0, 20)], float)  # a paseo between an avenue's carriageways
+    city = _street_city(strip, parks.PASEO, (-10, -5, 310, 15))  # streets.py joined them over 3/4 of it
+    assert parks.drop_covered(city) == {"parks_under_streets": 1}
+    assert not len(city.a["park_kind"]) and not len(parks.laid(city.a))
+    kept = _street_city(strip, parks.PASEO, (-10, -5, 310, 2))  # a street along its edge leaves it a park
+    assert parks.drop_covered(kept) == {"parks_under_streets": 0} and len(kept.a["park_kind"]) == 1

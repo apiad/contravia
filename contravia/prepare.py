@@ -66,6 +66,7 @@ class Raw:
     places: list = field(default_factory=list)  # (name, outer ring) of place=suburb|neighbourhood|quarter areas
     place_points: list = field(default_factory=list)  # (name, (lat, lon), place) of such places mapped as points
     consejos: list = field(default_factory=list)  # (name, outer ring) of consejos populares (admin_level 9)
+    built_up: object = None  # contravia.builtup.BuiltUp over the province's box: where the satellite sees buildings
 
 
 def _tagged(tags, pairs) -> bool:
@@ -302,7 +303,8 @@ def find_parks(raw: Raw, faces, rings, cents, graph, roads) -> tuple[list, list,
             names[k] = name
     city = np.array([n in CENTRE or n in VEDADO for n in names])
     prado = _named_between(graph, faces, r"Paseo del Prado|Paseo de Mart[ií]", ACROSS)
-    kinds = parks.classify(lands, built, count, green, city, boulevard(graph, faces), prado)
+    seen = raw.built_up.share(faces) if raw.built_up is not None else None
+    kinds = parks.classify(lands, built, count, green, city, boulevard(graph, faces), prado, seen)
     kinds[blocked & ~prado] = parks.NONE
     keep = np.flatnonzero(kinds != parks.NONE)
     return ([np.asarray(lands[k].exterior.coords)[:-1] for k in keep], [int(kinds[k]) for k in keep],
@@ -377,7 +379,8 @@ def add_walks(city: CityData) -> dict:
     """The pavements and the buildings' platforms, over the streets, and the parks' motifs on them."""
     from contravia import walks
 
-    return {**walks.add_to(city), **parks.add_to(city)}
+    covered = parks.drop_covered(city)  # a park the street surface covers is asphalt: not paved, no motifs
+    return {**covered, **walks.add_to(city), **parks.add_to(city)}
 
 
 def green_pieces(green) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -573,7 +576,7 @@ def province_boxes(pbf) -> dict:
     return {k: (s - BOX_MARGIN, w - BOX_MARGIN, n + BOX_MARGIN, e + BOX_MARGIN) for k, (s, w, n, e) in boxes.items()}
 
 
-def _province(pbf, out, dem, name: str, slug: str, box) -> dict:
+def _province(pbf, out, dem, name: str, slug: str, box, worldcover=None) -> dict:
     """Build one province into out/<slug>.npz and return its report; a worker process runs it when jobs > 1.
 
     The file is written under a temporary name and renamed when complete, so a crash never leaves a half-written
@@ -584,7 +587,12 @@ def _province(pbf, out, dem, name: str, slug: str, box) -> dict:
 
     t0 = time.perf_counter()
     terrain = read_terrain(dem, box, stride=TERRAIN_STRIDE.get(name, 3)) if dem else None
-    city, report = build_city(read_osm(pbf, boundary=name, box=box), terrain)
+    raw = read_osm(pbf, boundary=name, box=box)
+    if worldcover:
+        from contravia import builtup
+
+        raw.built_up = builtup.read(worldcover, box)
+    city, report = build_city(raw, terrain)
     path = Path(out) / f"{slug}.npz"
     part = Path(out) / f"{slug}.part.npz"
     city.save(part)
@@ -593,16 +601,17 @@ def _province(pbf, out, dem, name: str, slug: str, box) -> dict:
     return report
 
 
-def main(pbf, out, dem=None, provinces=None, resume: bool = False, jobs: int = 1) -> dict:
+def main(pbf, out, dem=None, provinces=None, resume: bool = False, jobs: int = 1, worldcover=None) -> dict:
     """Build each province (all of contravia.geo.PROVINCES by default) into out/<slug>.npz: read its part of the
-    extract and, from the GLO-30 tiles in dem (downloaded there if missing), its cleaned relief. With resume, a
+    extract and, from the GLO-30 tiles in dem (downloaded there if missing), its cleaned relief; with worldcover,
+    a folder of WorldCover tiles (downloaded there if missing), where the satellite sees buildings. With resume, a
     province whose file is there is left as it is. jobs provinces are built at once, each in its own process
     (about 2.5 GB of memory each). Returns the reports by province."""
     import json
     import multiprocessing
     from concurrent.futures import ProcessPoolExecutor, as_completed
 
-    from contravia import coast
+    from contravia import coast, shore
     from contravia.geo import PROVINCES
 
     boxes = province_boxes(pbf)
@@ -611,6 +620,8 @@ def main(pbf, out, dem=None, provinces=None, resume: bool = False, jobs: int = 1
         land, reports["coast"] = coast.read(pbf)
         if not land.is_empty:
             reports["coast"]["bytes"] = coast.save(land, Path(out) / coast.NAME)
+            features, reports["shore"] = shore.read(pbf, land)  # what the shore is made of, along that coast
+            reports["shore"]["bytes"] = shore.save(features, Path(out) / shore.NAME)
         print("coast", json.dumps(reports["coast"]), flush=True)
     todo = []
     for name, slug in PROVINCES:
@@ -624,11 +635,12 @@ def main(pbf, out, dem=None, provinces=None, resume: bool = False, jobs: int = 1
     Path(out).mkdir(parents=True, exist_ok=True)
     if jobs <= 1:
         for name, slug in todo:
-            reports[name] = _province(pbf, out, dem, name, slug, boxes[name])
+            reports[name] = _province(pbf, out, dem, name, slug, boxes[name], worldcover)
             print(name, json.dumps(reports[name]), flush=True)
         return reports
     with ProcessPoolExecutor(jobs, mp_context=multiprocessing.get_context("spawn")) as pool:
-        running = {pool.submit(_province, pbf, out, dem, name, slug, boxes[name]): name for name, slug in todo}
+        running = {pool.submit(_province, pbf, out, dem, name, slug, boxes[name], worldcover): name
+                   for name, slug in todo}
         for done in as_completed(running):
             name = running[done]
             reports[name] = done.result()

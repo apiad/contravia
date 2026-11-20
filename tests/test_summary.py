@@ -1,6 +1,7 @@
 """Node summaries: pooling equals summarizing, the mesh stays small, roads thin out by level."""
 
 import numpy as np
+import pytest
 
 from contravia.citydata import Cell
 from contravia.geo import CELL
@@ -76,3 +77,105 @@ def test_summary_box_has_the_buildings_colour_and_facade():
     assert np.allclose(m.colors[walls], p.color, atol=1e-5)
     assert m.facade is not None and set(m.facade[walls, 2]) == {facades.SHADER_TYPE[p.type]}
     assert m.facade[walls, 1].max() == p.storeys
+
+
+def _street_city():
+    """Four 80 m blocks in node (2, 0, 0), split by a 4 m lane along x and a 12 m avenue along z, the last
+    of them towers."""
+    houses, ids = [], []
+    for x0, z0 in ((10, 10), (10, 104), (104, 10), (104, 104)):
+        for dx in range(0, 80, 10):
+            for dz in range(0, 80, 10):
+                houses.append(np.array([(x0 + dx, z0 + dz), (x0 + dx + 9, z0 + dz), (x0 + dx + 9, z0 + dz + 9),
+                                        (x0 + dx, z0 + dz + 9)], np.float32))
+                ids.append(1000 + len(ids))
+    roads = np.array([(0, 97, 200, 97, 4.0), (97, 0, 97, 200, 12.0)], np.float32)
+    return houses, np.array(ids), roads
+
+
+def test_blocks_keep_wide_streets_and_towers():
+    import shapely
+
+    from contravia.summary import _unpack, blocks
+
+    houses, ids, roads = _street_city()
+    found = [(r, 81.0, facades.plan(int(k), area=81.0)) for r, k in zip(houses, ids, strict=True)]
+    tower = facades.Plan("tower", 20, 4.0, 3.0, 3.0, 1.0, (0.9, 0.9, 0.9), facades.ROOF)
+    found[-64:] = [(r, 81.0, tower) for r, _, _ in found[-64:]]  # the last block is one tower
+    s1 = blocks(found, roads, 1, 0, 0, (0, 0))
+    p1, _ = _unpack(s1, 0, 0)
+    assert len(p1) == 4  # the lane and the avenue both part the blocks at level 1
+    s2 = blocks(found, roads, 2, 0, 0, (0, 0))
+    p2, at = _unpack(s2, 0, 0)
+    low = at["height"] < 18
+    mass = shapely.union_all(p2)
+    assert mass.contains(shapely.Point(50, 97)) and mass.contains(shapely.Point(140, 97))  # the 4 m lane closes
+    assert not mass.intersects(shapely.Point(97, 50))  # the avenue still parts them
+    assert at["height"].max() > 40 and (at["height"][low] < 18).all()  # the tower stands out of its block
+
+
+def test_summary_mesh_draws_blocks_not_boxes():
+    from contravia.summary import pool
+
+    houses, ids, roads = _street_city()
+    cells = [(0, 0, Cell(roads=roads, buildings=houses, building_ids=ids, trees=np.zeros((0, 2), np.float32)))]
+    s = summarize(cells, 1, 0, 0, (0, 0))
+    m = summary_mesh(s, 1, 0, 0, (0, 0))
+    roofs = m.positions[np.abs(m.normals[:, 1]) > 0.5]
+    up = roofs[roofs[:, 1] > 1]
+    assert up[:, 0].min() < 12 and up[:, 0].max() > 180  # one roof spans the blocks, not 16 centred boxes
+    assert not ((up[:, 0] > 92) & (up[:, 0] < 102)).any()  # nothing stands in the avenue
+    up_s = pool([s, None, None, None], 2, 0, 0, (0, 0))
+    assert len(up_s["block_height"]) and len(summary_mesh(up_s, 2, 0, 0, (0, 0)).indices)
+
+
+class _Hills:
+    """Rolling hills 10 to 90 m high, curved enough that a straight road across them leaves the coarse ground."""
+
+    heights = np.array([[10.0, 90.0]])
+
+    def height(self, x, z, near=None):
+        return 50.0 + 40.0 * np.sin(np.asarray(x) / 700.0) * np.cos(np.asarray(z) / 500.0)
+
+
+def test_summary_roads_lie_on_the_coarse_ground_over_hills():
+    import shapely
+
+    from contravia.summary import ROAD_LIFT
+
+    L, origin = 5, (0, 0)
+    side = (1 << L) * CELL
+    s = summarize([], L, 0, 0, origin)
+    s["green"] = np.ones_like(s["green"])  # every square is land
+    bare = summary_mesh(s, L, 0, 0, origin, _Hills())
+    s["roads"] = np.array([(300.0, 500.0, side - 400.0, side - 900.0, 12.0)])
+    m = summary_mesh(s, L, 0, 0, origin, _Hills())
+    p, tri = np.asarray(m.positions, float), np.asarray(m.indices).reshape(-1, 3)
+    n = len(bare.positions)
+    road, ground = tri[(tri >= n).all(axis=1)], tri[(tri < n).all(axis=1) & (m.normals[tri[:, 0], 1] > 0.5)]
+    assert len(road)
+    centres = p[road].mean(axis=1)
+    g = shapely.polygons(p[ground][:, :, [0, 2]])
+    hit_road, hit_ground = shapely.STRtree(g).query(shapely.points(centres[:, [0, 2]]), predicate="within")
+    assert len(np.unique(hit_road)) == len(road)  # each piece of road lies within one ground triangle
+    corners = p[ground[hit_ground]]
+    plane = np.linalg.solve(np.concatenate([np.ones((len(corners), 3, 1)), corners[:, :, [0, 2]]], 2),
+                            corners[:, :, 1:])[..., 0]
+    under = plane[:, 0] + plane[:, 1] * centres[hit_road, 0] + plane[:, 2] * centres[hit_road, 2]
+    np.testing.assert_allclose(centres[hit_road, 1] - under, ROAD_LIFT, atol=1e-3)
+    area = 0.5 * np.abs(np.cross(p[road][:, 1] - p[road][:, 0], p[road][:, 2] - p[road][:, 0])[:, 1]).sum()
+    length = np.hypot(side - 700.0, side - 1400.0)
+    assert area == pytest.approx(length * max(12.0, side / 64), rel=1e-3)
+
+
+def test_clip_cuts_a_quad_to_a_triangle():
+    from contravia.summary import _clip, _cross
+
+    quad = np.array([[[-1.0, -1.0], [3.0, -1.0], [3.0, 1.0], [-1.0, 1.0]]] * 2)
+    tri = np.array([[[0.0, 0.0], [2.0, 0.0], [0.0, 2.0]], [[0.0, 0.0], [0.0, 2.0], [2.0, 0.0]]])  # either turn
+    t, row = _clip(quad, tri)
+    area = 0.5 * np.abs(_cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]))
+    for k in (0, 1):  # the triangle's part with z <= 1: 2 - 0.5
+        assert area[row == k].sum() == pytest.approx(1.5)
+    t, row = _clip(quad[:1], np.array([[[5.0, 5.0], [6.0, 5.0], [5.0, 6.0]]]))
+    assert not len(t)

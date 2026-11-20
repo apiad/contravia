@@ -97,9 +97,9 @@ def test_the_camera_stays_above_the_ground_on_a_downhill():
 
     t = _ramp(0.3)
     car = settle(CarState(0.0, 0.0, np.pi, 0.0), t)                  # facing west, downhill; behind is uphill
-    eye = np.array([0.0, car.y + 3.0, 0.0])
+    rig = None
     for _ in range(200):
-        eye, _target = chase(eye, car, 0.05, t)
+        rig, eye, _target = chase(rig, car, 0.05, t)
     assert eye[1] >= float(t.height(eye[0], eye[2])) + FLOOR - 1e-6
 
 

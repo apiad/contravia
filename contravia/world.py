@@ -26,7 +26,8 @@ from contravia.quadtree import Tree
 
 OPEN = 2  # provinces kept in memory at once: the car's and the one across a border
 BARE = 0.01  # the quadtree's weight of a cell of bare land: drawn, but light
-SUMMARY_VERSION = 3  # 2: each summary keeps its land, cut from the coast (contravia.coast); 3: its cover
+SUMMARY_VERSION = 5  # 2: each summary keeps its land, cut from the coast (contravia.coast); 3: its cover;
+# 4: its blocks (contravia.summary.blocks); 5: roads clipped onto the ground, colours without cover, regions
 
 
 def _keys(cells: np.ndarray) -> np.ndarray:

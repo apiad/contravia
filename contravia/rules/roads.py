@@ -8,6 +8,7 @@ a skirt drops from its edge to the ground, like an embankment wall.
 """
 
 import numpy as np
+from manifoldx.resources import DETAIL_ASPHALT
 
 from contravia.rules.noise import fbm
 
@@ -25,13 +26,13 @@ def level(terrain, p: np.ndarray, side: np.ndarray) -> np.ndarray:
     return np.maximum.reduce(h) + LIFT
 
 
-def _quads(mb, corners, heights, color) -> None:
-    """Add (Q, 4, 2) corners at (Q, 4) heights as quads facing up."""
+def _quads(mb, corners, heights, color, surface=0) -> None:
+    """Add (Q, 4, 2) corners at (Q, 4) heights as quads facing up, of manifoldx surface `surface`."""
     xz = corners.reshape(-1, 2)
     y = heights.reshape(-1)
     base = 4 * np.arange(len(corners))[:, None]
     mb.add(np.stack([xz[:, 0], y, xz[:, 1]], axis=1), np.tile((0.0, 1.0, 0.0), (len(xz), 1)), color,
-           np.concatenate([base + (0, 1, 2), base + (0, 2, 3)]))
+           np.concatenate([base + (0, 1, 2), base + (0, 2, 3)]), surface=surface)
 
 
 def _skirts(mb, edges, tops, centres, terrain) -> None:
@@ -84,7 +85,7 @@ def ribbon(mb, roads: np.ndarray, terrain) -> None:
     squares = np.stack([ends - ed + es, ends + ed + es, ends + ed - es, ends - ed - es], axis=1)
 
     _quads(mb, np.concatenate([pieces, squares]),
-           np.concatenate([np.stack([yp, yq, yq, yp], axis=1), np.repeat(ye[:, None], 4, axis=1)]), ROAD)
+           np.concatenate([np.stack([yp, yq, yq, yp], axis=1), np.repeat(ye[:, None], 4, axis=1)]), ROAD, DETAIL_ASPHALT)
     sq_edges = np.stack([squares, np.roll(squares, -1, axis=1)], axis=2).reshape(-1, 2, 2)
     edges = np.concatenate([np.stack([p + s, q + s], axis=1), np.stack([p - s, q - s], axis=1), sq_edges])
     tops = np.concatenate([np.stack([yp, yq], axis=1)] * 2 + [np.repeat(ye, 4)[:, None].repeat(2, axis=1)])
@@ -102,12 +103,14 @@ def _up(t):
 def streets(mb, tris: np.ndarray, edges: np.ndarray, terrain, marks=None) -> None:
     """Add the street surface built by contravia.streets: its (T, 3, 3) triangles, a little lighter or darker
     from place to place like patched asphalt, a skirt under each (E, 2, 3) edge, which has the road on its
-    left in (x, z), and the (M, 3, 3) triangles of the painted lines."""
+    left in (x, z), and the (M, 3, 3) triangles of the painted lines. The asphalt is surface DETAIL_ASPHALT,
+    which a manifoldx material with detail=True wears and grains up close; the lines and skirts are not."""
     t = np.asarray(tris, float).reshape(-1, 3, 3)
     if len(t):
         p = t.reshape(-1, 3)
         tone = 0.85 + 0.3 * fbm(p[:, 0], p[:, 2], 30.0, seed=7)
-        mb.add(p, np.repeat(_up(t), 3, axis=0), np.multiply(ROAD, tone[:, None]), np.arange(len(p)).reshape(-1, 3))
+        mb.add(p, np.repeat(_up(t), 3, axis=0), np.multiply(ROAD, tone[:, None]), np.arange(len(p)).reshape(-1, 3),
+               surface=DETAIL_ASPHALT)
     m = np.zeros((0, 3, 3)) if marks is None else np.asarray(marks, float).reshape(-1, 3, 3)
     if len(m):
         mb.add(m.reshape(-1, 3), np.repeat(_up(m), 3, axis=0), PAINT, np.arange(3 * len(m)).reshape(-1, 3))

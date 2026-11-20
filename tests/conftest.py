@@ -12,6 +12,17 @@ def _config(tmp_path_factory, monkeypatch):
     monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path_factory.mktemp("config")))
 
 
+@pytest.fixture(autouse=True)
+def _regions(monkeypatch):
+    """Every test reads the shipped regions.toml without the regions.src of the data on this machine; a test that
+    wants other regions sets contravia.regions._current itself."""
+    from contravia import regions
+
+    if not hasattr(_regions, "shipped"):
+        _regions.shipped = regions.Regions.load()
+    monkeypatch.setattr(regions, "_current", _regions.shipped)
+
+
 @pytest.fixture(scope="session")
 def city_npz(tmp_path_factory):
     """The mini.osm fixture prepared into an npz; HAVANA_DATA points at it for cells.build."""

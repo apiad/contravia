@@ -50,6 +50,7 @@ CENTRE_DENSE = 0.12  # the same share in the old centre's municipios
 MAX_BLOCK = 30_000.0  # m², as in contravia.prepare: larger faces are not city blocks
 SAMPLE = 12.0  # metres between the vertices along a block pavement's edges, so its top follows the ground
 SIMPLIFY = 0.3  # metres a pavement's outline may move to drop the vertices of the streets' rounded corners
+SEAM = 0.05  # metres: gaps this narrow between street triangles (a junction's plate and a ribbon) are street, not land
 OFF_GROUND = 3.0  # street triangles this far off the ground (bridges, tunnels) do not cut the land
 GRID = 2.0  # metres per pixel of the street-height raster
 SPREAD = 6  # pixels a street's height spreads beyond it (12 m): farther, a pavement follows the ground
@@ -330,6 +331,9 @@ def build(a, terrain) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
     street = np.array(pmap(lambda c: shapely.union_all(shapely.polygons(streets[c][:, :, [0, 2]])) if c in streets
                            else None, list(map(tuple, cells.tolist())), chunk=16), dtype=object)
     street = np.where(shapely.is_missing(street), shapely.Polygon(), street)
+    # Closed: the plate and the ribbons are triangulated apart, and the hairline seam between them would be land that
+    # rises as a pavement strip, bevelled both sides, across the street at every junction.
+    street = shapely.buffer(shapely.buffer(street, SEAM, join_style="mitre"), -SEAM, join_style="mitre")
     land = _chunked(lambda b, s: shapely.simplify(shapely.difference(b, s), SIMPLIFY), boxes, street, size=256)
 
     rings = _rings(a)
@@ -472,7 +476,8 @@ def main(path) -> dict:
 
     t0 = time.perf_counter()
     city = CityData.load(path)
-    report = {**add_to(city), **parks.add_to(city)}
+    covered = parks.drop_covered(city)  # before the walks, which pave the parks left
+    report = {**covered, **add_to(city), **parks.add_to(city)}
     city.save(path)
     report["seconds"] = round(time.perf_counter() - t0, 1)
     print(json.dumps(report, indent=2))

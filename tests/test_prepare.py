@@ -97,3 +97,18 @@ def test_a_tree_never_stands_on_a_road():
     roads = np.array([[0.0, 0.0, 100.0, 0.0, 10.0]])  # 10 m wide along z = 0
     pts = np.array([[50.0, 0.0], [50.0, 5.5], [50.0, 6.5], [150.0, 0.0]])
     assert on_road(pts, roads).tolist() == [True, True, False, False]
+
+
+def test_with_the_satellite_seeing_houses_everywhere_only_green_blocks_stay_parks(monkeypatch):
+    from contravia import parks
+    from contravia.builtup import BuiltUp
+
+    classify, given = parks.classify, []
+    monkeypatch.setattr(parks, "classify", lambda *a: given.append(a[7]) or classify(*a))
+    raw = read_osm(FIX)
+    _, plain = build_city(raw)
+    raw.built_up = BuiltUp.of(np.ones((400, 400), bool), (-4000.0, -4000.0))
+    _, seen = build_city(raw)
+    assert seen["parks"] == plain["parks"]  # the fixture's one park is green in OSM
+    assert seen["filler_blocks"] == plain["filler_blocks"]
+    assert given[0] is None and np.allclose(given[1], 1.0)  # every block seen built over

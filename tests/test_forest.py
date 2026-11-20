@@ -2,7 +2,7 @@ from datetime import date
 
 import numpy as np
 
-from contravia.forest import HYSTERESIS, LINGER, LOD_AT, Forest, Stand, levels, linear
+from contravia.forest import FADE, HYSTERESIS, LINGER, LOD_AT, Forest, Stand, levels, linear
 from contravia.rules import trees
 from contravia.rules.species import SPECIES, season
 
@@ -62,7 +62,8 @@ def test_trees_are_instances_that_change_level_of_detail_with_the_camera(monkeyp
     shared = forest._meshes[("laurel", int(stand.variant[1]), "full", 0, "wood")]
     assert all(k[1] == 0 for k in forest._meshes if k[3] > 0)  # far trees share variant 0
     assert engine.store._components["Mesh"][stand.ents[1, 0], 0] == shared._geometry_id  # one mesh, many instances
-    assert forest.counts() == {"trees": 3, "lod0": 1, "lod1": 0, "lod2": 2}
+    counts = forest.counts()
+    assert {k: counts[k] for k in ("trees", "lod0", "lod1", "lod2")} == {"trees": 3, "lod0": 1, "lod1": 0, "lod2": 2}
     forest.update(set(), (0.0, 5.0, 0.0))  # the streamer drops the cell: its trees linger a while
     assert forest.stands and near > 0
     for _ in range(LINGER):
@@ -85,3 +86,85 @@ def test_warm_grows_every_mesh_a_species_may_be_drawn_with():
         meshes("coco", lod, crown, 0)
     meshes("coco", 0, "full", 1)
     assert meshes.cache_info().misses == before.misses  # each was grown already
+
+
+def _flush(engine):
+    """Run the commands the frame would, destroys among them."""
+    engine.commands.execute(engine.store)
+    engine.commands.clear()
+
+
+def test_trees_fade_in_change_level_over_each_other_and_fade_out_before_they_go(monkeypatch):
+    import manifoldx as mx
+
+    monkeypatch.setattr(trees, "today", lambda: date(2026, 6, 15))
+    engine = mx.Engine("t", width=64, height=64)
+    forest = Forest(engine, city=None, landmarks=None)
+    now = [0.0]
+    forest.clock = lambda: now[0]
+    monkeypatch.setattr(forest, "grow", lambda i, j: _trees([[5.0, 5.0], [400.0, 5.0]]))
+    for _ in range(200):  # the grow thread may finish within the first update or after it
+        forest.update({(0, 0)}, (0.0, 5.0, 0.0))  # the cell's trees spawn, drawing nothing yet
+        if forest.stands:
+            break
+        forest._pending[(0, 0)].result()
+    stand = forest.stands[(0, 0)]
+    first = stand.ents[stand.ents >= 0]
+    fade = engine.store._components["Fade"]
+    assert np.allclose(fade[first], 0.0)
+    now[0] = FADE / 2
+    forest._step()
+    assert np.allclose(fade[first], 0.5)
+    now[0] = FADE
+    forest._step()
+    assert np.allclose(fade[first], 1.0) and not forest._fading
+
+    old = stand.ents[1][stand.ents[1] >= 0]
+    forest.place((400.0, 5.0, 0.0))  # the second tree comes near: its far level gives way to its near one
+    new = stand.ents[1][stand.ents[1] >= 0]
+    assert list(stand.lod) == [2, 0] and engine.store._alive[old].all()
+    now[0] = FADE * 1.25
+    forest._step()
+    assert np.allclose(fade[old], -0.75) and np.allclose(fade[new], 0.25)  # complementary: every pixel once
+    now[0] = FADE * 2
+    forest._step()
+    _flush(engine)
+    assert not engine.store._alive[old].any() and np.allclose(fade[new], 1.0)
+
+    gone = stand.ents[stand.ents >= 0]
+    for _ in range(LINGER + 1):
+        forest.update(set(), (400.0, 5.0, 0.0))  # the cell closes: its trees fade out, then go
+    assert not forest.stands and engine.store._alive[gone].all()
+    assert np.allclose(fade[gone], -1.0)
+    now[0] = FADE * 2.5
+    forest._step()
+    assert np.allclose(fade[gone], -0.5)
+    now[0] = FADE * 3.5
+    forest._step()
+    _flush(engine)
+    assert not engine.store._alive[gone].any() and not forest._fading
+    forest.close()
+
+
+def test_a_tree_leaving_while_it_fades_in_fades_out_from_what_shows(monkeypatch):
+    import manifoldx as mx
+
+    monkeypatch.setattr(trees, "today", lambda: date(2026, 6, 15))
+    engine = mx.Engine("t", width=64, height=64)
+    forest = Forest(engine, city=None, landmarks=None)
+    now = [0.0]
+    forest.clock = lambda: now[0]
+    forest.stands[(0, 0)] = stand = Stand(_trees([[5.0, 5.0]]), date(2026, 6, 15))
+    forest.place((0.0, 5.0, 0.0))
+    ents = stand.ents[stand.ents >= 0]
+    fade = engine.store._components["Fade"]
+    now[0] = FADE * 0.25
+    forest._step()
+    forest._drop(stand, np.arange(1))
+    forest._step()
+    assert np.allclose(fade[ents], -0.25)  # a quarter showed, a quarter still shows
+    now[0] = FADE * 0.5
+    forest._step()
+    _flush(engine)
+    assert not engine.store._alive[ents].any() and not forest._fading
+    forest.close()

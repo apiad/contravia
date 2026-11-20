@@ -9,6 +9,7 @@ ground dips under it.
 """
 
 import numpy as np
+from manifoldx.resources import DETAIL_GROUND
 
 from contravia.geo import CELL
 from contravia.rules.noise import fbm
@@ -51,25 +52,21 @@ def grass(x, z, slope) -> np.ndarray:
     return green * (1 - dry) + np.multiply(DRY, dry)
 
 
-def ground(mb, i: int, j: int, terrain, cuts=None) -> None:
-    """Add the ground grid of cell (i, j), cut along the edges of the (C, 3, 2) cuts of streets below it."""
+def ground(mb, i: int, j: int, terrain, cuts=None, shore=None) -> None:
+    """Add the ground grid of cell (i, j), cut along the edges of the (C, 3, 2) cuts of streets below it, as
+    surface DETAIL_GROUND: a manifoldx material with detail=True mottles it with grass, soil and tufts up close. A cell
+    near the sea, when shore (a contravia.shore.Shore) is given, draws its shore's finer grid instead
+    (rules/shore.py): sand, rock, cliffs or mud down to the water and a band of shallows over it."""
+    f = shore.field(i, j) if shore is not None else None
+    if f is not None:
+        _shore_ground(mb, f, cuts)
+        return
     t = np.linspace(0.0, CELL, N)
     x, z = np.meshgrid(i * CELL + t, j * CELL + t)  # x along columns, z along rows
     x, z = x.ravel(), z.ravel()
     a = (np.arange(N - 1)[:, None] * N + np.arange(N - 1)[None, :]).ravel()  # top-left of every square
     tris = np.concatenate([np.stack([a, a + N, a + 1], 1), np.stack([a + 1, a + N, a + N + 1], 1)])
-    if cuts is not None and len(cuts):
-        import shapely
-
-        hole = shapely.union_all(shapely.polygons(np.asarray(cuts, float)))
-        shapely.prepare(hole)
-        tri = shapely.polygons(np.stack([x[tris], z[tris]], axis=-1))
-        hit = shapely.intersects(tri, hole)
-        # what is left of each triangle the cuts reach, triangulated anew: the ground runs up to the cut's edge
-        rest = shapely.constrained_delaunay_triangles(shapely.difference(tri[hit], hole))
-        new = shapely.get_coordinates(rest).reshape(-1, 4, 2)[:, :3].reshape(-1, 2)
-        tris = np.concatenate([tris[~hit], len(x) + np.arange(len(new)).reshape(-1, 3)])
-        x, z = np.concatenate([x, new[:, 0]]), np.concatenate([z, new[:, 1]])
+    x, z, tris, _ = _cut(x, z, tris, cuts)
     y = terrain.height(x, z)
     dx = (terrain.height(x + 1, z) - terrain.height(x - 1, z)) / 2
     dz = (terrain.height(x, z + 1) - terrain.height(x, z - 1)) / 2
@@ -77,4 +74,43 @@ def ground(mb, i: int, j: int, terrain, cuts=None) -> None:
     n /= np.linalg.norm(n, axis=1, keepdims=True)
     if relief(terrain):  # a square wholly under SEA is sea: the water shows there
         tris = tris[(y[tris] >= SEA).any(axis=1)]
-    mb.add(np.stack([x, y, z], axis=1), n, grass(x, z, np.hypot(dx, dz)), tris)
+    mb.add(np.stack([x, y, z], axis=1), n, grass(x, z, np.hypot(dx, dz)), tris, surface=DETAIL_GROUND)
+
+
+def _cut(x, z, tris, cuts):
+    """(x, z, tris, new): the grid's points and triangles with the (C, 3, 2) cuts left out, what is left of each
+    triangle they reach triangulated anew, so the ground runs up to the cut's edge; new marks the added points."""
+    if cuts is None or not len(cuts):
+        return x, z, tris, np.zeros(len(x), bool)
+    import shapely
+
+    hole = shapely.union_all(shapely.polygons(np.asarray(cuts, float)))
+    shapely.prepare(hole)
+    tri = shapely.polygons(np.stack([x[tris], z[tris]], axis=-1))
+    hit = shapely.intersects(tri, hole)
+    rest = shapely.constrained_delaunay_triangles(shapely.difference(tri[hit], hole))
+    new = shapely.get_coordinates(rest).reshape(-1, 4, 2)[:, :3].reshape(-1, 2)
+    tris = np.concatenate([tris[~hit], len(x) + np.arange(len(new)).reshape(-1, 3)])
+    added = np.r_[np.zeros(len(x), bool), np.ones(len(new), bool)]
+    return np.concatenate([x, new[:, 0]]), np.concatenate([z, new[:, 1]]), tris, added
+
+
+def _shore_ground(mb, f, cuts) -> None:
+    """Add the shore field f's grid as the cell's ground, cut like the 10 m grid; points a cut adds take the
+    field's values there."""
+    from contravia.rules.shore import NODES, STEP
+
+    t = np.arange(NODES) * STEP
+    x, z = np.meshgrid(f.x0 + t, f.z0 + t)
+    x, z = x.ravel(), z.ravel()
+    y, n, rgb = f.y.ravel(), f.n.reshape(-1, 3), f.rgb.reshape(-1, 3)
+    tris = f.triangles()
+    if not len(tris):  # all sea past the shallows: the sea plane shows
+        return
+    x, z, tris, added = _cut(x, z, tris, cuts)
+    if added.any():
+        px, pz = x[added], z[added]
+        y = np.r_[y, f.sample(f.y, px, pz)]
+        n = np.vstack([n, f.sample(f.n, px, pz)])
+        rgb = np.vstack([rgb, f.sample(f.rgb, px, pz)])
+    mb.add(np.stack([x, y, z], axis=1), n, rgb, tris)

@@ -1,17 +1,19 @@
 """The facade grammar: what a building is, from what OSM says about it and where it stands.
 
-plan() turns a building's OSM id, its tags (buildingtags) and its municipio into a Plan: one of TYPES, the
-storeys, the ground floor's and the other floors' heights, the bay width, the parapet, the colour and how
-worn it is. Every level of detail reads the same plan, so a building keeps its height and colour from the
+plan() turns a building's OSM id, its tags (buildingtags) and the Params of where it stands (contravia/regions.py,
+which reads contravia/regions.toml) into a Plan: one of TYPES, the storeys, the ground floor's and the other
+floors' heights, the bay width, the parapet, the colour and how worn it is. Every level of detail reads the same plan, so a building keeps its height and colour from the
 detail ring out to the far summaries. The draws are seeded by the OSM id: a building is the same on every
-drive. Most of Havana's buildings say only building=yes, so the municipio decides most types.
+drive. Most of Havana's buildings say only building=yes, so the regions decide most types.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
+from contravia import regions
 from contravia.buildingtags import HEIGHT, KIND, KINDS, LEVELS, MUNI, USES
+from contravia.regions import Case, Params
 
 
 @dataclass(frozen=True)
@@ -45,7 +47,6 @@ TYPES = {
 SHADER_TYPE = {name: k + 1 for k, name in enumerate(TYPES)}  # the facade pattern's type ids in manifoldx
 ROOF = (0.55, 0.54, 0.52)  # flat roofs: grey waterproofing, worn with the walls
 TALL = {"church": 1.5, "school": 1.25, "hospital": 1.25, "public": 1.3}  # ground floors of these, taller
-PORTAL_MUNIS = ("La Habana Vieja", "Centro Habana", "Cerro", "Diez de Octubre")  # where the Calzadas run
 PORTAL_ROAD = 8.0  # the narrowest road, in metres, a portal faces: secondary and up
 PORTAL_GAP = 7.0  # metres at most between a wall and the road's edge
 PORTAL_DEPTH = 3.5  # how far the ground floor stands back behind the columns
@@ -79,43 +80,33 @@ def _rgb(hex_: str) -> np.ndarray:
     return np.array([int(hex_[k:k + 2], 16) / 255 for k in (1, 3, 5)])
 
 
-def choose(kind: str, muni: str | None, area: float, levels: float, height: float, rng) -> str:
-    """The building type, from OSM's kind, levels and height first, then the municipio and the footprint."""
+def choose(kind: str, params: Params, area: float, levels: float, height: float, rng) -> tuple[str, Case | None]:
+    """The building type, from OSM's kind, levels and height first, then the place's Params and the footprint;
+    with the case of params.types that chose it (None when OSM decided)."""
     if kind in ("industrial", "warehouse") or (kind in ("retail", "commercial") and area > 1500):
-        return "warehouse"
+        return "warehouse", None
     if levels >= 8 or height >= 25:
-        return "tower"
-    if muni == "La Habana Vieja":
-        return "colonial"
-    if muni in ("Centro Habana", "Cerro"):
-        return "eclectic"
-    if muni in ("Regla", "Guanabacoa"):
-        return "colonial" if area < 500 else "eclectic"
-    if muni == "Diez de Octubre":
-        return "eclectic" if area > 150 and rng.random() < 0.5 else "suburban"
-    if muni in ("Plaza de la Revolución", "Playa"):
-        if area > 900:
-            return "tower"
-        return "prefab" if kind == "apartments" or area > 500 else "vedado"
-    if kind == "apartments" or (muni == "Habana del Este" and area > 300):
-        return "prefab"
-    return "suburban"
+        return "tower", None
+    case = params.pick(kind, area)
+    return case.draw(rng), case
 
 
-def plan(osm_id: int, attrs=None, muni: str | None = None, area: float = 100.0) -> Plan:
-    """The plan of one building: attrs is its building_attrs row (None for a filler box) and muni its
-    municipio's name."""
+def plan(osm_id: int, attrs=None, params: Params | str | None = None, area: float = 100.0) -> Plan:
+    """The plan of one building: attrs is its building_attrs row (None for a filler box) and params the Params
+    of where it stands (contravia/regions.py), or a municipio's name, read as that municipio's Params."""
+    if not isinstance(params, Params):
+        params = regions.current().municipio(params)
     rng = np.random.default_rng(abs(int(osm_id)))
     kind = KINDS[int(attrs[KIND])] if attrs is not None else "yes"
     levels = float(attrs[LEVELS]) if attrs is not None and np.isfinite(attrs[LEVELS]) else float("nan")
     height = float(attrs[HEIGHT]) if attrs is not None and np.isfinite(attrs[HEIGHT]) else float("nan")
     known_levels, known_height = not np.isnan(levels), not np.isnan(height)
-    name = choose(kind, muni, area, levels if known_levels else 0.0, height if known_height else 0.0, rng)
+    name, case = choose(kind, params, area, levels if known_levels else 0.0, height if known_height else 0.0, rng)
     t = TYPES[name]
-    if name == "tower" and muni in ("Plaza de la Revolución", "Playa") and not (known_levels or known_height):
-        storeys = int(rng.integers(5, 13))
-    else:
-        storeys = int(rng.integers(t.storeys[0], t.storeys[1] + 1))
+    if case is not None and not (known_levels or known_height):  # the place decides what OSM leaves open
+        t = replace(t, storeys=case.storeys or params.storeys or t.storeys, palette=params.palette or t.palette,
+                    wear=params.wear or t.wear)
+    storeys = int(rng.integers(t.storeys[0], t.storeys[1] + 1))
     ground, floor = rng.uniform(*t.ground), rng.uniform(*t.floor)
     ground *= TALL.get(kind, 1.0)
     if known_levels:
@@ -127,7 +118,7 @@ def plan(osm_id: int, attrs=None, muni: str | None = None, area: float = 100.0) 
     if attrs is not None and int(attrs[USES]) & 1:  # historic: kept up a little better
         color = np.minimum(color / wear * min(1.0, wear + 0.1), 1.0)
     roof = np.array(ROOF) * (0.85 + 0.15 * wear)
-    portal = name in ("eclectic", "colonial") and muni in PORTAL_MUNIS and storeys >= 2
+    portal = name in ("eclectic", "colonial") and params.portal and storeys >= 2
     return Plan(name, storeys, float(ground), float(floor), float(rng.uniform(*t.bay)), t.parapet,
                 tuple(float(c) for c in color), tuple(float(c) for c in roof), portal)
 

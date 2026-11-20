@@ -1,4 +1,4 @@
-"""Six Cuban trees: their colours, the colour of each one's crown on a given day, and the mesh builder their
+"""Seven Cuban trees (six of streets and parks, and the mangle of the shore): their colours, the colour of each one's crown on a given day, and the mesh builder their
 forms are drawn with (rules/treegrammar.py grows the forms).
 
 A tree's mesh stands at the origin, its trunk on y = 0, flat-shaded: every triangle has its own three vertices
@@ -16,21 +16,48 @@ from datetime import date
 
 import numpy as np
 
-SPECIES = ("laurel", "flamboyan", "almendro", "palma", "coco", "ceiba")
+SPECIES = ("laurel", "flamboyan", "almendro", "palma", "coco", "ceiba", "mangle")
 CROWNS = ("full", "sparse", "bare")
-TRUNK_R = {"laurel": 0.5, "flamboyan": 0.3, "almendro": 0.3, "palma": 0.25, "coco": 0.25, "ceiba": 1.5}  # collision
+TRUNK_R = {"laurel": 0.5, "flamboyan": 0.3, "almendro": 0.3, "palma": 0.25, "coco": 0.25, "ceiba": 1.5,
+          "mangle": 0.6}  # collision: a mangle's stilt roots
 TRUNK, FIXED, LEAF, ACCENT = 0, 1, 2, 3
 
 BARK = {"laurel": (0.33, 0.24, 0.17), "flamboyan": (0.36, 0.27, 0.19), "almendro": (0.30, 0.22, 0.16),
-        "palma": (0.62, 0.60, 0.55), "coco": (0.45, 0.37, 0.27), "ceiba": (0.55, 0.52, 0.47)}
+        "palma": (0.62, 0.60, 0.55), "coco": (0.45, 0.37, 0.27), "ceiba": (0.55, 0.52, 0.47),
+        "mangle": (0.40, 0.33, 0.25)}
 GREEN = {"laurel": (0.10, 0.30, 0.10), "flamboyan": (0.20, 0.42, 0.14), "almendro": (0.18, 0.40, 0.15),
-         "palma": (0.20, 0.42, 0.16), "coco": (0.24, 0.45, 0.18), "ceiba": (0.14, 0.34, 0.12)}
+         "palma": (0.20, 0.42, 0.16), "coco": (0.24, 0.45, 0.18), "ceiba": (0.14, 0.34, 0.12),
+         "mangle": (0.12, 0.30, 0.13)}
 FLOWER = (0.80, 0.22, 0.12)
 AUTUMN = (0.82, 0.52, 0.16)
 RED_LEAF = (0.72, 0.27, 0.14)
 PALE = (0.45, 0.50, 0.28)
 CROWNSHAFT = (0.30, 0.48, 0.22)
 NUT = (0.38, 0.30, 0.12)
+
+
+@dataclass(frozen=True)
+class Foliage:
+    """The small leaves a near tree carries over its crown (rules/foliage.py). A broadleaf tree has `count`
+    twigs per leaf cluster with `per` leaves each; a palm has `count` pairs of leaflets per frond, in `per`
+    planes (3 a plume, 1 a V), hanging `hang` degrees under the frond. Each leaf is `length` by `width` metres."""
+
+    count: int
+    per: int
+    length: float
+    width: float
+    hang: float = 0.0
+
+
+FOLIAGE = {
+    "laurel": Foliage(14, 3, 0.38, 0.13),  # Ficus: small, dense, glossy
+    "flamboyan": Foliage(12, 4, 0.48, 0.08),  # fine fern-like leaves in flat sprays
+    "almendro": Foliage(8, 4, 0.5, 0.22),  # big leaves in rosettes at the twig tips
+    "palma": Foliage(40, 3, 0.95, 0.05, hang=20),  # leaflets in three planes: the royal palm's plume
+    "coco": Foliage(36, 1, 1.05, 0.07, hang=45),  # leaflets hanging in a V
+    "ceiba": Foliage(11, 5, 0.42, 0.09),  # palmate: five leaflets fanning from each twig
+    "mangle": Foliage(12, 3, 0.32, 0.12),  # thick oval leaves in threes
+}
 
 
 class _Mesh:

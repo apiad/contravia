@@ -1,14 +1,17 @@
 """The HUD, in the four corners and nothing in the middle of the street, as docs/ux/contravia-ux.html draws it.
 
 Top left: the game's time, the day and the weather's icon. Top right: a round minimap with a cream rim, the
-scene itself seen from MINIMAP_HEIGHT metres straight above the car, rendered by the engine into a texture
-(render_to_texture) when the car has moved MINIMAP_MOVE metres or turned MINIMAP_TURN degrees since the last
-render, or while the cells around the car are still loading, at most every MINIMAP_EVERY frames and at least
-every MINIMAP_IDLE. Its top is the way the car faces, so the red arrow in its middle
-always points up and the streets turn around it; the N badge rides the rim where north is. Bottom left: the
+scene itself seen from straight above, rendered by the engine into a texture (render_to_texture) when the car
+has moved about a pixel of it or turned MINIMAP_TURN degrees since the last render, when its height changed by
+MINIMAP_ZOOM, or while the cells around the car are still loading, at most every MINIMAP_EVERY frames and at
+least every MINIMAP_IDLE. Its top is the way the car faces, so the red arrow, MINIMAP_CAR of the radius below its
+middle, always points up and the streets turn around it; the N badge rides the rim where north is. It shows the
+road MINIMAP_LEAD seconds ahead at the car's speed, between MINIMAP_AHEAD's city and highway metres, and eases
+its height toward that over MINIMAP_EASE seconds, so it zooms out as the car speeds up and back in as it slows. Bottom left: the
 name of the municipio when the car enters it, large, fading out after AREA_SHOWN seconds. Bottom right: the
 speed, the gear in yellow and a rev counter in segments, from the car's own automatic gearbox, and the four
-assists' lamps, lit while an assist corrects.
+assists' lamps, lit while an assist corrects. Over them, when L changes the driving help, the new level's name,
+fading like the municipio's.
 
 F1 shows or hides a panel of numbers in the top left corner for working on the game: frames per second and
 the slowest frame lately, the streamed nodes drawn by level, what is building and uploading, the traffic, and
@@ -23,13 +26,17 @@ from contravia import placemarks, ui
 
 MINIMAP_SIZE = 256  # pixels of the texture
 MINIMAP_SHOWN = 190  # pixels across on screen
-MINIMAP_HEIGHT = 300.0  # metres above the car
 MINIMAP_EVERY = 4  # fewest frames between two renders of the minimap
-MINIMAP_MOVE = 2.0  # metres the car moves before the minimap renders again, about one pixel of it on screen
 MINIMAP_TURN = 1.5  # degrees the car turns before the minimap renders again
 MINIMAP_IDLE = 60  # most frames between two renders, so the traffic around a still car moves on
 RIM = 8  # pixels of the minimap's cream rim
-MINIMAP_METRES = MINIMAP_HEIGHT * math.tan(math.radians(30.0))  # ground metres from the minimap's centre to its edge
+MINIMAP_SPAN = math.tan(math.radians(30.0))  # ground metres from the minimap's centre to its edge per metre of height
+MINIMAP_CAR = 0.35  # how far below the minimap's centre the car sits, as a fraction of its radius
+MINIMAP_LEAD = 12.0  # seconds of road ahead the minimap shows at the car's speed
+MINIMAP_AHEAD = (175.0, 600.0)  # fewest and most metres ahead: a city street, a highway
+MINIMAP_EASE = 1.0  # seconds the minimap's height takes to cover about two thirds of the way to its target
+MINIMAP_ZOOM = 0.01  # change of height, as a fraction, that renders the minimap again
+MINIMAP_MOVE = 1.5  # metres the car moves before the minimap renders again at its lowest, about one pixel of it
 MINIMAP_MARKS = 12  # most places the minimap shows at once
 MARK_PX = 18  # pixels across a place's icon on the minimap
 OFF = (-1000, -1000)  # offset that puts an unused icon outside the window
@@ -38,6 +45,7 @@ STATS_LINES = 9  # lines of the F1 panel
 STATS_EVERY = 10  # frames between two refreshes of its text
 AREA_SHOWN = 3.0  # seconds the municipio's name stays before it fades
 AREA_FADE = 0.8  # seconds it takes to fade
+NOTE_SHOWN = 1.5  # seconds the driving help's note stays before it fades
 ADDRESS_H = 84  # pixels the address takes at the bottom left; the municipio's flash shows above it
 REV_SEGMENTS = 10
 DAY_NAMES = ("LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM")
@@ -58,7 +66,8 @@ def gearbox(car, idle: float, redline: float) -> tuple[str, float]:
     return name, float(min(1.0, max(0.0, (car.rpm - idle) / max(redline - idle, 1.0))))
 
 
-LAMPS = (("steer", "DIR"), ("traction", "TRC"), ("abs", "ABS"), ("stability", "EST"))  # the assists' lamps
+LAMPS = (("steer", "DIR"), ("traction", "TRC"), ("abs", "ABS"), ("stability", "EST"),
+         ("lane", "SENDA"), ("brake", "FRENO"), ("pilot", "PILOTO"))  # the assists' lamps
 
 
 def lamps_lit(car) -> list[bool]:
@@ -72,18 +81,37 @@ def speed_text(speed: float, units: str = "kmh") -> str:
     return f"{abs(speed) * (3.6 if units == 'kmh' else 2.23694):.0f}"
 
 
-def minimap_stale(last, pose, frames: int, loading: bool = False) -> bool:
-    """Whether the minimap must render again for the car at pose = (x, z, yaw), `frames` frames after it
-    last rendered at `last` (None before its first render); while loading, the cells landing around the car
-    change it even when the car stands still."""
+def minimap_target(speed: float) -> float:
+    """The minimap's height in metres for a car at `speed` m/s: the road MINIMAP_LEAD seconds ahead fits between
+    the car and the top of the disc, clamped to MINIMAP_AHEAD."""
+    low, high = MINIMAP_AHEAD
+    ahead = min(high, max(low, abs(speed) * MINIMAP_LEAD))
+    return ahead / ((1.0 + MINIMAP_CAR) * MINIMAP_SPAN)
+
+
+MINIMAP_LOW = minimap_target(0.0)  # the minimap's height for a still car, its lowest
+
+
+def ease(height: float, target: float, dt: float, tau: float = MINIMAP_EASE) -> float:
+    """`height` moved toward `target` over dt seconds, exponentially with time constant tau: never past it, and
+    the same path whatever the frame rate."""
+    return target + (height - target) * math.exp(-max(dt, 0.0) / tau)
+
+
+def minimap_stale(last, pose, frames: int, loading: bool = False, height: float = MINIMAP_LOW,
+                  drawn: float = MINIMAP_LOW) -> bool:
+    """Whether the minimap must render again for the car at pose = (x, z, yaw) seen from `height`, `frames`
+    frames after it last rendered at `last` from `drawn` (None before its first render); while loading, the cells
+    landing around the car change it even when the car stands still."""
     if last is None or frames >= MINIMAP_IDLE:
         return True
     if frames < MINIMAP_EVERY:
         return False
-    if loading:
+    if loading or abs(height - drawn) >= MINIMAP_ZOOM * drawn:
         return True
     turn = abs((math.degrees(pose[2] - last[2]) + 180.0) % 360.0 - 180.0)
-    return bool(math.hypot(pose[0] - last[0], pose[1] - last[1]) >= MINIMAP_MOVE or turn >= MINIMAP_TURN)
+    moved = math.hypot(pose[0] - last[0], pose[1] - last[1])
+    return bool(moved >= MINIMAP_MOVE * height / MINIMAP_LOW or turn >= MINIMAP_TURN)
 
 
 def north_offset(yaw: float, side: float, size: float) -> tuple[float, float]:
@@ -103,15 +131,18 @@ class Hud:
         from manifoldx.camera import Camera
 
         self.engine = engine
-        self.camera = Camera(fov=60, near=10.0, far=MINIMAP_HEIGHT + 200.0)
+        self.camera = Camera(fov=60, near=10.0, far=MINIMAP_LOW + 200.0)
         self.texture = None
         self.units, self.minimap_on, self.shown = "kmh", True, False
         self._frame = 0
         self._drawn, self._drawn_frame = None, 0  # the car's pose at the minimap's last render, and its frame
+        self.height, self._drawn_height = None, MINIMAP_LOW  # the minimap's height now and at its last render
         self._loading = False
         self._area, self._area_t, self._area_a = "", 0.0, None
         self._address = None
         self._spot = ""  # the name of the place the photo hint shows, or "" with no hint
+        self._pilot = ""  # the pilot's line over the lamps, or "" with the pilot off
+        self._note, self._note_t, self._note_a = "", 0.0, None  # the driving help's note and how long it has shown
         self.places, self.has = None, lambda pid: False  # the collectible places and whether one is photographed
         self.marks = []  # (panel, image) of the minimap's place icons, the unused ones at OFF
         self._clock_text, self._weather, self._lit, self._gear, self._speed = None, None, None, None, None
@@ -141,7 +172,7 @@ class Hud:
         disc = Panel([Image(self.texture, style_overrides={"width": side, "radius": side // 2})],
                      anchor="top-right", offset=(MARGIN, MARGIN), style_overrides={**CLEAR, "width": side, "height": side})
         car = Panel([Image(ui.arrow(22), style_overrides={"width": 22})], anchor="top-right",
-                     offset=(MARGIN + side // 2 - 11, MARGIN + side // 2 - 11),
+                     offset=(MARGIN + side // 2 - 11, MARGIN + round(side / 2 * (1 + MINIMAP_CAR)) - 11),
                      style_overrides={**CLEAR, "width": 22, "height": 22})
         self.north = Panel([Image(ui.north(26), style_overrides={"width": 26})], anchor="top-right",
                            offset=north_offset(0.0, side, 26), style_overrides={**CLEAR, "width": 26, "height": 26})
@@ -195,8 +226,16 @@ class Hud:
         gear_panel = Panel([gear], anchor="bottom-right", offset=(MARGIN, MARGIN + 92), style_overrides=CLEAR)
         tail = Panel([self.units_text, self.revs], anchor="bottom-right", offset=(MARGIN, MARGIN),
                      style_overrides={**CLEAR, "gap": 4})
-        lamps = Panel(self.lamp_texts, anchor="bottom-right", offset=(MARGIN + 52, MARGIN + 98),
+        lamps = Panel(self.lamp_texts, anchor="bottom-right", offset=(MARGIN, MARGIN + 140),
                       style_overrides={**CLEAR, "gap": 6, "direction": "h"})
+        # Over the lamps, while the pilot drives: its wanted speed and the turn it takes next.
+        self.pilot_text = Text(self._pilot, style_overrides={"font": ui.BOLD, "font_size": 14, "fg": ui.INK})
+        self.pilot_panel = Panel([self.pilot_text], anchor="bottom-right", offset=(MARGIN, MARGIN + 162),
+                                 style_overrides={"padding": "2 8", "bg": ui.YELLOW})
+        # Over the pilot's line, for a moment after L: the driving help's new level.
+        self.note_text = Text(self._note, style_overrides={"font": ui.TITLE, "font_size": 22, "fg": ui.alpha(ui.PAPER, 0)})
+        self.note_panel = Panel([self.note_text], anchor="bottom-right", offset=(MARGIN, MARGIN + 192),
+                                style_overrides={"padding": "2 10", "bg": ui.alpha(ui.INK, 0)})
         # Bottom centre, while a place without a photo is in reach and in sight: its name and the key F.
         self.spot_text = Text(self._spot, style_overrides={"font": ui.BOLD, "font_size": 17, "fg": ui.PAPER})
         key = Panel([Text("F", style_overrides={"font": ui.KEYS, "font_size": 15, "fg": ui.INK})],
@@ -206,14 +245,15 @@ class Hud:
                                 anchor="bottom-center", offset=(0, MARGIN),
                                 style_overrides={"direction": "h", "gap": 10, "padding": "6 14", "bg": ui.alpha(ui.INK, 0.85)})
         self.panels = [clock, area_back, area, self.address_back, self.address, speed_back, self._number_panel,
-                       gear_panel, tail, lamps]
+                       gear_panel, tail, lamps, self.note_panel]
         self.area_panel = area
         self.stats_lines = [Text("", style_overrides={"font": ui.KEYS, "font_size": 16, "fg": "#e8e8e8"})
                             for _ in range(STATS_LINES)]
         self.stats_panel = Panel(self.stats_lines, anchor="top-left", offset=(MARGIN, MARGIN + 60),
                                  style_overrides={"padding": 10, "gap": 2, "bg": "#000000b0", "width": 460,
                                                   "height": 24 + 22 * STATS_LINES})
-        for p in (clock, area, gear_panel, self.address_back, self.address, self.spot_panel):  # the others fit by their anchor
+        for p in (clock, area, gear_panel, self.address_back, self.address, self.spot_panel, self.pilot_panel,
+                  self.note_panel):  # the others fit by their anchor
             ui.fit(p)
         if self.shown:
             self.shown = False
@@ -233,6 +273,8 @@ class Hud:
             (g.append if on else g.remove)(self.stats_panel)
         if self._spot:
             (g.append if on else g.remove)(self.spot_panel)
+        if self._pilot:
+            (g.append if on else g.remove)(self.pilot_panel)
 
     def configure(self, units: str, minimap: bool) -> None:
         """km/h or mph, and the minimap shown or hidden; takes effect at once."""
@@ -311,6 +353,34 @@ class Hud:
         if self.shown and bool(had) != bool(name):
             (self.engine.gui.append if name else self.engine.gui.remove)(self.spot_panel)
 
+    def set_pilot(self, line: str) -> None:
+        """The pilot's line over the lamps ("40 km/h · recto"); "" takes it off."""
+        if line == self._pilot:
+            return
+        had, self._pilot = self._pilot, line
+        if not self.panels:
+            return
+        self.pilot_text.text = line
+        ui.refit(self.pilot_panel)
+        if self.shown and bool(had) != bool(line):
+            (self.engine.gui.append if line else self.engine.gui.remove)(self.pilot_panel)
+
+    def note(self, text: str) -> None:
+        """Show `text` over the lamps at once; update fades it after NOTE_SHOWN seconds, as the municipio's."""
+        self._note, self._note_t, self._note_a = text, 0.0, None
+        if self.panels:
+            self.note_text.text = text
+            ui.refit(self.note_panel)
+
+    def _fade_note(self, dt: float) -> None:
+        self._note_t += dt
+        a = 0.0 if not self._note else min(1.0, max(0.0, 1.0 - (self._note_t - NOTE_SHOWN) / AREA_FADE))
+        if a == self._note_a:
+            return
+        self._note_a = a
+        self.note_text.style_overrides = {**self.note_text.style_overrides, "fg": ui.alpha(ui.PAPER, a)}
+        self.note_panel.style_overrides = {**self.note_panel.style_overrides, "bg": ui.alpha(ui.INK, 0.85 * a)}
+
     def set_address(self, street: str, line: str, place: str) -> None:
         """The street the car is on, the line under it ("entre L y M") and "barrio · municipio"."""
         if not self.panels or (street, line, place) == self._address:
@@ -324,11 +394,12 @@ class Hud:
         ui.refit(self.address)
 
     def update(self, car, origin: np.ndarray, rpm_range: tuple[float, float] = (850.0, 6500.0),
-               loading: bool = False) -> None:
+               loading: bool = False, dt: float = 1 / 60) -> None:
         """Show the car's speed, gear and revs between rpm_range's idle and redline, light the assists' lamps,
-        each written only when what it shows changed, and when the car has moved or turned enough, or the cells
-        around it are loading (minimap_stale), render the minimap above it and turn the north badge with it;
-        once loading ends it renders once more."""
+        each written only when what it shows changed, ease the minimap's height dt seconds toward the car's speed,
+        and when the car has moved or turned enough, the height changed, or the cells around it are loading
+        (minimap_stale), render the minimap above it and turn the north badge with it; once loading ends it
+        renders once more."""
         if not self.panels:
             return
         speed = speed_text(car.speed, self.units)
@@ -339,6 +410,7 @@ class Hud:
             if was != now:
                 text.style_overrides = {**text.style_overrides, "fg": ui.YELLOW if now else ui.alpha(ui.PAPER, 0.25)}
         self._lamps = lamps_lit(car)
+        self._fade_note(dt)
         gear, revs = gearbox(car, *rpm_range)
         if gear != self._gear:
             self._gear = gear
@@ -352,13 +424,18 @@ class Hud:
         if self._loading and not loading:  # the last cells landed after the last render
             self._drawn = None
         self._loading = loading
-        if not self.minimap_on or not minimap_stale(self._drawn, pose, self._frame - self._drawn_frame, loading):
+        target = minimap_target(car.speed)
+        self.height = target if self.height is None else ease(self.height, target, dt)
+        if not self.minimap_on or not minimap_stale(self._drawn, pose, self._frame - self._drawn_frame, loading,
+                                                    self.height, self._drawn_height):
             return
-        self._drawn, self._drawn_frame = pose, self._frame
+        self._drawn, self._drawn_frame, self._drawn_height = pose, self._frame, self.height
         self.north.offset = north_offset(car.yaw, MINIMAP_SHOWN, 26)
-        here = np.array([car.x, car.y, car.z]) - origin
-        self.camera.up = np.array([math.cos(car.yaw), 0.0, math.sin(car.yaw)], np.float32)
-        self.camera.set_pose(position=tuple(here + (0.0, MINIMAP_HEIGHT, 0.0)), target=tuple(here))
+        forward = np.array([math.cos(car.yaw), 0.0, math.sin(car.yaw)])
+        centre = np.array([car.x, car.y, car.z]) - origin + forward * (MINIMAP_CAR * self.height * MINIMAP_SPAN)
+        self.camera.up = forward.astype(np.float32)
+        self.camera.far = self.height + 200.0
+        self.camera.set_pose(position=tuple(centre + (0.0, self.height, 0.0)), target=tuple(centre))
         self.engine.refresh_texture(self.texture)
         self._place_marks(car)
 
@@ -367,10 +444,15 @@ class Hud:
         self.places, self.has = places, has
 
     def _place_marks(self, car) -> None:
-        """Put an icon on the minimap for each place inside its circle, the nearest first, and hide the rest."""
-        found = [] if self.places is None else placemarks.on_minimap(self.places, car.x, car.z, car.yaw,
-                                                                     MINIMAP_METRES, MINIMAP_SHOWN / 2)
-        found.sort(key=lambda f: math.hypot(f[1], f[2]))
+        """Put an icon on the minimap for each place inside its circle, the nearest to the car first, and hide
+        the rest."""
+        metres = self.height * MINIMAP_SPAN
+        ahead = MINIMAP_CAR * metres  # the minimap's centre lies this far ahead of the car
+        x, z = car.x + ahead * math.cos(car.yaw), car.z + ahead * math.sin(car.yaw)
+        found = [] if self.places is None else placemarks.on_minimap(self.places, x, z, car.yaw, metres,
+                                                                     MINIMAP_SHOWN / 2)
+        below = MINIMAP_CAR * MINIMAP_SHOWN / 2  # pixels the car sits below the centre
+        found.sort(key=lambda f: math.hypot(f[1], f[2] - below))
         centre = MARGIN + MINIMAP_SHOWN / 2 - MARK_PX / 2
         for k, (panel, image) in enumerate(self.marks):
             if k >= len(found):
@@ -381,3 +463,12 @@ class Hud:
             if image.svg != svg:
                 image.svg = svg
             panel.offset = (round(centre - right), round(centre + down))
+
+
+def pilot_line(wanted: float | None, turn: float | None, units: str = "kmh") -> str:
+    """The pilot's wanted speed and its next turn in words, for set_pilot; "" with the pilot off."""
+    if wanted is None:
+        return ""
+    where = ("recto" if turn is None or abs(turn) < math.radians(30)
+             else "dobla a la derecha" if turn > 0 else "dobla a la izquierda")
+    return f"{speed_text(wanted, units)} {'km/h' if units == 'kmh' else 'mph'} · {where}"

@@ -38,20 +38,20 @@ def test_options_are_saved_and_read_back(tmp_path, monkeypatch):
     assert again["units"].value == "mph" and again["view"].text == opts["view"].text
 
 
-def test_realism_is_an_option_from_easy_to_real(tmp_path, monkeypatch):
+def test_driving_help_is_an_option_from_autopilot_to_real(tmp_path, monkeypatch):
     from contravia.settings import Options
 
     monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path))
     o = Options.load()
-    row = o["realism"]
-    assert row.label == "Realismo" and row.value == 30 and o.locked_assists == ()
-    assert [v for _, v in row.options] == list(range(0, 101, 10))
-    assert "Fácil" in row.options[0][0] and "Realista" in row.options[-1][0]
-    row.pick(70)
+    row = o["help"]
+    assert row.label == "Ayuda al manejo" and row.value == 3 and o.locked_assists == ()
+    assert [v for _, v in row.options] == list(range(6))
+    assert row.options[0][0] == "Casi piloto" and row.options[-1][0] == "Real"
+    row.pick(5)
     o.locked_assists = ("abs",)
     o.save()
     again = Options.load()
-    assert again["realism"].value == 70 and again.locked_assists == ("abs",)
+    assert again["help"].value == 5 and again.locked_assists == ("abs",)
 
 
 def test_clock_pauses_and_resumes_where_it_was():
@@ -115,7 +115,7 @@ def test_a_menu_screen_draws_its_yellow_stripe(city_npz, tmp_path, screen, top):
 def test_the_map_opens_from_the_pause_and_the_main_menu_and_drives_at_its_crosshair(city_npz, tmp_path, monkeypatch):
     import manifoldx as mx
 
-    from contravia import mapview
+    from contravia import flight, mapview
     from contravia.game import FAR, Game
     from contravia.menu import Menu
     from contravia.world import World
@@ -134,10 +134,17 @@ def test_the_map_opens_from_the_pause_and_the_main_menu_and_drives_at_its_crossh
     menu.press("ArrowUp")  # Modo libre
     menu.press("Enter")
     menu.press("Enter")  # Arrancar
+    engine.render_frame(supersample=1)
     menu.press("Escape")
     menu.press("ArrowDown")  # Mapa
+    eye = game.eye.copy()
     menu.press("Enter")
-    assert menu.current == "map" and game.clock.paused
+    assert menu.current == "map" and game.clock.paused and game.flight is not None
+    assert game.map.h == flight.UP_H and (game.map.x, game.map.z) == (game.car.x, game.car.z)
+    engine.render_frame(supersample=1, dt=0.05)
+    assert np.linalg.norm(game.eye - eye) < 5.0  # the flight up starts on the chase camera
+    _fly(engine, game)
+    assert np.allclose(game.eye, mapview.pose(game.map)[0])
     game.map = mapview.zoom(game.map, 20.0)
     engine.render_frame(supersample=1)
     assert engine.camera.far > FAR and game.eye[1] == pytest.approx(game.map.h)
@@ -145,15 +152,55 @@ def test_the_map_opens_from_the_pause_and_the_main_menu_and_drives_at_its_crossh
     assert menu.current == "pause"
 
     menu.press("Enter")  # the map again: the pause keeps Mapa chosen
+    _fly(engine, game)
     x, z = game.car.x, game.car.z
     road = game.walls.random_road(np.random.default_rng(3))[:2]
     game.map = mapview.MapCam(float(road[0]), float(road[1]), 800.0, 0.0)
+    engine.render_frame(supersample=1)
     menu.press("Enter")  # Manejar aquí
-    assert menu.current is None and game.mode == "drive" and not game.clock.paused and game.map is None
+    assert menu.current is None and game.flight is not None and game.map is None
+    engine.render_frame(supersample=1, dt=0.05)
+    assert (game.car.x, game.car.z) == (x, z) and game.eye[1] > 100.0  # the car waits for the camera to land
+    _fly(engine, game)
+    assert game.mode == "drive" and not game.clock.paused
     assert np.hypot(game.car.x - road[0], game.car.z - road[1]) < 30.0
-    assert (game.car.x, game.car.z) != (x, z)
+    landed = game.eye.copy()
+    engine.render_frame(supersample=1, dt=0.05)
+    assert np.linalg.norm(game.eye - landed) < 1.0  # the chase camera takes over with no jump
     game.streamer.close()
     game.detail.close()
+
+
+def test_the_map_screen_opens_as_the_shot_path_opens_it(city_npz, tmp_path, monkeypatch):
+    import math
+
+    import manifoldx as mx
+
+    from contravia import mapview
+    from contravia.game import Game
+    from contravia.menu import Menu
+    from contravia.world import World
+
+    monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path))
+    engine = mx.Engine("map", width=64, height=48)
+    game = Game(engine, World.load(str(city_npz)), at=(0.0, 0.0), clock=Clock(at=parse_at("Tue 10:00")))
+    game.map = mapview.zoom(mapview.MapCam(0.0, 0.0, 1.0, math.radians(30.0)), 2500.0)  # --height 2500 --yaw 30
+    menu = Menu(engine, game, FreeDrive.from_flags(when="Tue 10:00"), Options.load(), screen=None)
+    engine.on("startup")(lambda _=None: (menu.pause(), menu.show("map")))  # as main() opens --screen map
+    for _ in range(3):
+        engine.render_frame(supersample=1, dt=0.05)
+    assert menu.current == "map" and game.flight is None and game.map.h == pytest.approx(2500.0)
+    game.streamer.close()
+    game.detail.close()
+
+
+def _fly(engine, game, frames=200):
+    """Render frames until the camera's flight lands."""
+    for _ in range(frames):
+        if game.flight is None:
+            return
+        engine.render_frame(supersample=1, dt=0.05)
+    raise AssertionError("the flight never landed")
 
 
 def _place_at(game, pid, dx, dz, side=8.0, h=10.0):
@@ -347,3 +394,95 @@ def test_the_album_counts_by_province_opens_a_province_page_and_its_cards(city_n
     menu.press("Escape")
     menu.press("Escape")
     assert menu.current == "main"
+
+
+def test_the_maps_panel_names_what_lies_near_the_crosshair_at_each_height(city_npz, tmp_path, monkeypatch):
+    import manifoldx as mx
+
+    from contravia import mapview
+    from contravia.game import Game
+    from contravia.menu import Menu
+    from contravia.nearby import band
+    from contravia.world import World
+
+    monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path))
+    engine = mx.Engine("map", width=64, height=48)
+    game = Game(engine, World.load(str(city_npz)), clock=Clock(at=parse_at("Tue 10:00")))
+    menu = Menu(engine, game, FreeDrive.from_flags(when="Tue 10:00"), Options.load())
+    engine.render_frame(supersample=1)
+    menu.press("ArrowDown")  # Mapa de Cuba
+    menu.press("Enter")
+    screen = menu.screens["map"]
+    capitolio = game.places.by_id("L0333")
+
+    def settle(h):
+        game.map = mapview.MapCam(capitolio.x, capitolio.z, h, 0.0)
+        end = time.monotonic() + 10
+        while time.monotonic() < end:
+            screen.tick(0.0)
+            if screen.shown and screen.shown[0].band == band(h).name:  # the worker answered for this height
+                return [row[2].text for row in screen.here_rows if row[0] in screen.here_panel.children]
+            time.sleep(0.01)
+        raise AssertionError(f"no panel at {h} m")
+
+    close = settle(300.0)  # the fixture city's streets are "Calle 0", "Calle 1"...
+    assert screen.here_panel in screen.panels and screen.here_title.text.startswith("Calle ")
+    assert close[0] == capitolio.title and screen.here_header.text == "AQUÍ"
+    high = settle(500_000.0)
+    assert screen.here_title.text == "La Habana" and len(high) == 25 and screen.here_header.text == "LO MÁS NOTABLE" and capitolio.title in high
+
+
+def test_l_in_drive_mode_turns_the_driving_help_and_saves_it(city_npz):
+    import manifoldx as mx
+
+    from contravia.driving_help import LEVELS
+    from contravia.game import Game
+    from contravia.menu import Menu
+    from contravia.world import World
+
+    engine = mx.Engine("help", width=64, height=48)
+    game = Game(engine, World.load(str(city_npz)), clock=Clock(at=parse_at("Tue 10:00")))
+    options = Options.load()
+    options.locked_assists = ("abs",)
+    menu = Menu(engine, game, FreeDrive.from_flags(when="Tue 10:00"), options, screen=None)
+    try:
+        engine.render_frame(supersample=1)
+        assert game.mode == "drive" and game.help_level == 3
+        np.testing.assert_allclose(game.strengths(), [1, 1, 0, 1])
+        menu.press("l")
+        assert menu.current is None and game.help_level == 2
+        menu.press("l")
+        menu.press("l")
+        menu.press("l")
+        assert game.help_level == 5
+        np.testing.assert_allclose(game.strengths(), [0, 0, 0, 0])
+        menu.press("l")
+        assert game.help_level == 4
+        np.testing.assert_allclose(game.strengths(), [0.0, 0.6, 0.0, 0.6])  # abs stays locked off
+        assert Options.load()["help"].value == 4
+        assert game.hud.note_text.text == f"AYUDA 4 · {LEVELS[4][0].upper()}"
+        menu.show("options")
+        menu.press("l")
+        assert game.help_level == 4  # a menu on the screen does not read L
+    finally:
+        game._shutdown()
+
+
+def test_road_help_comes_back_after_a_level_without_it(city_npz):
+    """L from almost autopilot (0) round through the real car (5) and back drops the road help and builds it again."""
+    import manifoldx as mx
+
+    from contravia.game import Game
+    from contravia.world import World
+    from contravia.car import Controls
+
+    engine = mx.Engine("help-again", width=64, height=48)
+    game = Game(engine, World.load(str(city_npz)), clock=Clock(at=parse_at("Tue 10:00")))
+    try:
+        engine.render_frame(supersample=1)
+        for level in (0, 5, 0):
+            game.help_level = level
+            game.road_help(Controls(0.0, 0.0, 0.0, False))
+            assert (game.help is None) == (level == 5)
+    finally:
+        game._shutdown()

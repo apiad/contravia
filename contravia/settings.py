@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from contravia.driving_help import DEFAULT, LEVELS, level_from_realism
 from contravia.geo import to_local
 
 # (name, district, lat, lon, poster panel or None)
@@ -73,7 +74,7 @@ class FreeDrive:
     """The rows of the free drive's screen, filled in from the command line's flags."""
 
     rows: list[Choice] = field(default_factory=list)
-    locked_assists: tuple = ()  # assists the game has not given the player yet: off at any realism
+    locked_assists: tuple = ()  # assists the game has not given the player yet: off at any level
 
     @classmethod
     def from_flags(cls, at=(0.0, 0.0), when: str | None = None, force: str | None = None,
@@ -160,7 +161,7 @@ class Options:
     """The options screen's rows, saved between runs."""
 
     rows: list[Choice] = field(default_factory=list)
-    locked_assists: tuple = ()  # assists the game has not given the player yet: off at any realism
+    locked_assists: tuple = ()  # assists the game has not given the player yet: off at any level
 
     @classmethod
     def load(cls) -> Options:
@@ -175,10 +176,8 @@ class Options:
                    help="Cómo se muestra la velocidad."),
             Choice("minimap", "Minimapa", [("Sí", True), ("No", False)],
                    help="El mapa redondo arriba a la derecha, que gira con el carro."),
-            Choice("realism", "Realismo",
-                   [("0 · Fácil", 0)] + [(str(v), v) for v in range(10, 100, 10)] + [("100 · Realista", 100)], 3,
-                   help="Cuánto te ayuda el carro: con 0 no se va de lado ni bloquea las ruedas; con 100 maneja "
-                        "como uno de verdad, sin ayudas."),
+            Choice("help", "Ayuda al manejo", [(name, k) for k, (name, _) in enumerate(LEVELS)], DEFAULT,
+                   help="Cuánto te ayuda el carro. " + "; ".join(f"{name}: {what}" for name, what in LEVELS) + "."),
         ]
         opts = cls(rows)
         path = config_dir() / "settings.json"
@@ -189,6 +188,8 @@ class Options:
         for row in rows:
             if row.key in saved:
                 row.pick(tuple(saved[row.key]) if isinstance(saved[row.key], list) else saved[row.key])
+        if "help" not in saved and "realism" in saved:  # saved before the levels
+            opts["help"].pick(level_from_realism(saved["realism"]))
         opts.locked_assists = tuple(saved.get("locked_assists", ()))
         return opts
 

@@ -1,7 +1,7 @@
 """The car: a manifoldx.vehicles rigid body on ray wheels, seen through the game's CarState and Controls.
 
 The physics lives in manifoldx: springs, tyres that grip and slide, engine, gearbox, brakes, walls, and the
-assists that the realism option sets (spec docs/superpowers/specs/2026-11-18-vehicle-physics-design.html). This
+assists that the driving help's level sets (spec docs/superpowers/specs/2026-11-18-vehicle-physics-design.html). This
 module keeps the game's view of it: CarState with yaw 0 facing +x and a positive yaw turning toward +z, Controls as
 the driver's hands and feet, and settle, the pose of a footprint resting on the ground, for teleports and checks.
 """
@@ -103,10 +103,12 @@ class Driven:
         self.state = self._read()
         return self.state
 
-    def step(self, c: Controls, dt: float, walls: np.ndarray, strengths=None) -> CarState:
+    def step(self, c: Controls, dt: float, walls: np.ndarray, strengths=None, others=None) -> CarState:
         """Advance by a frame of dt seconds under the controls, against walls (W, 2, 2), with the assists'
-        strengths (None: no assists)."""
+        strengths (None: no assists). others: (K, 4) controls of the fleet's other vehicles, the crashed traffic."""
         controls = np.array([[c.steer, c.throttle, c.brake, float(c.handbrake)]])
+        if others is not None and len(others):
+            controls = np.vstack([controls, others])
         self.fleet.advance(controls, self.ground, np.asarray(walls, float).reshape(-1, 2, 2), dt, strengths)
         self.state = self._read()
         return self.state
@@ -116,6 +118,13 @@ class Driven:
         for _ in range(int(round(seconds * fps))):
             self.step(c, 1 / fps, walls, strengths)
         return self.state
+
+    def steering(self) -> tuple[float, float]:
+        """The wheel's full lock in radians and the wheelbase in metres, for a driver that steers by geometry."""
+        p = self.fleet.p
+        x = p.mount[0, :, 0]
+        front, rear = x[p.steered[0]].max(), x[p.wheel_mask[0]].min()
+        return float(p.max_steer[0]), float(front - rear)
 
     def pose(self) -> dict:
         """What place_car needs to draw the car between the last two steps."""

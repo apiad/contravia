@@ -1,0 +1,129 @@
+# Regions: the generation parameters that change by place (contravia/regions.py reads this file).
+#
+# One [[region]] per place: a name, a shape (where), a priority and the groups of parameters it changes.
+# where names one of: municipio = "…", barrio = "…", osm = "way/…", tag = "k=v", place = "<id>" (with
+# radius = metres) or polygon = [[lat, lon], …]. Later layers win field by field: the defaults, then municipio
+# regions, then tag regions, then the named ones (barrio, osm, place, polygon); inside a layer the higher
+# priority wins. A field is replaced whole.
+#
+# [region.buildings]
+#   types    weights over facades.TYPES, such as { colonial = 0.7, eclectic = 0.3 }, or a list of cases tried
+#            in order: { kind = "apartments", above = 500, types = {…}, storeys = [lo, hi] }, where kind is
+#            OSM's building kind, above and below the footprint's bounds in m² (strict), and the last case has
+#            none of the three.
+#            Used when OSM's kind, levels and height leave the type open (warehouses and towers come first).
+#   storeys  [lo, hi], palette ["#rrggbb", …], wear [lo, hi]: over the type's row, for a type the region chose.
+#   portal   eclectic and colonial buildings of two storeys or more stand on columns along main roads.
+#
+# [region.blocks]
+#   fill     what a block OSM left empty gets: "houses" (filler houses, the default) or "none"; "cemetery" leaves
+#            the blocks empty and lays the region's polygons out with a wall, lanes, tombs and pantheons
+#            (contravia/cemetery.py); not for a municipio.
+#   parks    "keep" (the default) or "drop" the parks contravia prepare laid inside the region; not for a municipio.
+#
+# [region.cemetery]
+#   pantheons  the share, 0 to 1, of the plots along the main lanes a pantheon takes (0.08 by default).
+#   palette    ["#rrggbb", …]: the stone of the tombs and pantheons.
+#
+# Without a region, a building is prefab when OSM calls it apartments, and suburban otherwise.
+# A tag or OSM id is looked up in regions.src: after naming a new one, run contravia regions <pbf>.
+
+# The municipio layer: what facades.choose wrote in code before regions.
+
+[[region]]
+name = "La Habana Vieja"
+where = { municipio = "La Habana Vieja" }
+[region.buildings]
+types = { colonial = 1 }
+portal = true
+
+[[region]]
+name = "Centro Habana"
+where = { municipio = "Centro Habana" }
+[region.buildings]
+types = { eclectic = 1 }
+portal = true
+
+[[region]]
+name = "Cerro"
+where = { municipio = "Cerro" }
+[region.buildings]
+types = { eclectic = 1 }
+portal = true
+
+[[region]]
+name = "Regla"
+where = { municipio = "Regla" }
+[region.buildings]
+types = [{ below = 500, types = { colonial = 1 } }, { types = { eclectic = 1 } }]
+
+[[region]]
+name = "Guanabacoa municipio"
+where = { municipio = "Guanabacoa" }
+[region.buildings]
+types = [{ below = 500, types = { colonial = 1 } }, { types = { eclectic = 1 } }]
+
+[[region]]
+name = "Diez de Octubre"
+where = { municipio = "Diez de Octubre" }
+[region.buildings]
+types = [{ above = 150, types = { eclectic = 0.5, suburban = 0.5 } }, { types = { suburban = 1 } }]
+portal = true
+
+[[region]]
+name = "Plaza de la Revolución"
+where = { municipio = "Plaza de la Revolución" }
+[region.buildings]
+types = [
+    { above = 900, types = { tower = 1 }, storeys = [5, 12] },
+    { kind = "apartments", types = { prefab = 1 } },
+    { above = 500, types = { prefab = 1 } },
+    { types = { vedado = 1 } },
+]
+
+[[region]]
+name = "Playa"
+where = { municipio = "Playa" }
+[region.buildings]
+types = [
+    { above = 900, types = { tower = 1 }, storeys = [5, 12] },
+    { kind = "apartments", types = { prefab = 1 } },
+    { above = 500, types = { prefab = 1 } },
+    { types = { vedado = 1 } },
+]
+
+[[region]]
+name = "Habana del Este"
+where = { municipio = "Habana del Este" }
+[region.buildings]
+types = [{ kind = "apartments", types = { prefab = 1 } }, { above = 300, types = { prefab = 1 } }, { types = { suburban = 1 } }]
+
+# The named regions: what a place asks for over its municipio's rules.
+
+[[region]]
+name = "Guanabacoa"
+where = { municipio = "Guanabacoa" }
+priority = 20
+[region.buildings]
+types = { colonial = 0.7, eclectic = 0.3 }
+storeys = [2, 2]
+
+# The tag regions: what OSM's land use asks for.
+
+[[region]]
+name = "Cementerios"
+where = { tag = "landuse=cemetery" }
+priority = 10
+[region.blocks]
+fill = "cemetery"
+parks = "drop"
+
+[[region]]
+name = "Necrópolis de Colón"
+where = { osm = "relation/3531562" }
+priority = 30
+[region.blocks]
+fill = "cemetery"
+[region.cemetery]
+pantheons = 0.15
+palette = ["#efece4", "#e3dfd6", "#d9d6cf", "#bfbab0"]

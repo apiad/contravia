@@ -10,13 +10,15 @@ docs/superpowers/specs/2026-11-18-garaje-design.html proposes, over the vehicle 
 The game behind runs in one of these modes (game.mode): "menu" while a menu screen covers it (the car stands,
 the clock stops, the streamer keeps loading the start's cells), "drive", "paused", "photo", "map" and "garage". The menu tells
 the game what to do through Game.start, Game.pause, Game.resume and Game.to_menu.
+While driving, Escape pauses, F aims a camera at a place and L turns the driving help to its next level.
 """
 
 import math
 import textwrap
 from typing import ClassVar
 
-from contravia import album, collect, garage, mapview, placemarks, ui
+from contravia import album, collect, garage, mapview, nearby, placemarks, ui, whereis
+from contravia.driving_help import next_level
 from contravia.hud import DAY_NAMES
 from contravia.rules import designs, fleet
 from contravia.settings import WEATHER_ICON, FreeDrive, Options
@@ -565,6 +567,8 @@ class CardScreen(Screen):
 MAP_MARKS = 80  # most place marks the map shows at once
 MARK_PX = 26  # pixels across a place's icon on the map
 OFF = (-1000, -1000)  # offset that puts an unused mark outside the window
+HERE_ICON_PX = 18  # pixels across a place's icon in the panel of what lies near the crosshair
+HERE_CHARS = 40  # longest place name the panel writes whole
 CHOICES = ("Ver ficha", "Manejar aquí")
 
 
@@ -572,7 +576,9 @@ class MapScreen(Screen):
     """The map: the world from the air (contravia/mapview.py). The wheel or W and S zoom, dragging or the arrows
     move, Q and E turn, ENTER drives on the road nearest the crosshair, Escape goes back where it came from.
     The collectible places show as icons (contravia/placemarks.py); with the crosshair on one the note names it
-    and ENTER offers its card or driving there, and on a municipio's group ENTER comes down over it."""
+    and ENTER offers its card or driving there, and on a municipio's group ENTER comes down over it. The panel on
+    the right says what lies under and near the crosshair, in more detail as the camera comes down
+    (contravia/nearby.py), looked up off the frame (contravia/whereis.py)."""
 
     PAN_PX = 600.0  # screen pixels a second the arrows move the ground
     TURN = 1.2  # radians a second for Q and E
@@ -594,12 +600,59 @@ class MapScreen(Screen):
         self.options = [_text(t, ui.TITLE, 26, ui.PAPER) for t in CHOICES]
         self.choice_panel = Panel(self.options, anchor="center", offset=(0, 90),
                                   style_overrides={"gap": 4, "padding": "10 18", "bg": ui.alpha(ui.INK, 0.92)})
-        self.panels = [*(m for m, _, _ in self.marks), cross,
+        self._build_here()
+        self.panels = [*(m for m, _, _ in self.marks), cross, self.here_panel,
                        Panel([self.note], anchor="top-left", offset=(44, 40), style_overrides=CLEAR),
                        _hints(width, [("RUEDA", "Zoom"), ("ARRASTRAR", "Mover"), ("Q E", "Girar"),
                                       ("ENTER", "Elegir"), ("ESC", "Volver")])]
         self.width = width
         self.menu.game.open_map()
+
+    def _build_here(self) -> None:
+        """The panel of what lies under and near the crosshair: a title, a line, a header and a row per place."""
+        from manifoldx.gui import Image, Panel
+
+        g = self.menu.game
+        if getattr(self, "where", None) is None or self.where.world is not g.city:
+            self.where = whereis.Where(g.city)
+        self.asked, self.shown = None, None
+        self.here_title = _text("", ui.TITLE, 24, ui.PAPER)
+        self.here_line = _text("", ui.BOLD, 14, ui.GREY)
+        self.here_header = _text("", ui.BOLD, 12, ui.GREY)
+        self.here_rows = []
+        for _ in range(max(b.count for b in nearby.BANDS)):
+            image = Image(placemarks.icon("lugar", False, HERE_ICON_PX), style_overrides={"width": HERE_ICON_PX})
+            name, far = _text("", ui.BOLD, 14, ui.PAPER), _text("", ui.BOLD, 13, ui.GREY)
+            self.here_rows.append((Panel([image, name, far], style_overrides={**CLEAR, "direction": "h", "gap": 8}),
+                                   image, name, far))
+        self.here_panel = Panel([self.here_title], anchor="top-right", offset=(40, 40),
+                                style_overrides={"gap": 4, "padding": "14 18", "bg": ui.alpha(ui.INK, 0.92)})
+
+    def _here(self) -> None:
+        """Ask for the panel again when the crosshair or the height moved enough, and paint a new answer."""
+        g = self.menu.game
+        cam = g.map
+        if nearby.stale(self.asked, cam.x, cam.z, cam.h):
+            self.asked = (cam.x, cam.z, cam.h)
+            self.where.ask(g.places, cam.x, cam.z, cam.h)
+        here = self.where.take()
+        if here is None:
+            return
+        got = tuple(g.album.has(i.id) for i in here.items)
+        if (here, got) == self.shown:
+            return
+        self.shown = (here, got)
+        self.here_title.text, self.here_line.text, self.here_header.text = here.title, here.line, here.header
+        children = [self.here_title] + [t for t in (self.here_line, self.here_header) if t.text]
+        for item, has, (row, image, name, far) in zip(here.items, got, self.here_rows, strict=False):
+            svg = placemarks.icon(item.kind, has, HERE_ICON_PX)
+            if image.svg != svg:
+                image.svg = svg
+            name.text = item.title if len(item.title) <= HERE_CHARS else item.title[:HERE_CHARS - 1] + "…"
+            far.text = item.distance
+            children.append(row)
+        self.here_panel.children = children
+        ui.refit(self.here_panel)
 
     def _open_choice(self, on: bool) -> None:
         """Show or hide «Ver ficha» and «Manejar aquí» for the place under the crosshair."""
@@ -615,6 +668,8 @@ class MapScreen(Screen):
 
     def key(self, k):
         g = self.menu.game
+        if g.flight is not None and k != "back":
+            return  # the camera is still flying to the map
         if self.choice is not None:
             if k in ("up", "down"):
                 self.picked = 1 - self.picked
@@ -653,11 +708,12 @@ class MapScreen(Screen):
 
     def tick(self, dt):
         g = self.menu.game
-        if g.map is None:
+        if g.map is None or g.flight is not None:
             return
         if self.choice is None:
             self._move(dt)
         self._place_marks()
+        self._here()
 
     def _place_marks(self) -> None:
         """Put the places' marks where the camera sees them and name the one under the crosshair."""
@@ -1144,7 +1200,7 @@ class DesignScreen(RowsScreen):
 
 SCREENS = {"main": MainScreen, "free": FreeScreen, "options": OptionsScreen, "pause": PauseScreen,
            "photo": PhotoScreen, "aim": AimScreen, "card": CardScreen, "map": MapScreen, "album": AlbumScreen, "province": ProvinceScreen, "garage": GarageScreen, "design": DesignScreen}
-KEY_NAMES = set(KEYS)
+KEY_NAMES = set(KEYS) | {"l"}  # L, while driving, turns the driving help to its next level
 
 
 class Menu:
@@ -1209,9 +1265,20 @@ class Menu:
                 self.pause()
             elif key == "f" and self.game.mode == "drive" and self.game.start_aim():
                 self.show("aim")
+            elif key == "l" and self.game.mode == "drive":
+                self.next_help()
             return
         if key in KEYS:
             self.screens[self.current].key(KEYS[key])
+
+    def next_help(self) -> None:
+        """Turn the «Ayuda al manejo» option to its next level, as choosing it in the options does: applied at
+        once, saved, and named for a moment on the HUD."""
+        row = self.options["help"]
+        row.pick(next_level(row.value))
+        self.game.apply_options(self.options)
+        self.options.save()
+        self.game.hud.note(f"Ayuda {row.value} · {row.text}".upper())
 
     def update(self, query, dt: float) -> None:
         """Read this frame's keys, follow a resized window and animate the screen."""
@@ -1221,7 +1288,7 @@ class Menu:
                 if self.current in ("photo", "map", "aim") and k in ("w", "s", "a", "d", "ArrowUp", "ArrowDown",
                                                             "ArrowLeft", "ArrowRight"):
                     continue  # the photo mode reads them as held keys
-                if self.current is None and k not in ("Escape", "f"):
+                if self.current is None and k not in ("Escape", "f", "l"):
                     continue
                 self.press(k)
                 break

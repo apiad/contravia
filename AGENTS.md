@@ -37,8 +37,34 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
 - The map colours far land by what covers it (`contravia/cover.py`, palette in `contravia/rules/cover.py`): ESA WorldCover
   2021 at 100 m in `cover.src`, beside `coast.src`. `contravia cover --out data/cuba` downloads the tiles over the coast
   (deleting each once read) and writes it; the index keeps each square's class shares in its summary (`summary_version`
-  3), and `summary_mesh` mixes the flat atlas tones and shades the slopes away from a north-west light. Its licence
+  3), and `summary_mesh` mixes the flat atlas tones and shades the slopes away from a north-west light.
+  Far buildings are the city's blocks, not boxes (`contravia/summary.py`, `summary_version` 4): each built
+  block cut by its streets, merged level by level across the streets a level no longer draws, in height tiers. Its licence
   (CC BY 4.0) asks for `contravia.cover.CREDIT` wherever the game names its data.
+- The shore near the car is not the relief's hard edge (`contravia/shore.py`, `contravia/rules/shore.py`): a cell
+  with sea within 40 m draws its ground on a 2.5 m grid where each node has a signed distance to the water and a
+  share of four types: beach where OSM maps beach or sand, cliff where OSM maps one or the ground rises 4 m within
+  30 m of the water, mangrove where OSM maps a wetland or WorldCover sees mangrove or wetland, rocky shore
+  elsewhere. Each type has a profile (sand sloping into the water, a low rock shelf with seeded rocks baked in the
+  cell, a cliff dropping straight into the sea, a mud flat with mangroves on stilt roots, `mangle` in
+  `rules/species.py`), a band of shallows over the water that fades into the sea's colour, and keeps the ground's
+  height within 4 m of anything built. The wheels and the trees stand on the same grid. OSM's features are kept in
+  `shore.src` beside `coast.src` (3 MB): `contravia shore <pbf> --out data/cuba` writes it into a built island
+  without rebuilding it, and `prepare` and `source` write it with the coast.
+- A car driven into the sea sinks and comes back on the shore (`contravia/sea.py`): over the sea the wheels stand
+  on a floor that goes down past the shallows (`Shore.floor`), under 0.7 m of water the car sinks for 2 s and at
+  2.6 s stands, stopped, on the nearest dry road within 300 m or else the nearest dry land, facing inland.
+- What changes by place is in `contravia/regions.toml` (`contravia/regions.py`, spec
+  `docs/superpowers/specs/2026-11-20-regions-design.html`), applied when a cell opens: the municipio rules of
+  buildings, Guanabacoa's two storeys, and cemeteries (`landuse=cemetery`) with no filler houses and no laid parks.
+  A region named by OSM tag or id finds its polygon in `regions.src` beside `coast.src` (72 KB, with OSM's service
+  roads and footways inside cemeteries): after naming a new one, run `contravia regions <pbf> --out data/cuba`
+  (about 20 s); `source` writes it with the coast and the first run copies it.
+- `blocks.fill = "cemetery"` lays out a cemetery (`contravia/cemetery.py`): a wall behind the streets round it with a
+  gate, lanes from OSM (a 20 m grid where it maps none), seeded plots of 1.2 x 2.4 m (slabs, tombs, crosses, angels)
+  and pantheons along the main lanes (`cemetery.pantheons`). `contravia/graveyard.py` draws the plots as instances
+  by level of detail with the forest's fade (`rules/tombs.py`), the cell mesh holds the wall, far summaries draw
+  pale stone and pantheon boxes, and the car hits the wall, pantheons and raised tombs (walls.py), never a slab.
 - In the map the camera stretches heights (`mapview.exaggeration`: 1 up to 10 km of height, 20 at 1 000 km, through
   manifoldx's `Camera.vertical_scale`), the summaries mix in height tints from the city stage up and shade the
   slope as stretched at their level (`rules/cover.py`): a stylised relief atlas, not a photo.
@@ -64,14 +90,32 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   `docs/superpowers/specs/2026-11-18-parks-design.html`): city parks with paths, plaza and centrepiece, paseos, the paved
   Prado and wild parks outside the city, some with a lake. `contravia/props.py` builds their motifs as `park_tris`, the
   car hits `park_walls`, and `contravia walks` rebuilds them with the pavements. Land OSM tags as a cemetery, industry,
-  a school or a sports ground never becomes a park.
+  a school or a sports ground never becomes a park. A park the drawn street surface covers more than half of
+  (`parks.COVERED`, such as the strip between an avenue's carriageways that `streets.py` joins) is left out before
+  the walks pave it, and no motif, bench, lamp or lake stands on the street triangles (`clearance.cell_streets`).
+- OSM lacks the houses of whole towns (Guanabacoa, Cotorro), so an empty block is not trusted to be a park:
+  `prepare --worldcover DIR` and `source --worldcover DIR` (required) read ESA WorldCover's built-up class on a 20 m
+  grid over each province (`contravia/builtup.py`, tiles downloaded into DIR) and keep it in the province's `Raw`;
+  a block the satellite sees at least half built (`parks.SEEN_BUILT`) is never a park unless OSM calls it green, and
+  keeps its filler houses.
 - No tree's look is stored (`contravia/rules/trees.py`, `contravia/rules/species.py`, spec
   `docs/superpowers/specs/2026-11-18-trees-design.html`): when a cell opens, `cell_trees` gives each tree a species
   from its zone, its park and a seed from its position. A cell's mesh holds no tree: `contravia/forest.py` keeps one
   row per tree of each cell drawn in full and spawns it as GPU instances of its species' meshes, which a grammar per
   species grows at three levels of detail (`contravia/rules/treegrammar.py`: trunk, branch levels, leaf clusters);
   each tree moves between levels by its distance to the camera, and its Tint (manifoldx) carries the date's colours
-  (flowering, autumn leaves, bare in the dry season). The car hits the trunks of the same trees (`walls.py`).
+  (flowering, autumn leaves, bare in the dry season). A tree at LOD 0 within 25 m also carries a layer of small
+  leaves over its clusters or leaflets along its fronds (`contravia/rules/foliage.py`, per species `FOLIAGE`), instances that sway in
+  the shader, spawned, dropped and faded by the same level-of-detail pass. The car hits the trunks of the same trees (`walls.py`).
+- Grass is not stored either (`contravia/grass.py`): a cell drawn in full lays, on a thread, a patch on every 2 m
+  grid spot of its green and of its laid parks' lawns, and shorter, drier tufts on about half of every other spot of
+  bare land, clear of its streets, roads, pavements, park motifs, buildings, filler houses, landmarks and the sea. Near the sea it grows only past the shore's sand, rock, cliff and mud, on the
+shore's grid (`rules.shore.vegetated`). The
+  city data holds no plazas, car parks, rail yards or inland water outside the paved blocks, so grass grows there. A
+  built cell's yards and lots also grow an odd tree (`grass.yard_trees`, 3 m off every house), which `cell_trees`
+  takes, so the forest draws it and the car hits it. The
+  patches are instances of two meshes of blades (dense to 20 m, sparse to 45 m), sway and part round the car in manifoldx's vertex shader
+  (`StandardMaterial(sway=)`, `engine.benders`), and are respawned only when their level changes.
 - `contravia play` opens on the main menu (`contravia/menu.py`, drawn as `docs/ux/contravia-ux.html` shows): Story and the
   Cuba map are "próximamente", Free drive sets place, time, day, weather, traffic and clock speed
   (`contravia/settings.py`), Esc pauses, and the options are kept in the user's config folder
@@ -94,7 +138,11 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
 - The car is `manifoldx.vehicles` (spec `docs/superpowers/specs/2026-11-18-vehicle-physics-design.html`): a rigid body on
   ray wheels with tyres, engine, gearbox and brakes, stepped at 120 Hz by `contravia/car.py` (`Driven`); each family's
   numbers are in `contravia/rules/handling.py` and `tests/test_handling_targets.py` holds them to the spec's targets.
-  The Realismo option (0 easy to 100 real) sets the four assists' strengths; `Options.locked_assists` keeps some off.
+  The «Ayuda al manejo» option has six levels, from 0 (almost autopilot) to 5 (real), in `contravia/driving_help.py`
+  (spec `docs/superpowers/specs/2026-11-20-driving-help-design.html`); a level sets the four chassis assists' strengths,
+  `Options.locked_assists` keeps some off, and `Road.locate` finds the car's edge, lane and distance along it.
+  While driving, L turns it to the next level (5, 4, ... 0, then 5 again, `next_level`) as the options would,
+  saves it and names the level on the HUD for a moment.
 - A script of your own that builds `Game` (custom shots, probes) must run its code under
   `if __name__ == "__main__":`: the streamer starts worker processes with spawn, which re-imports the script and
   fails with "start a new process before the current process has finished its bootstrapping phase".
@@ -112,7 +160,8 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   `engine.state.sky` reports it. `contravia skymap out.png` draws a year of weather; `contravia timelapse out.mp4`
   renders a day over the Capitolio.
 - No building or filler box stands in a road's drivable width (`contravia/clearance.py`): the cells and the walls the
-  car hits leave out the same boxes. Service roads a landmark's walls cross are not drawn and the car is never put
+  car hits leave out the same boxes, and cut each one back off the street triangles the cells draw
+  (`clearance.streets_around`), which are wider than the tagged width at narrow streets, junctions and avenues. Service roads a landmark's walls cross are not drawn and the car is never put
   on them; the Malecón leaves out its wall pieces across the coast road. `contravia walls-check` counts what would
   stand inside a road over all of Havana and must read 0 (about 3 minutes; it needs `data/`, so it is not a rift
   rule; tests/test_walls.py checks the same rule on the fixture city).

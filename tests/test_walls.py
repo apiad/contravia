@@ -73,10 +73,28 @@ def test_a_car_hits_a_trunk_head_on_and_slides_past_a_glancing_one():
     d = Driven(spec, CarState(0, 0, 0, 0.0), FlatGround())
     d.launch(10.0)
     s = d.run(coast, 4.0, wall, strengths_for(30))
-    assert s.x < 20.0 and abs(s.speed) < 1.0
+    assert s.x < 20.0 and s.speed < 0.5  # stopped by the trunk, or bounced back off it
     half = spec.size[2] / 2
     # alongside the trunk already, its side 5 cm in: a graze along the side, not a corner on a corner
     d = Driven(spec, CarState(20.0, half + 0.5 - 0.05, 0.0, 0.0), FlatGround())
     d.launch(10.0)
     s = d.run(coast, 1.0, wall, strengths_for(30))
     assert s.speed > 5.0 and s.x > 25.0 and s.z > half + 0.5 - 0.02  # it keeps going, pushed off the trunk (to the 1 cm slop)
+
+
+def test_walls_near_gives_the_same_walls_on_a_second_call_in_the_cell(city):
+    w = Walls(city)
+    first = w.near(37.0, 61.0, 0.0).copy()
+    np.testing.assert_array_equal(w.near(38.0, 62.0, 0.0), first)
+
+
+def test_around_keeps_every_segment_within_reach_and_nothing_else():
+    from contravia.walls import around
+
+    rng = np.random.default_rng(3)
+    walls = rng.uniform(-60.0, 60.0, (500, 2, 2))
+    kept = around(walls, 5.0, -4.0, 12.0)
+    a, ab = walls[:, 0], walls[:, 1] - walls[:, 0]
+    t = np.clip(((5.0 - a[:, 0]) * ab[:, 0] + (-4.0 - a[:, 1]) * ab[:, 1]) / (ab * ab).sum(1), 0, 1)
+    gap = np.hypot(5.0 - a[:, 0] - ab[:, 0] * t, -4.0 - a[:, 1] - ab[:, 1] * t)
+    np.testing.assert_array_equal(kept, walls[gap <= 12.0])

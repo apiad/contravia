@@ -248,6 +248,7 @@ class NightSky:
         showing = look.night > 0.0
         moved = np.inf if self._last is None else float(np.linalg.norm(eye - self._last[1]))
         stale = moved > 2.0 or abs((when - self._last[0]).total_seconds()) > 10.0
+        limit_moved = getattr(self, "_limit", None) != round(look.star_limit, 1)  # weather can hide stars between turns
         if showing and not self._live:
             self._spawn_catalogue()
             self._live, self._fixed_dirty = True, True
@@ -258,6 +259,8 @@ class NightSky:
             rot = sky.equatorial_to_local(when)
             self.pos[:] = eye + (self.v @ rot.T) * self.domes[:, None]
             self._last, self._fixed_dirty = (when, eye.copy()), True
+        if showing and (stale or limit_moved):
+            self._limit = round(look.star_limit, 1)
             kind, mag = unpack(self.values)
             self.stars_shown = int(((kind < KIND_MW) & (mag <= look.star_limit) & (self.pos[:, 1] > eye[1])).sum())
         elif not showing:

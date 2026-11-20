@@ -22,19 +22,22 @@ import time
 
 import numpy as np
 
-from contravia import collect
+from contravia import collect, flight, sea
 from contravia.album import Album
-from contravia.camera import chase
+from contravia.camera import Orbit, chase, orbit, seen_from
 from contravia.car import CarState, Controls, Driven, settle
+from contravia.driving_help import DEFAULT, DrivingHelp, Road, brake_reach, chassis_strengths, road_assists
 from contravia.forest import Forest
+from contravia.graveyard import Graveyard
 from contravia.geo import CELL, to_local
-from contravia.hud import Hud
+from contravia.grass import Grass
+from contravia.hud import Hud, pilot_line
 from contravia.input import Driver
 from contravia.kept import kept, source
 from contravia.quadtree import LEVELS
 from contravia.rules.ground import GROUND, WATER_Y, relief
 from contravia.surface import Surface
-from contravia.walls import Walls
+from contravia.walls import Walls, around
 from contravia.world import World
 
 TAU = (12.0, 48.0)  # the streamer's screen error in pixels: the finest it may draw and the coarsest
@@ -43,6 +46,7 @@ TUNE_EVERY = 60  # frames between two tunings, over whose median frame time
 PHOTO_SIZE = (1280, 720)  # pixels of the player's photo of a place
 FAR = 15000.0  # the camera's far plane: past the clear-weather fog's end
 RECENTRE = 2000.0  # metres from the engine's origin before it moves to the camera
+WALL_REACH = 15.0  # m: past the half-diagonal of the longest vehicle the player drives, a bus's
 BASE = 40_000.0  # side of the plain ground under everything with flat data, so empty cells show ground, not sky
 BASE_Y = WATER_Y  # sea level, a little up: the ground under SEA is not drawn, so the water shows there
 SEA_TILE = 1000.0  # metres: the side of the squares the sea is laid in when it has holes
@@ -92,14 +96,25 @@ class Game:
         self._dt = 0.0
         self.stars_shown = 0
         engine.camera.far = FAR
+        from manifoldx.resources import StandardMaterial
+
+        # detail: the cells' asphalt and ground (surfaces DETAIL_ASPHALT and DETAIL_GROUND) get wear, grain and
+        # tufts from noise in the shader up close; the summaries' surfaces are 0 and stay flat.
         self.streamer = QuadStreamer(engine, CELL, city.tree.origin, LEVELS, city.exists, build_node,
                                      error=lambda L: CELL * 2**L / 16, workers="process", tau=TAU[0],
-                                     builders=max(1, min(3, (os.cpu_count() or 2) - 1)), warm=warm)
+                                     builders=max(1, min(3, (os.cpu_count() or 2) - 1)), warm=warm,
+                                     crossfade=0.3,  # a level of detail fades into the next, it never pops
+                                     material=StandardMaterial("#ffffff", roughness=0.9, vertex_colors=True,
+                                                               faded=True, detail=True))
         # The detail ring: cornices, balconies, sills and roof tanks in the 3 x 3 cells around the car, drawn over
         # the massing (rules/detail.py). It narrows to the car's own cell when the frame time pushes tau to its top.
         self.detail = Streamer(engine, CELL, build_detail, radius=1, ready_radius=2, workers="process", warm=warm)
         # The trees of the cells drawn in full: rows per cell, drawn as instances by level of detail (forest.py).
         self.forest = Forest(engine, city, self.walls.landmarks)
+        # The grass on the green near the camera: instanced patches of blades that sway in the shader (grass.py).
+        self.grass = Grass(engine, city, self.walls.landmarks)
+        # The cemeteries' plots and pantheons: rows per cell, drawn as instances by level of detail (graveyard.py).
+        self.graveyard = Graveyard(engine, city, self.walls.landmarks)
         engine.state.teleport = {"to": None, "error": None}
         if self.walls.landmarks.mesh is not None:  # drawn once, not streamed: they are few and seen from afar
             from manifoldx.components import Material, Mesh, Transform
@@ -117,7 +132,8 @@ class Game:
         self.shadow = self._spawn_shadow()
         self.model = kept(engine.state, "player car", "CarParams()", _player_car)
         self.handles = spawn_car(engine, self.model)
-        self.family, self.driven, self.realism, self.locked_assists = "moderno", None, 30.0, ()
+        self.family, self.driven, self.help_level, self.locked_assists = "moderno", None, DEFAULT, ()
+        self.help = None  # the road assists, made on the first frame that needs them
         self.physics_ms = 0.0
         if "car" in engine.state:  # a reload under contravia dev: drive on from where the old code left the car
             self._resume(engine.state.car)
@@ -138,9 +154,14 @@ class Game:
         self.aim = None  # while aiming at a place: {"place", "ground", "yaw", "pitch", "zoom"} (start_aim)
         self._photo_pending = None  # (PNG path, future of its pixels) between a shot and its saving
         self.camera_override = None  # bench.py sets a function () -> (eye, target) in world metres
+        self.rig, self._chased = None, None  # the chase camera's contravia.camera.Rig, and the eye it last placed
+        self.mouse_orbit = Orbit()  # the mouse's turn of the chase camera round the car
         self.mode = "drive"  # or "menu", "paused", "photo", "map", "garage": see contravia/menu.py
         self.photo = None  # the photo mode's and the Garaje's camera around the car: (yaw, pitch, distance)
         self.map = None  # the map's camera, a contravia.mapview.MapCam, while the map shows
+        self.flight = None  # the camera's flight between the street and the map (contravia/flight.py), while it flies
+        self._lifting = None  # (the flight's start, [its lift once a thread found it]) (_lift_flight)
+        self._target = None  # the point the camera looked at last frame
         self.km, self.area, self._area_at = 0.0, "", 0.0
         self.address = ("", "", "")
         self.weather_state = None
@@ -385,6 +406,40 @@ class Game:
         if speed:
             self.driven.launch(speed)
         self.car = self.driven.state
+        self.sinking = None  # seconds since the car went into the sea, or None
+
+    def _at_sea(self, dt: float) -> None:
+        """After a step: a car that has driven into deep water starts to sink (contravia/sea.py); a sinking car
+        loses its speed to the water and, after sea.BACK seconds, is put back on the shore."""
+        shore = getattr(self.surface, "shore", None)
+        if shore is None:
+            return
+        if getattr(self, "sinking", None) is None:
+            floor = float(shore.floor(np.array([self.car.x]), np.array([self.car.z]))[0])
+            if sea.in_sea(floor, self.car.y):
+                self.sinking = 0.0
+            return
+        self.sinking += dt
+        f = self.driven.fleet
+        f.velocity[0] *= sea.drag(dt)
+        f.angular[0] *= sea.drag(dt)
+        if self.sinking >= sea.BACK:
+            self._ashore()
+
+    def _ashore(self) -> None:
+        """Put a car that sank on the shore (sea.ashore), stopped, the chase camera easing in from where it was."""
+        x, z = self.car.x, self.car.z
+        eye = np.array(self.eye if getattr(self, "eye", None) is not None else [x, self.car.y + 3.0, z], float)
+        found = sea.ashore(x, z, self.walls.nearest_road, self.surface.height)
+        if found is None:
+            self.teleport(x, z)
+        else:
+            x, z, yaw, y = found
+            self._place(settle(CarState(x, z, yaw, 0.0, y=0.0 if y is None else y), self.surface))
+            self._follow_province()
+        self.sinking = None
+        self.eye = eye  # a new eye, not the chase's own: the chase starts from it and eases in behind the car
+        self._recentre()
 
     def saved_car(self) -> dict:
         """What a reload needs to drive on: the pose, the height, the camera and the physics' state."""
@@ -392,11 +447,45 @@ class Game:
                 "eye": self.eye.tolist() if hasattr(self, "eye") else [self.car.x, self.car.y + 3.0, self.car.z],
                 "driven": self.driven.snapshot()}
 
-    def strengths(self):
-        """The assists' strengths from the realism option."""
-        from manifoldx.vehicles import strengths_for
+    def _crashes(self):
+        """The traffic cars with a body, in the fleet of the car driven now (a new car starts with none)."""
+        from contravia.crashes import Crashes
 
-        return strengths_for(getattr(self, "realism", 30.0), getattr(self, "locked_assists", ()))
+        c = getattr(self, "crashes", None)
+        if c is None or c.driven is not self.driven:
+            c = self.crashes = Crashes(self.driven)
+        return c
+
+    def road_help(self, c: Controls) -> Controls:
+        """The controls after the driving help's road assists at the chosen level, on the province's graph."""
+        level, locked = getattr(self, "help_level", DEFAULT), getattr(self, "locked_assists", ())
+        graph = self.city.graph
+        if not road_assists(level, locked) or not len(graph):
+            self.help, self._help_for = None, None  # a level with road assists again builds a new one
+            return c
+        if getattr(self, "help", None) is None or getattr(self, "_help_for", None) != (id(graph), id(self.driven)):  # another province or vehicle
+            length, _, width = self.driven.spec.size
+            self.help = DrivingHelp(Road(graph), *self.driven.steering(), length, width)
+            self._help_for = (id(graph), id(self.driven))
+        on = road_assists(level, locked)
+        return self.help.apply(c, self.car, self._dt, level, locked, float(self.strengths()[0]),
+                               self._ahead_of_car() if on & {"brake", "pilot"} else None,
+                               self.layer.signal_open if self.layer else None)
+
+    def _ahead_of_car(self) -> tuple[np.ndarray, np.ndarray]:
+        """What the emergency brake must not hit: the walls, the traffic and the crashed cars near the car, as
+        (W, 2, 2) segments and their velocities (W, 2)."""
+        x, z, reach = self.car.x, self.car.z, brake_reach(abs(self.car.speed))
+        walls = around(self.walls.near(x, z, self.car.y), x, z, reach)
+        parts = [(walls, np.zeros((len(walls), 2)))]
+        if self.layer:
+            parts.append(self.layer.moving_boxes_near(x, z, reach))
+            parts.append(self._crashes().boxes())
+        return np.concatenate([p[0] for p in parts]), np.concatenate([p[1] for p in parts])
+
+    def strengths(self):
+        """The chassis assists' strengths at the driving help's level."""
+        return chassis_strengths(getattr(self, "help_level", DEFAULT), getattr(self, "locked_assists", ()))
 
     def _follow_province(self) -> None:
         """When the car is in another province, drive on that province's graph: its traffic starts over there."""
@@ -470,35 +559,64 @@ class Game:
         self.photo = self.photo or (self.car.yaw + 2.4, 0.22, 9.0)
 
     def open_map(self) -> None:
-        """Fly the map's camera up over the car, the car and the clock stopped where they are."""
+        """Show the map, the car and the clock stopped where they are; opened from the game, the camera flies up
+        from behind the car to the map flight.UP_H metres over it."""
         from contravia import mapview
 
+        from_game = self.mode in ("paused", "drive") and self.map is None and self._target is not None
         self.mode, self.photo = "map", None
         self.clock.pause()
+        if from_game:
+            self.map = mapview.MapCam(self.car.x, self.car.z, flight.UP_H, 0.0)
+            self.flight = flight.up((self.eye.copy(), self._target.copy()), mapview.pose(self.map))
+            self._lift_flight(self.car.x, self.car.z, mapview.pose(self.map))
         self.map = self.map or mapview.MapCam(self.car.x, self.car.z, 2500.0, 0.0)
 
     def drive_to(self, p: collect.Place) -> str | None:
-        """Leave the map driving on a street from which the place frames well (go_near); the error if none."""
-        self.go_near(p)
-        error = self.engine.state.teleport.get("error")
-        if error:
-            return error
-        self.map = None
-        self.km, self.area, self.address = 0.0, "", ("", "", "")
-        self.resume()
-        return None
+        """Leave the map driving on a street from which the place frames well (near_spot); the error if none."""
+        return self.fly_down(*self.near_spot(p))
 
     def drive_here(self) -> str | None:
         """Leave the map driving on the road nearest the point under its crosshair; the error if there is none."""
-        x, z = self.map.x, self.map.z
-        self.teleport(x, z)
-        error = self.engine.state.teleport.get("error")
-        if error:
-            return error
+        return self.fly_down(self.map.x, self.map.z)
+
+    def fly_down(self, x: float, z: float) -> str | None:
+        """Leave the map for the road nearest (x, z): the camera flies down to the chase camera's place behind
+        where the car will stand, and the car is put there only when it lands (_land); the error if no road."""
+        from contravia import mapview
+
+        found = self.walls.nearest_road(x, z)
+        if found is None:
+            self.engine.state.teleport = {"to": [x, z], "error": "no road within 5 km"}
+            return self.engine.state.teleport["error"]
+        x, z, yaw = found
+        _, eye, target = chase(None, settle(CarState(x, z, yaw, 0.0, y=0.0), self.surface), 0.0, self.surface)
+        self.flight = flight.down(mapview.pose(self.map), (eye, target), (x, z))
+        self._lift_flight(x, z)
         self.map = None
+        return None
+
+    def _lift_flight(self, x: float, z: float, end=None) -> None:
+        """Find, on a thread, how the flight just started must look down more steeply to keep over the roofs, the
+        streets and the ground within flight.TURN_D of (x, z), where it flies low; _fly gives it to the flight
+        when it is in, and a descent does not land before."""
+        f, got = self.flight, []
+
+        def work():
+            rings, tops = roofs_near(self.city, self.walls.landmarks, x, z, flight.TURN_D)
+            got.append(flight.lift_for(f, flight.clearance(self.surface, rings, tops), end))
+
+        self._lifting = (f.start, got)
+        threading.Thread(target=work, name="flight-lift", daemon=True).start()
+
+    def _land(self) -> None:
+        """The flight down landed: the car on its road and driving, the chase camera on from the flight's eye."""
+        eye, (x, z) = self.eye, self.flight.dest
+        self.flight = None
+        self.teleport(x, z)
+        self.eye = eye  # teleport puts the eye over the car; the chase starts from the flight's last one instead
         self.km, self.area, self.address = 0.0, "", ("", "", "")
         self.resume()
-        return None
 
     def pause(self) -> None:
         """Stop the car, the traffic and the clock where they are."""
@@ -520,7 +638,7 @@ class Game:
         self.tau_range = options["view"].value
         self.streamer.tau = min(max(self.streamer.tau, self.tau_range[0]), self.tau_range[1])
         self.rain_on = options["rain"].value
-        self.realism, self.locked_assists = options["realism"].value, options.locked_assists
+        self.help_level, self.locked_assists = options["help"].value, options.locked_assists
         self.hud.configure(options["units"].value, options["minimap"].value)
 
     def _find_area(self, now: float) -> None:
@@ -553,8 +671,12 @@ class Game:
         return (self.car.x, self.car.y + collect.EYE_HEIGHT, self.car.z)
 
     def go_near(self, p: collect.Place) -> None:
-        """Put the car on a street outside a place's box from which it frames well, trying sixteen directions at
-        a photo's distance; the nearest street to the place when none does."""
+        """Put the car on the street near_spot picks for a place."""
+        self.teleport(*self.near_spot(p))
+
+    def near_spot(self, p: collect.Place) -> tuple[float, float]:
+        """A point on a street outside a place's box from which it frames well, trying sixteen directions at a
+        photo's distance; the place itself (its nearest street) when none does."""
         ground = self.ground_of(p)
         box = collect.corners(p, ground)
         reach = min(collect.REACH_MAX, max(40.0, 1.6 * max(p.w, p.d, p.h)))
@@ -574,7 +696,7 @@ class Game:
             score = (f.verdict != "good", abs(f.size - collect.ZOOM_FILL))
             if best is None or score < best[0]:
                 best = (score, x, z)
-        self.teleport(*(best[1:] if best else (p.x, p.z)))
+        return best[1:] if best else (p.x, p.z)
 
     def start_aim(self) -> bool:
         """Stop the car and the clock and point the photo camera at the spot, zoomed to frame it; False with no spot."""
@@ -674,6 +796,8 @@ class Game:
         self.streamer.close()
         self.detail.close()
         self.forest.close()
+        self.grass.close()
+        self.graveyard.close()
         self.walls.close()
         if self.layer:
             self.runner.stop()
@@ -688,11 +812,12 @@ class Game:
             ox, oz = self.engine.origin
         return np.array([ox, 0.0, oz])
 
-    def waiting(self) -> int:
-        """Cells within one cell of the car that hold something and are not drawn yet, in the city's streamer
-        or in the detail ring."""
+    def waiting(self, at: tuple[float, float] | None = None) -> int:
+        """Cells within one cell of the car (or of the point `at`) that hold something and are not drawn yet, in
+        the city's streamer or in the detail ring."""
         o = self.city.tree.origin
-        ci, cj = math.floor(self.car.x / CELL), math.floor(self.car.z / CELL)
+        x, z = at if at is not None else (self.car.x, self.car.z)
+        ci, cj = math.floor(x / CELL), math.floor(z / CELL)
         drawn, ring, r = self.streamer.drawn(), self.detail.drawn(), self.detail.radius
         cells = [(ci + a, cj + b) for a in (-1, 0, 1) for b in (-1, 0, 1)]
         full = [(i, j) for i, j in cells if self.city.exists(0, i - o[0], j - o[1])]
@@ -725,17 +850,26 @@ class Game:
             if inp.just_pressed("t"):
                 x, z, _ = self.walls.random_road(self._rng)
                 self.teleport(x, z)
-            c = self.autopilot(self.car) if self.autopilot else self.controls(self._dt)
+            c = self.autopilot(self.car) if self.autopilot else self.road_help(self.controls(self._dt))
+            if getattr(self, "sinking", None) is not None:  # under water the engine is cut and the wheels held
+                c = Controls(0.0, 1.0, 0.0, True)
             walls = self.walls.near(self.car.x, self.car.z, self.car.y)
             if self.layer:
                 walls = np.concatenate([walls.reshape(-1, 2, 2), self.layer.boxes_near(self.car.x, self.car.z)])
+            # the physics checks its walls in every 1/120 s step: hand it only those this frame can reach
+            walls = around(walls, self.car.x, self.car.z, WALL_REACH + 2 * abs(self.car.speed) * self._dt)
             self._before = self.car
             t0 = time.perf_counter()
-            self.car = self.driven.step(c, self._dt, walls, self.strengths())
+            self.car = self.driven.step(c, self._dt, walls, self.strengths(), self._crashes().controls())
+            if self.help and self.car.telemetry is not None:
+                self.car.telemetry.setdefault("lit", {}).update(self.help.lit)
             self.physics_ms = (time.perf_counter() - t0) * 1000
             self.km += math.hypot(self.car.x - self._before.x, self.car.z - self._before.z) / 1000
+            self._at_sea(self._dt)
         # manifoldx turns +x toward -z for a positive yaw; the game turns it toward +z.
         pose = self.driven.pose()
+        if getattr(self, "sinking", None) is not None:
+            pose["at"], pose["rotation"] = sea.sunk(pose["at"], pose["rotation"], self.sinking)
         if self.mode == "aim":  # the photographer stepped out: the camera stands where the car's roof would be
             pose["at"] = (pose["at"][0], pose["at"][1] - 1000.0, pose["at"][2])
         place_car(self.handles, self.model, **pose)
@@ -743,9 +877,16 @@ class Game:
         ground = float(self.surface.height(np.array([self.car.x]), np.array([self.car.z]), near=self.car.y)[0])
         self.shadow.transform.pos = (self.car.x, ground + SHADOW_LIFT, self.car.z)
         self.shadow.transform.rot = (0.0, float(np.sin(half)), 0.0, float(np.cos(half)))
+        captured = self.mode == "drive" and not self.camera_override  # the mouse turns the camera while driving
+        if inp.pointer_captured != captured:
+            inp.capture_pointer(captured)
+        if self.flight is not None and self.flight.dest is None and (self.mode != "map" or self.map is None):
+            self.flight = None  # the map closed before the flight up reached it
         if self.camera_override:
             eye, target = self.camera_override()
             self.eye, target = np.asarray(eye, float), np.asarray(target, float)
+        elif self.flight is not None:
+            self.eye, target = self._fly()
         elif self.mode == "map" and self.map:
             from contravia import mapview
 
@@ -763,7 +904,16 @@ class Game:
                 left = np.array([-math.sin(yaw), 0.0, math.cos(yaw)]) * GARAGE_SHIFT * dist
                 self.eye, target = self.eye + left, target + left
         else:
-            self.eye, target = chase(self.eye, self.driven.seen(), self._dt, self.surface)
+            seen = self.driven.seen()
+            if self.eye is not self._chased:  # another camera moved the eye: the chase starts from there
+                self.rig, self.mouse_orbit = seen_from(self.eye, seen), Orbit()
+            if inp.pointer_captured:
+                self.mouse_orbit = orbit(self.mouse_orbit, *inp.mouse_delta, seen.speed, self._dt)
+            self.rig, self.eye, target = chase(self.rig, seen, self._dt, self.surface, self.mouse_orbit)
+            if getattr(self, "sinking", None) is not None:  # the camera stays over the water the car sinks in
+                self.eye[1] = max(self.eye[1], WATER_Y + 1.5)
+            self._chased = self.eye
+        self._target = np.asarray(target, float)
         self.o = self._recentre()
         if not self._sea:
             self.base.transform.pos = (float(self.eye[0]), FLAT_BASE_Y, float(self.eye[2]))
@@ -779,8 +929,11 @@ class Game:
         if self.mode == "drive":
             e = self.driven.spec.engine
             self.hud.update(self.car, self.o, (e.idle_rpm, e.peak_power_rpm * 1.15),
-                            loading=bool(getattr(self.engine.state, "cells_waiting", 0)))
+                            loading=bool(getattr(self.engine.state, "cells_waiting", 0)), dt=self._dt)
             self.hud.set_time(self.clock.now(), self.weather_state)
+            help = getattr(self, "help", None)
+            self.hud.set_pilot(pilot_line(help.wanted, help.exit[1] if help.exit else None, self.hud.units)
+                               if help else "")
             self._find_area(now)
             self._find_spot(now)
             self.hud.set_spot(self.spot.title if self.spot else "")
@@ -795,6 +948,30 @@ class Game:
         st.y = round(self.car.y, 1)
         st.grade = round(math.tan(self.car.pitch) * 100, 1)  # percent, positive uphill
         st.frame_ms = round(self.frame_ms, 2)
+
+    def _fly(self) -> tuple[np.ndarray, np.ndarray]:
+        """This frame's (eye, target) on the camera's flight. Going up it ends on the map's pose as it is now;
+        going down it slows near the end while the cells round the destination are not drawn (flight.step), and
+        when it lands the car is put there (_land)."""
+        from contravia import mapview
+
+        f, lifting = self.flight, self._lifting
+        if lifting is not None and (lifting[0] is not f.start or lifting[1]):
+            if lifting[0] is f.start:
+                f = flight.with_lift(f, lifting[1][0])
+            self._lifting = lifting = None
+        end = mapview.pose(self.map) if f.dest is None else None
+        ready = f.dest is None or (self.waiting(f.dest) == 0 and lifting is None)
+        self.flight = flight.step(f, self._dt, ready=ready)
+        eye, target = self.flight.pose(end)
+        eye[1] = max(eye[1], float(np.ravel(self.surface.height(eye[0], eye[2], near=float(target[1])))[0]) + 1.5)
+        if self.flight.done:
+            if self.flight.dest is None:
+                self.flight = None
+            else:
+                self.eye = eye
+                self._land()
+        return eye, target
 
     def _tune(self) -> None:
         """Every TUNE_EVERY frames, trade the streamer's detail for frame time: a median frame over TARGET_MS
@@ -818,9 +995,13 @@ class Game:
         self._tune()
         self.streamer.focus(self.eye[0], self.eye[2], height=max(float(self.eye[1]), 1.0))
         self.detail.radius = 0 if self.streamer.tau >= self.tau_range[1] else 1
-        self.detail.focus(self.car.x, self.car.z)
+        # going down to the map's crosshair, the detail ring builds the cells there from the flight's start
+        self.detail.focus(*(self.flight.dest if self.flight is not None and self.flight.dest else (self.car.x, self.car.z)))
         o = self.city.tree.origin
-        self.forest.update({(o[0] + a, o[1] + b) for L, a, b in self.streamer.drawn() if L == 0}, self.eye)
+        full = {(o[0] + a, o[1] + b) for L, a, b in self.streamer.drawn() if L == 0}
+        self.forest.update(full, self.eye)
+        self.grass.update(full, self.eye, (self.car.x, self.car.z))
+        self.graveyard.update(full, self.eye)
         tiles = self.streamer.stats()
         with self._state_lock:
             st = self.engine.state
@@ -892,10 +1073,12 @@ class Game:
         eye = self.eye - self.o  # these write render-frame positions
         self.atmosphere.apply(self.look, eye)
         self.engine.camera.far = FAR
-        if self.mode == "map" and self.map:  # from high up the horizon is far: push the far plane and the fog out
+        view = flight.view((self.eye, self._target)) if self.flight is not None and self._target is not None \
+            else self.map if self.mode == "map" else None
+        if view:  # from high up the horizon is far: push the far plane and the fog out
             from contravia import mapview
 
-            far, fog = mapview.far_and_fog(self.map)
+            far, fog = mapview.far_and_fog(view)
             self.engine.camera.far = max(FAR, far)
             self.engine.fog_start, self.engine.fog_end = max(self.look.fog[0], fog[0]), max(self.look.fog[1], fog[1])
         self.stars_shown = self.nightsky.update(when, eye, self.look, moon, sun)
@@ -921,16 +1104,13 @@ class Game:
         heading = self.car.yaw
         me = self.layer.locate(x, z, heading)
         obstacles = [(me[0], me[1], me[2] + 2.1, abs(self.car.speed))] if me else []
-        self.layer.update(x, z, dt, obstacles)
+        crashes = self._crashes()
+        self.layer.update(x, z, dt, obstacles + crashes.obstacles(self.layer))
+        crashes.update(self.layer, dt)  # the cars about to be hit get a body; those at rest go back or stay
         cars = self.layer.cars
         xyz, head, pitch = cars.world(self.surface)
-        self.fleet.draw(xyz - self.o, head, pitch, cars.look)
-        # A contact: the player stopped against a traffic car this frame.
-        if len(cars) and abs(before.speed) * 3.6 > 25 and abs(self.car.speed) < abs(before.speed) * 0.5:
-            d = np.hypot(xyz[:, 0] - x, xyz[:, 2] - z)
-            k = int(np.argmin(d))
-            if d[k] < cars.length[k] / 2 + 3.0:
-                self.layer.accident(int(cars.edge[k]), 40.0)
+        bxyz, bhead, bpitch, blook = crashes.poses()
+        self.fleet.draw(np.r_[xyz, bxyz] - self.o, np.r_[head, bhead], np.r_[pitch, bpitch], np.r_[cars.look, blook])
         now = time.perf_counter()
         if now - self._state_at > 0.5:
             self._state_at = now
@@ -948,6 +1128,22 @@ class Game:
                 "fleet_overflow": self.fleet.overflow,
                 "error": self.engine.state.traffic.get("error"),
             })
+
+
+def roofs_near(city, landmarks, x: float, z: float, reach: float) -> tuple[list, list]:
+    """The footprints of the buildings and filler boxes of the cells within reach metres of (x, z), as the cells
+    draw them (clearance.boxes), and the heights of their roofs, parapets included, for flight.clearance."""
+    from contravia.clearance import boxes, roads_around, streets_around
+    from contravia.terrain import seat
+
+    rings, tops = [], []
+    for i in range(int(np.floor((x - reach) / CELL)), int(np.floor((x + reach) / CELL)) + 1):
+        for j in range(int(np.floor((z - reach) / CELL)), int(np.floor((z + reach) / CELL)) + 1):
+            c = landmarks.keep(i, j, city.cell(i, j))
+            for ring, _, p in boxes(c, roads_around(city, i, j), streets_around(city, i, j)):
+                rings.append(ring)
+                tops.append(seat(ring, city.terrain) + p.roof + p.parapet)
+    return rings, tops
 
 
 def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, size=(1280, 720),
@@ -977,6 +1173,11 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
 
     os.environ["HAVANA_DATA"] = os.path.abspath(data)
     engine = mx.Engine("contravia", width=size[0], height=size[1], pipelined=pipelined)
+    # Under contravia dev, saving the region rules or rebuilding a side file reloads like a source save.
+    # hasattr: a dev session started on a manifoldx without engine.watch keeps reloading until restarted.
+    if hasattr(engine, "watch"):
+        engine.watch(os.path.join(os.path.dirname(__file__), "regions.toml"),
+                     os.path.join(os.path.abspath(data), "*.src"))
     clock = Clock(warp=warp) if when == "now" else Clock(at=parse_at(when or "10:00"), warp=warp)
     sky_config = load_sky_config(sky) if sky else None
     look = screen == "map" and height  # then `at` is where the map looks; the car waits at the Capitolio
@@ -1034,7 +1235,7 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     game.tune = False
     game.atmosphere.prepare(wait=True)  # an offline shot waits for the ambient light instead of drawing without it
     t0, n = time.monotonic(), 0
-    while n < frames or (game.waiting() and time.monotonic() - t0 < 300):
+    while n < frames or ((game.waiting() or game.graveyard.waiting()) and time.monotonic() - t0 < 300):
         img = engine.render_frame(supersample=1)
         n += 1
     if place and screen == "card":  # photographed once the city is drawn, as a player would
@@ -1045,6 +1246,8 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     game.streamer.close()
     game.detail.close()
     game.forest.close()
+    game.grass.close()
+    game.graveyard.close()
 
 
 def _player_car():

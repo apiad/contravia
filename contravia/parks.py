@@ -33,6 +33,7 @@ MIN_WIDE = 15.0  # metres: nor one narrower than this
 MAX_BUILDINGS = 3  # an almost empty block has at most this many buildings
 MAX_BUILT = 0.05  # and this share of it built over
 GREEN_SHARE, GREEN_BUILT = 0.5, 0.10  # a block this green in OSM and built under this share is a park anywhere
+SEEN_BUILT = 0.5  # a block the satellite sees at least this share built over is houses OSM lacks, never a park
 OUT_MIN = 10_000.0  # m²: outside the city an empty block is a park only from this size (else OSM just lacks houses)
 PARK_MAX = 200_000.0  # m²: larger faces of the road network are not parks
 PASEO_RATIO, PASEO_WIDE = 4.0, 45.0  # a block at least 4 times as long as wide and at most 45 m wide is a paseo
@@ -55,6 +56,8 @@ NECK = 25.0  # metres: the widest neck a footbridge crosses
 RAYS = 72  # a lake's outline is traced every 5 degrees
 DIRT_W = 2.0  # the organic park's curved paths
 CLUMP_DENSITY = 40.0  # m² per tree inside a clump
+COVERED = 0.5  # a park whose block the drawn street surface covers more than this share of is not laid out
+ON_STREET = 0.05  # m²: a motif whose footprint the street surface overlaps by more than this is left out
 CLARO, CLARO_TREES, CLARO_CLEAR = 7.0, 6.0, 4.0  # claro grid step, and how far it stays from trees and from the rest
 
 
@@ -102,10 +105,11 @@ def frame(poly):
     return r.mean(axis=0), u, np.array([-u[1], u[0]]), L, W
 
 
-def classify(blocks, built, buildings, green, city, boulevard, prado) -> np.ndarray:
+def classify(blocks, built, buildings, green, city, boulevard, prado, seen=None) -> np.ndarray:
     """The kind of each block (polygons) given, per block, the area built over, the number of buildings, the area
     OSM calls green, whether it is in the city's municipios, whether contravia.medians calls it the ground between a
-    boulevard's carriageways, and whether it is the Paseo del Prado's."""
+    boulevard's carriageways, whether it is the Paseo del Prado's and, when known, the share of it the satellite
+    sees built over (contravia.builtup): an empty block the satellite sees built is not a park."""
     out = np.full(len(blocks), NONE)
     for k, poly in enumerate(blocks):
         area = poly.area
@@ -116,6 +120,7 @@ def classify(blocks, built, buildings, green, city, boulevard, prado) -> np.ndar
             continue
         share = built[k] / area
         empty = buildings[k] <= MAX_BUILDINGS and share < MAX_BUILT
+        empty = empty and (seen is None or seen[k] < SEEN_BUILT)
         is_green = green[k] >= GREEN_SHARE * area and share < GREEN_BUILT
         if prado[k]:
             out[k] = PRADO
@@ -614,6 +619,63 @@ def laid(a) -> list[tuple[Park, int]]:
     return [(_LAID[key], int(z)) for key, z in zip(keys, a["park_zone"], strict=True)]
 
 
+class _Streets:
+    """The street surface a city's cells draw (contravia.clearance.cell_streets), as one shape per cell, read once
+    per cell: what a park and its motifs must stay off."""
+
+    def __init__(self, city):
+        self.city, self._cells = city, {}
+
+    def _cell(self, i, j):
+        if (i, j) not in self._cells:
+            from contravia.clearance import cell_streets
+
+            t = cell_streets(self.city, i, j)
+            self._cells[(i, j)] = shapely.union_all(shapely.polygons(t)) if len(t) else Polygon()
+        return self._cells[(i, j)]
+
+    def over(self, bounds):
+        """The street surface over the box (x0, z0, x1, z1), as one shape (empty where there is none)."""
+        from contravia.geo import CELL
+
+        i0, j0, i1, j1 = np.floor(np.asarray(bounds, float) / CELL).astype(int)
+        return shapely.union_all([self._cell(i, j) for i in range(i0, i1 + 1) for j in range(j0, j1 + 1)])
+
+
+def drop_covered(city) -> dict:
+    """Leave out the stored parks whose block the drawn street surface covers more than COVERED of.
+
+    A park is chosen before the street surface exists, and contravia.streets joins an avenue's two carriageways
+    over the strip between them: such a strip is asphalt, not a park, and its benches and lamps would stand in
+    the road. Run after the streets and before the walks, which pave the parks. Returns counts."""
+    a = city.a
+    if "park_kind" not in a or not len(a["park_kind"]) or "street_tris" not in a:
+        return {}
+    verts, starts = np.asarray(a["park_verts"], float), np.asarray(a["park_starts"])
+    rings = [verts[starts[k]:starts[k + 1]] for k in range(len(starts) - 1)]
+    polys = shapely.make_valid(np.array([Polygon(r) for r in rings], dtype=object))
+    streets = _Streets(city)
+    covered = np.array([poly.area > 0 and poly.intersection(streets.over(poly.bounds)).area > COVERED * poly.area
+                        for poly in polys], bool)
+    if covered.any():
+        keep = np.flatnonzero(~covered)
+        sizes = np.diff(starts)[keep]
+        a["park_verts"] = np.concatenate([rings[k] for k in keep]).astype(a["park_verts"].dtype) if len(keep) \
+            else np.zeros((0, 2), a["park_verts"].dtype)
+        a["park_starts"] = np.concatenate([[0], np.cumsum(sizes)]).astype(a["park_starts"].dtype)
+        for name in ("park_kind", "park_zone", "park_seed"):
+            a[name] = np.asarray(a[name])[keep]
+    return {"parks_under_streets": int(covered.sum())}
+
+
+def _footprint(q) -> object:
+    """The ground a motif's triangles and walls stand on: the hull of their x, z."""
+    pts = [np.asarray(q.tris, float).reshape(-1, 3)[:, [0, 2]]]
+    if q.walls:
+        pts.append(np.asarray(q.walls, float)[:, :4].reshape(-1, 2))
+    return shapely.MultiPoint(np.concatenate(pts)).convex_hull
+
+
 def add_to(city) -> dict:
     """Build the motifs of every park stored in a city with walks (contravia.props) and store them per cell as
     park_tris, park_paint and park_walls. Returns counts."""
@@ -635,44 +697,68 @@ def add_to(city) -> dict:
 
     on_plaza = {"glorieta", "fountain", "bust"}
 
+    streets = _Streets(city)
+
     def one(park):
-        """One park's motifs in their own Props, and its counts."""
-        p, c = props.Props(), {"benches": 0, "lakes": 0, "boats": 0, "motifs": 0}
+        """One park's motifs in their own Props, and its counts. A motif whose footprint the drawn street surface
+        overlaps is left out (a lake with its bridge, pier and boats): it would stand in the road."""
+        p, c = props.Props(), {"benches": 0, "lakes": 0, "boats": 0, "motifs": 0, "props_on_streets": 0}
+        spots = [np.array([[x, z] for _, x, z, *_ in park.motifs]).reshape(-1, 2), park.benches[:, :2],
+                 park.lamps[:, :2]]
+        if park.lake is not None:
+            spots.append(np.asarray(park.lake.water.exterior.coords))
+        spots = np.concatenate(spots)
+        if not len(spots):
+            return p, c
+        street = streets.over((*(spots.min(axis=0) - 10), *(spots.max(axis=0) + 10)))
+        shapely.prepare(street)
+
+        def put(draw, *args, foot=None) -> bool:
+            """Add the motif draw(Props, *args) builds, unless its footprint (or `foot`) is on the street."""
+            q = props.Props()
+            draw(q, *args)
+            foot = _footprint(q) if foot is None else foot
+            if street.intersects(foot) and street.intersection(foot).area > ON_STREET:
+                c["props_on_streets"] += 1
+                return False
+            p.tris += q.tris
+            p.paint += q.paint
+            p.walls += q.walls
+            return True
+
         for name, x, z, size, head in park.motifs:
             y = float(top([x, z], PATH_LIFT)[0] if name in on_plaza else ground([x, z])[0])
             if name == "glorieta":
-                props.glorieta(p, (x, z), size, head, y)
+                c["motifs"] += put(props.glorieta, (x, z), size, head, y)
             elif name == "fountain":
-                props.fountain(p, (x, z), size, y)
+                c["motifs"] += put(props.fountain, (x, z), size, y)
             elif name == "bust":
-                props.bust(p, (x, z), head, y)
+                c["motifs"] += put(props.bust, (x, z), head, y)
             else:
-                getattr(props, name)(p, (x, z), head, y)
-            c["motifs"] += 1
+                c["motifs"] += put(getattr(props, name), (x, z), head, y)
         if len(park.benches):
             ys = ground(park.benches[:, :2]) if park.kind in (CITY, ORGANIC) else top(park.benches[:, :2], PATH_LIFT)
             if park.kind == PRADO:
                 ys = top(park.benches[:, :2], KERB)
             for (x, z, face), y in zip(park.benches, ys, strict=True):
-                props.bench(p, (x, z), face, float(y))
-            c["benches"] += len(park.benches)
+                c["benches"] += put(props.bench, (x, z), face, float(y))
         if len(park.lamps):
             lift = KERB if park.kind in (CITY, PASEO, PRADO) else 0.0
             for (x, z, _), y in zip(park.lamps, top(park.lamps[:, :2], lift), strict=True):
-                props.lamp(p, (x, z), float(y))
+                put(props.lamp, (x, z), float(y))
         lk = park.lake
         if lk is not None:
             yw = float(ground(np.asarray(lk.water.exterior.coords)).max()) + 0.05
-            props.lake(p, lk.water, yw)
-            if lk.bridge is not None:
-                ya, yb = ground(np.asarray(lk.bridge)) + PATH_LIFT
-                props.footbridge(p, lk.bridge[0], lk.bridge[1], float(max(ya, yw + 0.45)), float(max(yb, yw + 0.45)))
-            if lk.pier is not None:
-                props.pier(p, lk.pier[0], lk.pier[1], yw)
-            for k, (x, z, head) in enumerate(lk.boats):
-                props.boat(p, (x, z), head, yw, k)
-            c["lakes"] += 1
-            c["boats"] += len(lk.boats)
+            if put(props.lake, lk.water, yw, foot=lk.water.buffer(0.4, join_style="mitre", mitre_limit=2.0)):
+                if lk.bridge is not None:
+                    ya, yb = ground(np.asarray(lk.bridge)) + PATH_LIFT
+                    put(props.footbridge, lk.bridge[0], lk.bridge[1], float(max(ya, yw + 0.45)),
+                        float(max(yb, yw + 0.45)))
+                if lk.pier is not None:
+                    put(props.pier, lk.pier[0], lk.pier[1], yw)
+                for k, (x, z, head) in enumerate(lk.boats):
+                    c["boats"] += put(props.boat, (x, z), head, yw, k)
+                c["lakes"] += 1
         return p, c
 
     # The street height rasters every park needs, painted now: top() paints the missing ones on the thread pool,
@@ -687,7 +773,7 @@ def add_to(city) -> dict:
         p.tris += q.tris
         p.paint += q.paint
         p.walls += q.walls
-    count = {k: sum(c[k] for _, c in done) for k in ("benches", "lakes", "boats", "motifs")}
+    count = {k: sum(c[k] for _, c in done) for k in ("benches", "lakes", "boats", "motifs", "props_on_streets")}
     tris = np.array(p.tris, np.float32).reshape(-1, 3, 3)
     paint = np.array(p.paint, np.uint8)
     walls = np.array(p.walls, np.float32).reshape(-1, 6)

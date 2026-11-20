@@ -3,23 +3,40 @@
 Walls are the edges of every footprint and filler box, and a square round every tree trunk, in the 3x3 cells
 around the car. The boxes come from clearance.boxes, as the cells draw them, so neither holds a box across a
 road; the trees come from rules.trees.cell_trees, as the cells draw them. The landmarks filter both the same
-way and add their own walls, so the car hits exactly what it sees.
+way and add their own walls, so the car hits exactly what it sees. A cemetery (contravia/cemetery.py) adds its
+wall, gate pillars and pantheons, and its raised tombs as low walls: those stop the car within LOW_REACH of it,
+never a line of sight, and a flat slab is no wall at all.
 """
 
 from concurrent.futures import Future, ThreadPoolExecutor
 
 import numpy as np
 
+from contravia import cemetery, regions
 from contravia.citydata import CityData
-from contravia.clearance import boxes, roads_around
+from contravia.clearance import boxes, roads_around, streets_around
 from contravia.geo import CELL
+from contravia.grass import yard_trees
 from contravia.landmarks import cached
 from contravia.rules import trees
+from contravia.shore import of as shore_of
+
+LOW_REACH = 60.0  # metres round the car where the low walls (raised tombs) stop it
+LOW_MOVE = 10.0  # metres the car moves before the low walls round it are picked again
 
 
 def _edges(ring) -> np.ndarray:
     ring = np.asarray(ring, np.float32)
     return np.stack([ring, np.roll(ring, -1, axis=0)], axis=1)
+
+
+def around(walls, x: float, z: float, reach: float) -> np.ndarray:
+    """The (W, 2, 2) segments that pass within reach metres of (x, z)."""
+    walls = np.asarray(walls, float).reshape(-1, 2, 2)
+    a, ab = walls[:, 0], walls[:, 1] - walls[:, 0]
+    rx, rz = x - a[:, 0], z - a[:, 1]
+    t = np.clip((rx * ab[:, 0] + rz * ab[:, 1]) / np.maximum((ab * ab).sum(1), 1e-12), 0.0, 1.0)
+    return walls[np.hypot(rx - ab[:, 0] * t, rz - ab[:, 1] * t) <= reach]
 
 
 class Walls:
@@ -28,23 +45,28 @@ class Walls:
     def __init__(self, city: CityData):
         self.city = city
         self.landmarks = cached(city)
-        self._cache: dict[tuple[int, int], np.ndarray] = {}
+        self._cache: dict[tuple[int, int], tuple[np.ndarray, np.ndarray]] = {}  # cell -> (walls, low walls)
         self._pending: dict[tuple[int, int], Future] = {}  # cells being built ahead of the car
         self._pool = ThreadPoolExecutor(1, thread_name_prefix="walls")
+        self._joined = None  # ((i, j), the 3x3 cells' walls, their structure walls, low walls) for the car's last cell
+        self._low = None  # (x, z, the joined low walls, those within LOW_REACH of x, z)
         r = city.a["roads"]
         self._mid = (r[:, 0:2] + r[:, 2:4]) / 2
         self._yaw = np.arctan2(r[:, 3] - r[:, 1], r[:, 2] - r[:, 0])
         self._open = np.flatnonzero(~self.landmarks.blocked)  # the segments the car may be put on
 
-    def _build(self, i: int, j: int) -> np.ndarray:
-        c = self.landmarks.keep(i, j, self.city.cell(i, j))
+    def _build(self, i: int, j: int) -> tuple[np.ndarray, np.ndarray]:
+        c = regions.current().parks(self.landmarks.keep(i, j, self.city.cell(i, j)))
         near = roads_around(self.city, i, j)
-        rings = [ring for ring, *_ in boxes(c, near)]
+        rings = [ring for ring, *_ in boxes(c, near, streets_around(self.city, i, j))]
         parks = [] if c.park_walls is None else [np.asarray(c.park_walls[:, :4], np.float32).reshape(-1, 2, 2)]
-        grown = trees.cell_trees(i, j, c, self.city.terrain, near, trees.arrays_of(self.city, i, j))
-        return np.concatenate([_edges(r) for r in rings] + [self.landmarks.walls(i, j)] + parks + [trees.trunks(grown)])
+        grown = trees.cell_trees(i, j, c, self.city.terrain, near, trees.arrays_of(self.city, i, j),
+                                 yard_trees(self.city, i, j, self.landmarks), shore_of(self.city))
+        tall, low = cemetery.walls(cemetery.yard(self.city, i, j, self.landmarks))
+        walls = [_edges(r) for r in rings] + [self.landmarks.walls(i, j)] + parks + [trees.trunks(grown), tall]
+        return np.concatenate([np.asarray(w, np.float32).reshape(-1, 2, 2) for w in walls]), low
 
-    def _cell(self, i: int, j: int) -> np.ndarray:
+    def _cell(self, i: int, j: int) -> tuple[np.ndarray, np.ndarray]:
         if (i, j) not in self._cache:
             pending = self._pending.pop((i, j), None)
             self._cache[(i, j)] = pending.result() if pending else self._build(i, j)
@@ -54,20 +76,33 @@ class Walls:
         """The (W, 2, 2) wall segments of the 3x3 cells around (x, z). The ring of cells past them is built
         meanwhile on a thread, so a car crossing into the next cell finds its walls ready. Given the car's
         height y, the walls of bridges and tunnels it is level with join them: a bridge's parapet does not stop
-        a car on the street under it."""
+        a car on the street under it, and so do the low walls (raised tombs) within LOW_REACH."""
         i, j = int(np.floor(x / CELL)), int(np.floor(z / CELL))
-        walls = np.concatenate([self._cell(i + di, j + dj) for di in (-1, 0, 1) for dj in (-1, 0, 1)])
-        if y is not None:
+        if self._joined is None or self._joined[0] != (i, j):  # the car stays in a cell for many frames
+            cells = [self._cell(i + di, j + dj) for di in (-1, 0, 1) for dj in (-1, 0, 1)]
+            walls = np.concatenate([c[0] for c in cells])
+            low = np.concatenate([c[1] for c in cells])
             s = [self.city.cell(i + di, j + dj).struct_walls for di in (-1, 0, 1) for dj in (-1, 0, 1)]
             s = np.concatenate([w for w in s if w is not None] or [np.zeros((0, 6), np.float32)])
+            self._joined = ((i, j), walls, s, low)
+        _, walls, s, low = self._joined
+        if y is not None:
             s = s[(s[:, 4] - 0.5 <= y) & (y <= s[:, 5])]
-            walls = np.concatenate([walls.reshape(-1, 2, 2), s[:, :4].reshape(-1, 2, 2)])
+            walls = np.concatenate([walls.reshape(-1, 2, 2), s[:, :4].reshape(-1, 2, 2), self._low_near(low, x, z)])
         for di in range(-2, 3):
             for dj in range(-2, 3):
                 key = (i + di, j + dj)
                 if key not in self._cache and key not in self._pending:
                     self._pending[key] = self._pool.submit(self._build, *key)
         return walls
+
+    def _low_near(self, low: np.ndarray, x: float, z: float) -> np.ndarray:
+        """The low walls within LOW_REACH of (x, z), picked again when the car has moved LOW_MOVE metres."""
+        if not len(low):
+            return low
+        if self._low is None or self._low[2] is not low or np.hypot(x - self._low[0], z - self._low[1]) > LOW_MOVE:
+            self._low = (x, z, low, around(low, x, z, LOW_REACH + LOW_MOVE))
+        return self._low[3]
 
     def close(self) -> None:
         """Stop building cells ahead."""

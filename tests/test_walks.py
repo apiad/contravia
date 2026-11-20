@@ -127,3 +127,25 @@ def test_a_wheel_rolls_up_a_bevelled_kerb():
     y = s.height(x, np.full(len(x), 30.0))
     assert abs(y[0]) < 1e-3 and abs(y[-1] - walks.KERB) < 1e-3
     assert np.diff(y).min() > -1e-4 and np.diff(y).max() < 0.01  # a ramp no steeper than 1:1, not a step
+
+
+def test_a_seam_between_a_junction_and_its_street_raises_no_strip():
+    """The street surface is a junction's plate and its streets' ribbons, triangulated apart: where they meet, their
+    edges can miss each other by a millimetre. That seam is not land, so no pavement rises across the street there."""
+    a = _arrays([_box(x, z, 38) for x in (8, 52) for z in (8, 52)])
+    plates = [shapely.box(x - STREET / 2, z - STREET / 2, x + STREET / 2, z + STREET / 2) for x in (0, 100) for z in (0, 100)]
+    ribbons = shapely.difference(shapely.unary_union([LineString(((-20, z), (120, z))).buffer(STREET / 2, cap_style="flat")
+                                                      for z in (0, 100)] +
+                                                     [LineString(((x, -20), (x, 120))).buffer(STREET / 2, cap_style="flat")
+                                                      for x in (0, 100)]),
+                                 shapely.unary_union([p.buffer(0.002, join_style="mitre") for p in plates]))
+    t = shapely.get_coordinates(shapely.constrained_delaunay_triangles(
+        shapely.GeometryCollection([*plates, ribbons]))).reshape(-1, 4, 2)[:, :3]
+    a["street_tris"] = np.stack([t[:, :, 0], np.zeros(t.shape[:2]), t[:, :, 1]], axis=2).astype(np.float32)
+    a["street_tris_offsets"] = np.array([0, len(t)])
+    tris, paint, _, report = walks.build(a, Terrain.flat())
+    assert report["dense_blocks"] == 1
+    s = _surface(a, tris, paint, Terrain.flat())
+    z = np.arange(80.0, 120.0, 0.05)  # straight through the junction at (0, 100), in the lane at x = 2
+    y = s.height(np.full(len(z), 2.0), z)
+    assert np.abs(np.diff(y)).max() < 0.005 and np.abs(y).max() < 0.005

@@ -192,3 +192,19 @@ def test_a_winding_street_on_a_slope_stands_at_lift_over_the_ground_all_along():
     p = tris.reshape(-1, 3).astype(float)
     over = p[:, 1] - t.height(p[:, 0], p[:, 2])
     assert over.min() > 0 and over.max() < 2 * LIFT   # on a bend the outer kerb reads the slope a little off
+
+
+def test_a_wheel_rolls_over_a_crack_between_two_pieces_but_not_over_a_gap():
+    """A junction's plate and a ribbon, each simplified and snapped to the grid apart, can miss each other by a few
+    millimetres: a wheel crosses that crack on the street, as the eye does, instead of dropping LIFT onto the ground."""
+    def slab(x0, x1):
+        return np.array([[[x0, LIFT, 0], [x1, LIFT, 0], [x1, LIFT, 6]], [[x0, LIFT, 0], [x1, LIFT, 6], [x0, LIFT, 6]]])
+
+    for gap, falls in ((0.006, False), (0.5, True)):
+        tris = np.concatenate([slab(0.0, 10.0), slab(10.0 + gap, 20.0)]).astype(np.float32)
+        city = CityData.from_features(np.zeros((0, 5)), [], np.zeros(0), [], np.zeros(0), np.zeros((0, 2)), Terrain.flat())
+        city.add_kind("street_tris", tris, np.zeros((len(tris), 2), int))
+        city.add_kind("street_edges", np.zeros((0, 2, 3)), np.zeros((0, 2), int))
+        x = np.arange(9.0, 11.5, 0.001)
+        y = Surface(city, Terrain.flat()).height(x, np.full(len(x), 3.0))
+        assert (y.min() < LIFT / 2) == falls, gap

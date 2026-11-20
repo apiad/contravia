@@ -52,6 +52,34 @@ def _portal(mb, p0, p1, out, base, ground, bays, color, kind, seed) -> None:
                    [(nn[0], 0.0, nn[1])] * 4, soffit, [(0, 1, 2), (0, 2, 3)])
 
 
+def _walls(mb, p0, p1, out, bays, bands, top, color, low, kind, seed) -> None:
+    """The walls of edges p0 to p1 (E, 2) facing out, in one MeshBuilder.add: per edge each band (from, to,
+    (floor from, floor to)) with its facade, then the parapet from the last band's top to top and its inner
+    face in the low shade."""
+    roof = bands[-1][1]
+    e, rows = len(p0), len(bands) + 2
+    lo = np.array([b[0] for b in bands] + [roof, roof])
+    hi = np.array([b[1] for b in bands] + [top, top])
+    x = np.stack([p0[:, 0], p1[:, 0], p1[:, 0], p0[:, 0]], 1)[:, None]  # (E, 1, 4)
+    z = np.stack([p0[:, 1], p1[:, 1], p1[:, 1], p0[:, 1]], 1)[:, None]
+    y = np.stack([lo, lo, hi, hi], 1)[None]  # (1, rows, 4)
+    pos = np.stack(np.broadcast_arrays(x, y, z), -1)  # (E, rows, 4, 3)
+    side = np.array([1.0] * (rows - 1) + [-1.0])
+    o = out[:, None, None, :] * side[None, :, None, None]  # (E, rows, 1, 2)
+    n = np.stack([o[..., 0], np.zeros(o.shape[:-1]), o[..., 1]], -1)
+    col = np.where((side > 0)[None, :, None, None], color, low)
+    fac = np.zeros((e, rows, 4, 4))
+    for r, (_, _, (f0, f1)) in enumerate(bands):
+        fac[:, r, :, 0] = bays[:, None] * (0, 1, 1, 0)
+        fac[:, r, :, 1] = (f0, f0, f1, f1)
+    fac[:, :-2, :, 2], fac[:, :-2, :, 3] = kind, seed
+    quad = np.array([[[0, 1, 2], [0, 2, 3]]] * (rows - 1) + [[[0, 2, 1], [0, 3, 2]]])
+    tris = (np.arange(e * rows)[:, None, None] * 4 + np.tile(quad, (e, 1, 1))).reshape(-1, 3)
+    shape = (e * rows * 4, -1)
+    mb.add(pos.reshape(shape), np.broadcast_to(n, pos.shape).reshape(shape),
+           np.broadcast_to(col, pos.shape).reshape(shape), tris, fac.reshape(shape))
+
+
 def box(mb, ring: np.ndarray, osm_id: int, base: float = 0.0, plan: facades.Plan | None = None,
         portals=None) -> bool:
     """Add a footprint's massing from base up: walls to the parapet, the parapet's inner face and a flat
@@ -62,33 +90,31 @@ def box(mb, ring: np.ndarray, osm_id: int, base: float = 0.0, plan: facades.Plan
     color, low = p.color, tuple(c * GROUND_SHADE for c in p.color)
     ground, roof, top = base + min(p.ground, p.roof), base + p.roof, base + p.height
     kind, seed = facades.SHADER_TYPE[p.type], (abs(int(osm_id)) * 0.6180339887) % 1.0
-    ccw = signed_area(ring) > 0
-    for k in range(len(ring)):
-        (x0, z0), (x1, z1) = ring[k], ring[(k + 1) % len(ring)]
-        d = np.array([x1 - x0, z1 - z0])
-        length = np.hypot(*d)
-        if length < 1e-6:
+    ends = np.roll(ring, -1, axis=0)
+    d = ends - ring
+    length = np.hypot(d[:, 0], d[:, 1])
+    edges = np.nonzero(length >= 1e-6)[0]
+    out = np.stack([d[edges, 1], -d[edges, 0]], 1) / length[edges, None]  # outside a counter-clockwise ring
+    if signed_area(ring) <= 0:
+        out = -out
+    bays = np.maximum(1, np.round(length[edges] / p.bay))  # whole bays, so windows sit centred on the wall
+    portal = np.zeros(len(edges), bool)
+    if portals is not None and p.portal and roof > ground:
+        portal = np.asarray(portals, bool)[edges]
+    bands = [(ground, roof, (1, p.storeys))] if roof > ground else []
+    run = []
+    for e in range(len(edges) + 1):  # the walls between portals in one add each, in the edges' order
+        if e < len(edges) and not portal[e]:
+            run.append(e)
             continue
-        out = np.array([d[1], -d[0]]) / length  # the right-hand side is outside a counter-clockwise ring
-        if not ccw:
-            out = -out
-        n, inner = (out[0], 0.0, out[1]), (-out[0], 0.0, -out[1])
-        bays = max(1, round(length / p.bay))  # whole bays, so windows sit centred on the wall
-        if portals is not None and portals[k] and p.portal and roof > ground:
-            _portal(mb, np.array([x0, z0]), np.array([x1, z1]), out, base, ground, bays, color, kind, seed)
-        else:
-            mb.add([(x0, base, z0), (x1, base, z1), (x1, ground, z1), (x0, ground, z0)], [n] * 4, color,
-                   [(0, 1, 2), (0, 2, 3)], [(0, 0, kind, seed), (bays, 0, kind, seed), (bays, 1, kind, seed),
-                                            (0, 1, kind, seed)])
-        if roof > ground:
-            up = p.storeys
-            mb.add([(x0, ground, z0), (x1, ground, z1), (x1, roof, z1), (x0, roof, z0)], [n] * 4, color,
-                   [(0, 1, 2), (0, 2, 3)], [(0, 1, kind, seed), (bays, 1, kind, seed), (bays, up, kind, seed),
-                                            (0, up, kind, seed)])
-        mb.add([(x0, roof, z0), (x1, roof, z1), (x1, top, z1), (x0, top, z0)], [n] * 4, color,
-               [(0, 1, 2), (0, 2, 3)])
-        mb.add([(x0, roof, z0), (x1, roof, z1), (x1, top, z1), (x0, top, z0)], [inner] * 4, low,
-               [(0, 2, 1), (0, 3, 2)])
+        if run:
+            _walls(mb, ring[edges[run]], ends[edges[run]], out[run], bays[run],
+                   [(base, ground, (0, 1)), *bands], top, color, low, kind, seed)
+            run = []
+        if e < len(edges):
+            k = edges[e]
+            _portal(mb, ring[k], ends[k], out[e], base, ground, int(bays[e]), color, kind, seed)
+            _walls(mb, ring[[k]], ends[[k]], out[[e]], bays[[e]], bands, top, color, low, kind, seed)
     try:
         tris = triangulate(ring)
     except ValueError:
