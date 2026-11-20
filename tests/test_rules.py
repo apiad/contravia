@@ -104,6 +104,26 @@ def test_a_skirt_drops_to_the_ground_on_the_low_side_only():
     assert np.isclose(sk[:, 1].min(), t.height(0, -4.0), atol=1e-3)         # down to the ground
 
 
+def test_asphalt_and_ground_carry_the_detail_surfaces_and_nothing_else_does():
+    from manifoldx.resources import DETAIL_ASPHALT, DETAIL_GROUND
+
+    from contravia.rules.ground import ground
+
+    t, mb = cross(), MeshBuilder()
+    roads.ribbon(mb, np.array([[0, 0, 35, 0, 8]], np.float32), t)
+    md = mb.to_meshdata(0, 0)
+    road = np.all(np.isclose(md.colors, roads.ROAD), axis=1)
+    assert (md.surfaces[road] == DETAIL_ASPHALT).all() and (md.surfaces[~road] == 0).all()  # skirts stay plain
+    tri = np.array([[[0, 0.2, 0], [4, 0.2, 0], [0, 0.2, 4]]])
+    mb = MeshBuilder()
+    roads.streets(mb, tri, np.zeros((0, 2, 3)), Terrain.flat(), marks=tri + (0, 0.01, 0))
+    md = mb.to_meshdata(0, 0)
+    assert md.surfaces.tolist() == [DETAIL_ASPHALT] * 3 + [0] * 3                # the paint stays plain
+    mb = MeshBuilder()
+    ground(mb, 0, 0, Terrain.flat())
+    assert (mb.to_meshdata(0, 0).surfaces == DETAIL_GROUND).all()
+
+
 def test_neighbouring_cells_share_their_ground_edge():
     from contravia.rules.ground import N, ground
 

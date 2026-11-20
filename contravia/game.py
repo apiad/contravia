@@ -95,10 +95,16 @@ class Game:
         self._dt = 0.0
         self.stars_shown = 0
         engine.camera.far = FAR
+        from manifoldx.resources import StandardMaterial
+
+        # detail: the cells' asphalt and ground (surfaces DETAIL_ASPHALT and DETAIL_GROUND) get wear, grain and
+        # tufts from noise in the shader up close; the summaries' surfaces are 0 and stay flat.
         self.streamer = QuadStreamer(engine, CELL, city.tree.origin, LEVELS, city.exists, build_node,
                                      error=lambda L: CELL * 2**L / 16, workers="process", tau=TAU[0],
                                      builders=max(1, min(3, (os.cpu_count() or 2) - 1)), warm=warm,
-                                     crossfade=0.3)  # a level of detail fades into the next, it never pops
+                                     crossfade=0.3,  # a level of detail fades into the next, it never pops
+                                     material=StandardMaterial("#ffffff", roughness=0.9, vertex_colors=True,
+                                                               faded=True, detail=True))
         # The detail ring: cornices, balconies, sills and roof tanks in the 3 x 3 cells around the car, drawn over
         # the massing (rules/detail.py). It narrows to the car's own cell when the frame time pushes tau to its top.
         self.detail = Streamer(engine, CELL, build_detail, radius=1, ready_radius=2, workers="process", warm=warm)

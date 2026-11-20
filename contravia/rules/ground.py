@@ -9,6 +9,7 @@ ground dips under it.
 """
 
 import numpy as np
+from manifoldx.resources import DETAIL_GROUND
 
 from contravia.geo import CELL
 from contravia.rules.noise import fbm
@@ -52,7 +53,8 @@ def grass(x, z, slope) -> np.ndarray:
 
 
 def ground(mb, i: int, j: int, terrain, cuts=None, shore=None) -> None:
-    """Add the ground grid of cell (i, j), cut along the edges of the (C, 3, 2) cuts of streets below it. A cell
+    """Add the ground grid of cell (i, j), cut along the edges of the (C, 3, 2) cuts of streets below it, as
+    surface DETAIL_GROUND: a manifoldx material with detail=True mottles it with grass, soil and tufts up close. A cell
     near the sea, when shore (a contravia.shore.Shore) is given, draws its shore's finer grid instead
     (rules/shore.py): sand, rock, cliffs or mud down to the water and a band of shallows over it."""
     f = shore.field(i, j) if shore is not None else None
@@ -72,7 +74,7 @@ def ground(mb, i: int, j: int, terrain, cuts=None, shore=None) -> None:
     n /= np.linalg.norm(n, axis=1, keepdims=True)
     if relief(terrain):  # a square wholly under SEA is sea: the water shows there
         tris = tris[(y[tris] >= SEA).any(axis=1)]
-    mb.add(np.stack([x, y, z], axis=1), n, grass(x, z, np.hypot(dx, dz)), tris)
+    mb.add(np.stack([x, y, z], axis=1), n, grass(x, z, np.hypot(dx, dz)), tris, surface=DETAIL_GROUND)
 
 
 def _cut(x, z, tris, cuts):
