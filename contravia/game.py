@@ -393,6 +393,15 @@ class Game:
                 "eye": self.eye.tolist() if hasattr(self, "eye") else [self.car.x, self.car.y + 3.0, self.car.z],
                 "driven": self.driven.snapshot()}
 
+    def _crashes(self):
+        """The traffic cars with a body, in the fleet of the car driven now (a new car starts with none)."""
+        from contravia.crashes import Crashes
+
+        c = getattr(self, "crashes", None)
+        if c is None or c.driven is not self.driven:
+            c = self.crashes = Crashes(self.driven)
+        return c
+
     def strengths(self):
         """The assists' strengths from the realism option."""
         from manifoldx.vehicles import strengths_for
@@ -734,7 +743,7 @@ class Game:
             walls = around(walls, self.car.x, self.car.z, WALL_REACH + 2 * abs(self.car.speed) * self._dt)
             self._before = self.car
             t0 = time.perf_counter()
-            self.car = self.driven.step(c, self._dt, walls, self.strengths())
+            self.car = self.driven.step(c, self._dt, walls, self.strengths(), self._crashes().controls())
             self.physics_ms = (time.perf_counter() - t0) * 1000
             self.km += math.hypot(self.car.x - self._before.x, self.car.z - self._before.z) / 1000
         # manifoldx turns +x toward -z for a positive yaw; the game turns it toward +z.
@@ -924,16 +933,13 @@ class Game:
         heading = self.car.yaw
         me = self.layer.locate(x, z, heading)
         obstacles = [(me[0], me[1], me[2] + 2.1, abs(self.car.speed))] if me else []
-        self.layer.update(x, z, dt, obstacles)
+        crashes = self._crashes()
+        self.layer.update(x, z, dt, obstacles + crashes.obstacles(self.layer))
+        crashes.update(self.layer, dt)  # the cars about to be hit get a body; those at rest go back or stay
         cars = self.layer.cars
         xyz, head, pitch = cars.world(self.surface)
-        self.fleet.draw(xyz - self.o, head, pitch, cars.look)
-        # A contact: the player stopped against a traffic car this frame.
-        if len(cars) and abs(before.speed) * 3.6 > 25 and abs(self.car.speed) < abs(before.speed) * 0.5:
-            d = np.hypot(xyz[:, 0] - x, xyz[:, 2] - z)
-            k = int(np.argmin(d))
-            if d[k] < cars.length[k] / 2 + 3.0:
-                self.layer.accident(int(cars.edge[k]), 40.0)
+        bxyz, bhead, bpitch, blook = crashes.poses()
+        self.fleet.draw(np.r_[xyz, bxyz] - self.o, np.r_[head, bhead], np.r_[pitch, bpitch], np.r_[cars.look, blook])
         now = time.perf_counter()
         if now - self._state_at > 0.5:
             self._state_at = now

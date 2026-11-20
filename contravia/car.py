@@ -103,10 +103,12 @@ class Driven:
         self.state = self._read()
         return self.state
 
-    def step(self, c: Controls, dt: float, walls: np.ndarray, strengths=None) -> CarState:
+    def step(self, c: Controls, dt: float, walls: np.ndarray, strengths=None, others=None) -> CarState:
         """Advance by a frame of dt seconds under the controls, against walls (W, 2, 2), with the assists'
-        strengths (None: no assists)."""
+        strengths (None: no assists). others: (K, 4) controls of the fleet's other vehicles, the crashed traffic."""
         controls = np.array([[c.steer, c.throttle, c.brake, float(c.handbrake)]])
+        if others is not None and len(others):
+            controls = np.vstack([controls, others])
         self.fleet.advance(controls, self.ground, np.asarray(walls, float).reshape(-1, 2, 2), dt, strengths)
         self.state = self._read()
         return self.state
