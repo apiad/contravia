@@ -34,7 +34,7 @@ from contravia.kept import kept, source
 from contravia.quadtree import LEVELS
 from contravia.rules.ground import GROUND, WATER_Y, relief
 from contravia.surface import Surface
-from contravia.walls import Walls
+from contravia.walls import Walls, around
 from contravia.world import World
 
 TAU = (12.0, 48.0)  # the streamer's screen error in pixels: the finest it may draw and the coarsest
@@ -43,6 +43,7 @@ TUNE_EVERY = 60  # frames between two tunings, over whose median frame time
 PHOTO_SIZE = (1280, 720)  # pixels of the player's photo of a place
 FAR = 15000.0  # the camera's far plane: past the clear-weather fog's end
 RECENTRE = 2000.0  # metres from the engine's origin before it moves to the camera
+WALL_REACH = 15.0  # m: past the half-diagonal of the longest vehicle the player drives, a bus's
 BASE = 40_000.0  # side of the plain ground under everything with flat data, so empty cells show ground, not sky
 BASE_Y = WATER_Y  # sea level, a little up: the ground under SEA is not drawn, so the water shows there
 SEA_TILE = 1000.0  # metres: the side of the squares the sea is laid in when it has holes
@@ -729,6 +730,8 @@ class Game:
             walls = self.walls.near(self.car.x, self.car.z, self.car.y)
             if self.layer:
                 walls = np.concatenate([walls.reshape(-1, 2, 2), self.layer.boxes_near(self.car.x, self.car.z)])
+            # the physics checks its walls in every 1/120 s step: hand it only those this frame can reach
+            walls = around(walls, self.car.x, self.car.z, WALL_REACH + 2 * abs(self.car.speed) * self._dt)
             self._before = self.car
             t0 = time.perf_counter()
             self.car = self.driven.step(c, self._dt, walls, self.strengths())
