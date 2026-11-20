@@ -166,8 +166,9 @@ def yard_trees(city, i: int, j: int, landmarks=None) -> np.ndarray:
     """(N, 2) the trees of a built cell's yards and lots: about one per YARD_STEP square in YARD_SHARE of them,
     jittered and seeded from the cell, on open ground off its green and laid parks (which grow their own trees),
     HOUSE_CLEAR metres off every house and landmark, TREE_CLEAR off pavements and streets and WILD_CLEAR off a
-    road's edge. A cell with no buildings or filler houses has none: it grows wild trees instead."""
-    c = city.cell(i, j)
+    road's edge. A cell with no buildings or filler houses has none: it grows wild trees instead. A building a
+    landmark replaces does not count, as cell_trees sees the cell the landmarks keep."""
+    c = city.cell(i, j) if landmarks is None else landmarks.keep(i, j, city.cell(i, j))
     if not (len(c.buildings) or len(c.fillers)):
         return np.zeros((0, 2))
     rng = np.random.default_rng(abs(i * 1_000_003 + j) + 29)
