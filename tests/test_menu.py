@@ -171,6 +171,29 @@ def test_the_map_opens_from_the_pause_and_the_main_menu_and_drives_at_its_crossh
     game.detail.close()
 
 
+def test_the_map_screen_opens_as_the_shot_path_opens_it(city_npz, tmp_path, monkeypatch):
+    import math
+
+    import manifoldx as mx
+
+    from contravia import mapview
+    from contravia.game import Game
+    from contravia.menu import Menu
+    from contravia.world import World
+
+    monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path))
+    engine = mx.Engine("map", width=64, height=48)
+    game = Game(engine, World.load(str(city_npz)), at=(0.0, 0.0), clock=Clock(at=parse_at("Tue 10:00")))
+    game.map = mapview.zoom(mapview.MapCam(0.0, 0.0, 1.0, math.radians(30.0)), 2500.0)  # --height 2500 --yaw 30
+    menu = Menu(engine, game, FreeDrive.from_flags(when="Tue 10:00"), Options.load(), screen=None)
+    engine.on("startup")(lambda _=None: (menu.pause(), menu.show("map")))  # as main() opens --screen map
+    for _ in range(3):
+        engine.render_frame(supersample=1, dt=0.05)
+    assert menu.current == "map" and game.flight is None and game.map.h == pytest.approx(2500.0)
+    game.streamer.close()
+    game.detail.close()
+
+
 def _fly(engine, game, frames=200):
     """Render frames until the camera's flight lands."""
     for _ in range(frames):

@@ -94,3 +94,70 @@ def test_view_follows_the_eye_height_for_far_and_fog():
     high = flight.view(mapview.pose(mapview.MapCam(0.0, 0.0, 5000.0, 0.0)))
     assert high.h == pytest.approx(5000.0)
     assert mapview.far_and_fog(low)[0] < mapview.far_and_fog(high)[0]
+
+
+def _street_between_houses():
+    """A street running north-south on a 60 m high plateau, with 25 m houses close on both sides of it."""
+    from contravia.citydata import CityData
+    from contravia.surface import Surface
+    from contravia.terrain import Terrain
+
+    t = Terrain(np.full((101, 101), 60.0), (-1000.0, -1000.0), (20.0, 20.0), fade=40.0)
+    road = np.array([[0.0, -400.0, 0.0, 400.0, 10.0]], np.float32)
+    rings, tops = [], []
+    for z in range(-300, 300, 24):
+        for x0, x1 in ((8.0, 60.0), (-60.0, -8.0)):
+            rings.append(np.array([[x0, z], [x1, z], [x1, z + 20.0], [x0, z + 20.0]]))
+            tops.append(60.0 + 25.0)
+    city = CityData.from_features(road, [], np.zeros(0), [], np.zeros(0), np.zeros((0, 2)), t)
+    return Surface(city, t), rings, tops
+
+
+def _hits(poses, surface, rings, tops):
+    """The eyes of a flight that stand below the street or the ground, or inside a house under its roof."""
+    import shapely
+
+    houses = [shapely.Polygon(r) for r in rings]
+    bad = []
+    for eye, _ in poses:
+        x, y, z = (float(v) for v in eye)
+        if y < float(surface.height(x, z)[0]) + 1.0:
+            bad.append(("below the street", round(x), round(y), round(z)))
+        for house, top in zip(houses, tops, strict=True):
+            if y < top and house.contains(shapely.Point(x, z)):
+                bad.append(("in a house", round(x), round(y), round(z)))
+    return bad
+
+
+@pytest.mark.parametrize("turn", [math.pi, math.radians(170), math.radians(-150)])
+def test_a_wide_turn_flies_over_the_houses_and_never_under_the_street(turn):
+    from contravia.car import settle
+
+    surface, rings, tops = _street_between_houses()
+    clear = flight.clearance(surface, rings, tops)
+    cam = mapview.MapCam(0.0, 0.0, flight.UP_H, 0.0)  # looks north, along -z
+    look = math.atan2(-1.0, 0.0) + turn  # the car's heading, turned that far from the map's
+    car = settle(CarState(0.0, 0.0, look, 0.0, y=0.0), surface)
+    _, eye, target = chase(None, car, 0.0, surface)
+    down, _ = _fly(flight.down(mapview.pose(cam), (eye, target), (0.0, 0.0), clear))
+    assert np.allclose(down[-1][0], eye) and np.allclose(down[-1][1], target)
+    assert _hits(down, surface, rings, tops) == []
+    up_end = mapview.pose(cam)
+    up, _ = _fly(flight.up((eye, target), up_end, clear), end=up_end)
+    assert np.allclose(up[0][0], eye) and np.allclose(up[-1][0], up_end[0])
+    assert _hits(up, surface, rings, tops) == []
+
+
+def test_a_lift_found_late_eases_in_from_where_the_flight_is():
+    surface, rings, tops = _street_between_houses()
+    start = mapview.pose(mapview.MapCam(0.0, 0.0, flight.UP_H, 0.0))
+    _, eye, target = chase(None, CarState(0.0, 0.0, 0.3, 0.0, y=61.0), 0.0)
+    f = flight.down(start, (eye, target), (0.0, 0.0))
+    while f.s < 0.3:
+        f = flight.step(f, 1 / 60)
+    lift = flight.lift_for(f, flight.clearance(surface, rings, tops))
+    assert lift  # this heading looks across the houses: the low part needs lifting
+    late = flight.with_lift(f, lift)
+    assert np.allclose(late.pose()[0], f.pose()[0])  # no jump where it arrives
+    poses, _ = _fly(late)
+    assert _hits(poses, surface, rings, tops) == []

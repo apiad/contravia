@@ -151,6 +151,7 @@ class Game:
         self.photo = None  # the photo mode's and the Garaje's camera around the car: (yaw, pitch, distance)
         self.map = None  # the map's camera, a contravia.mapview.MapCam, while the map shows
         self.flight = None  # the camera's flight between the street and the map (contravia/flight.py), while it flies
+        self._lifting = None  # (the flight's start, [its lift once a thread found it]) (_lift_flight)
         self._target = None  # the point the camera looked at last frame
         self.km, self.area, self._area_at = 0.0, "", 0.0
         self.address = ("", "", "")
@@ -525,6 +526,7 @@ class Game:
         if from_game:
             self.map = mapview.MapCam(self.car.x, self.car.z, flight.UP_H, 0.0)
             self.flight = flight.up((self.eye.copy(), self._target.copy()), mapview.pose(self.map))
+            self._lift_flight(self.car.x, self.car.z, mapview.pose(self.map))
         self.map = self.map or mapview.MapCam(self.car.x, self.car.z, 2500.0, 0.0)
 
     def drive_to(self, p: collect.Place) -> str | None:
@@ -547,8 +549,22 @@ class Game:
         x, z, yaw = found
         _, eye, target = chase(None, settle(CarState(x, z, yaw, 0.0, y=0.0), self.surface), 0.0, self.surface)
         self.flight = flight.down(mapview.pose(self.map), (eye, target), (x, z))
+        self._lift_flight(x, z)
         self.map = None
         return None
+
+    def _lift_flight(self, x: float, z: float, end=None) -> None:
+        """Find, on a thread, how the flight just started must look down more steeply to keep over the roofs, the
+        streets and the ground within flight.TURN_D of (x, z), where it flies low; _fly gives it to the flight
+        when it is in, and a descent does not land before."""
+        f, got = self.flight, []
+
+        def work():
+            rings, tops = roofs_near(self.city, self.walls.landmarks, x, z, flight.TURN_D)
+            got.append(flight.lift_for(f, flight.clearance(self.surface, rings, tops), end))
+
+        self._lifting = (f.start, got)
+        threading.Thread(target=work, name="flight-lift", daemon=True).start()
 
     def _land(self) -> None:
         """The flight down landed: the car on its road and driving, the chase camera on from the flight's eye."""
@@ -888,9 +904,14 @@ class Game:
         when it lands the car is put there (_land)."""
         from contravia import mapview
 
-        f = self.flight
+        f, lifting = self.flight, self._lifting
+        if lifting is not None and (lifting[0] is not f.start or lifting[1]):
+            if lifting[0] is f.start:
+                f = flight.with_lift(f, lifting[1][0])
+            self._lifting = lifting = None
         end = mapview.pose(self.map) if f.dest is None else None
-        self.flight = flight.step(f, self._dt, ready=f.dest is None or self.waiting(f.dest) == 0)
+        ready = f.dest is None or (self.waiting(f.dest) == 0 and lifting is None)
+        self.flight = flight.step(f, self._dt, ready=ready)
         eye, target = self.flight.pose(end)
         eye[1] = max(eye[1], float(np.ravel(self.surface.height(eye[0], eye[2], near=float(target[1])))[0]) + 1.5)
         if self.flight.done:
@@ -1055,6 +1076,22 @@ class Game:
                 "fleet_overflow": self.fleet.overflow,
                 "error": self.engine.state.traffic.get("error"),
             })
+
+
+def roofs_near(city, landmarks, x: float, z: float, reach: float) -> tuple[list, list]:
+    """The footprints of the buildings and filler boxes of the cells within reach metres of (x, z), as the cells
+    draw them (clearance.boxes), and the heights of their roofs, parapets included, for flight.clearance."""
+    from contravia.clearance import boxes, roads_around, streets_around
+    from contravia.terrain import seat
+
+    rings, tops = [], []
+    for i in range(int(np.floor((x - reach) / CELL)), int(np.floor((x + reach) / CELL)) + 1):
+        for j in range(int(np.floor((z - reach) / CELL)), int(np.floor((z + reach) / CELL)) + 1):
+            c = landmarks.keep(i, j, city.cell(i, j))
+            for ring, _, p in boxes(c, roads_around(city, i, j), streets_around(city, i, j)):
+                rings.append(ring)
+                tops.append(seat(ring, city.terrain) + p.roof + p.parapet)
+    return rings, tops
 
 
 def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, size=(1280, 720),
