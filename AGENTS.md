@@ -51,6 +51,9 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   height within 4 m of anything built. The wheels and the trees stand on the same grid. OSM's features are kept in
   `shore.src` beside `coast.src` (3 MB): `contravia shore <pbf> --out data/cuba` writes it into a built island
   without rebuilding it, and `prepare` and `source` write it with the coast.
+- A car driven into the sea sinks and comes back on the shore (`contravia/sea.py`): over the sea the wheels stand
+  on a floor that goes down past the shallows (`Shore.floor`), under 0.7 m of water the car sinks for 2 s and at
+  2.6 s stands, stopped, on the nearest dry road within 300 m or else the nearest dry land, facing inland.
 - What changes by place is in `contravia/regions.toml` (`contravia/regions.py`, spec
   `docs/superpowers/specs/2026-11-20-regions-design.html`), applied when a cell opens: the municipio rules of
   buildings, Guanabacoa's two storeys, and cemeteries (`landuse=cemetery`) with no filler houses and no laid parks.
