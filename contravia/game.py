@@ -22,7 +22,7 @@ import time
 
 import numpy as np
 
-from contravia import collect, flight
+from contravia import collect, flight, sea
 from contravia.album import Album
 from contravia.camera import Orbit, chase, orbit, seen_from
 from contravia.car import CarState, Controls, Driven, settle
@@ -403,6 +403,40 @@ class Game:
         if speed:
             self.driven.launch(speed)
         self.car = self.driven.state
+        self.sinking = None  # seconds since the car went into the sea, or None
+
+    def _at_sea(self, dt: float) -> None:
+        """After a step: a car that has driven into deep water starts to sink (contravia/sea.py); a sinking car
+        loses its speed to the water and, after sea.BACK seconds, is put back on the shore."""
+        shore = getattr(self.surface, "shore", None)
+        if shore is None:
+            return
+        if getattr(self, "sinking", None) is None:
+            floor = float(shore.floor(np.array([self.car.x]), np.array([self.car.z]))[0])
+            if sea.in_sea(floor, self.car.y):
+                self.sinking = 0.0
+            return
+        self.sinking += dt
+        f = self.driven.fleet
+        f.velocity[0] *= sea.drag(dt)
+        f.angular[0] *= sea.drag(dt)
+        if self.sinking >= sea.BACK:
+            self._ashore()
+
+    def _ashore(self) -> None:
+        """Put a car that sank on the shore (sea.ashore), stopped, the chase camera easing in from where it was."""
+        x, z = self.car.x, self.car.z
+        eye = np.array(self.eye if getattr(self, "eye", None) is not None else [x, self.car.y + 3.0, z], float)
+        found = sea.ashore(x, z, self.walls.nearest_road, self.surface.height)
+        if found is None:
+            self.teleport(x, z)
+        else:
+            x, z, yaw, y = found
+            self._place(settle(CarState(x, z, yaw, 0.0, y=0.0 if y is None else y), self.surface))
+            self._follow_province()
+        self.sinking = None
+        self.eye = eye  # a new eye, not the chase's own: the chase starts from it and eases in behind the car
+        self._recentre()
 
     def saved_car(self) -> dict:
         """What a reload needs to drive on: the pose, the height, the camera and the physics' state."""
@@ -813,6 +847,8 @@ class Game:
                 x, z, _ = self.walls.random_road(self._rng)
                 self.teleport(x, z)
             c = self.autopilot(self.car) if self.autopilot else self.road_help(self.controls(self._dt))
+            if getattr(self, "sinking", None) is not None:  # under water the engine is cut and the wheels held
+                c = Controls(0.0, 1.0, 0.0, True)
             walls = self.walls.near(self.car.x, self.car.z, self.car.y)
             if self.layer:
                 walls = np.concatenate([walls.reshape(-1, 2, 2), self.layer.boxes_near(self.car.x, self.car.z)])
@@ -825,8 +861,11 @@ class Game:
                 self.car.telemetry.setdefault("lit", {}).update(self.help.lit)
             self.physics_ms = (time.perf_counter() - t0) * 1000
             self.km += math.hypot(self.car.x - self._before.x, self.car.z - self._before.z) / 1000
+            self._at_sea(self._dt)
         # manifoldx turns +x toward -z for a positive yaw; the game turns it toward +z.
         pose = self.driven.pose()
+        if getattr(self, "sinking", None) is not None:
+            pose["at"], pose["rotation"] = sea.sunk(pose["at"], pose["rotation"], self.sinking)
         if self.mode == "aim":  # the photographer stepped out: the camera stands where the car's roof would be
             pose["at"] = (pose["at"][0], pose["at"][1] - 1000.0, pose["at"][2])
         place_car(self.handles, self.model, **pose)
@@ -867,6 +906,8 @@ class Game:
             if inp.pointer_captured:
                 self.mouse_orbit = orbit(self.mouse_orbit, *inp.mouse_delta, seen.speed, self._dt)
             self.rig, self.eye, target = chase(self.rig, seen, self._dt, self.surface, self.mouse_orbit)
+            if getattr(self, "sinking", None) is not None:  # the camera stays over the water the car sinks in
+                self.eye[1] = max(self.eye[1], WATER_Y + 1.5)
             self._chased = self.eye
         self._target = np.asarray(target, float)
         self.o = self._recentre()

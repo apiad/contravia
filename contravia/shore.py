@@ -171,6 +171,23 @@ class Shore:
                 out[k] = f.height(x[k], z[k])
         return out
 
+    def floor(self, x, z) -> np.ndarray:
+        """What the wheels stand on at points (x, z): the drawn ground on land, and over the sea a floor that goes
+        down with the distance from the waterline past the band of shallows (contravia/sea.py)."""
+        from contravia import sea
+        from contravia.rules import shore as rules
+
+        x, z = np.atleast_1d(np.asarray(x, float)), np.atleast_1d(np.asarray(z, float))
+        out = self.terrain.height(x, z).astype(float)
+        ci, cj = np.floor(x / CELL).astype(np.int64), np.floor(z / CELL).astype(np.int64)
+        for i, j in set(zip(ci.tolist(), cj.tolist(), strict=True)):
+            f = self.field(i, j)
+            if f is not None:
+                k = (ci == i) & (cj == j)
+                d = f.sample(f.d, x[k], z[k])
+                out[k] = sea.floor(f.height(x[k], z[k]), d, rules.shallows(f.sample(f.w, x[k], z[k])))
+        return out
+
 
 _shores: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
