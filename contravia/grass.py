@@ -1,12 +1,17 @@
-"""The grass the game draws on the green near the camera: instanced patches of blades that sway in the shader.
+"""The grass the game draws near the camera: instanced patches of blades that sway in the shader.
 
-Every cell drawn in full finds, on a thread, the spots of a STEP-metre grid that lie in its green (the parks, woods
-and meadows OSM maps) or on the lawns of the parks contravia.parks laid out, and clear of its streets, roads,
-pavements and park motifs. Each spot holds one patch: a STEP-metre square of blades, one geometry for every patch of a level, dense within NEAR of the camera and
-sparse out to FAR. The blades move with the wind and part round the car in manifoldx's vertex shader
-(StandardMaterial's sway and the engine's benders), so the CPU only spawns and drops the patches whose level
+Every cell drawn in full finds, on a thread, the spots of a STEP-metre grid where grass grows: its green (the parks,
+woods and meadows OSM maps) and the lawns of the parks contravia.parks laid out grow a lawn, and every other spot of
+bare ground grows the tufts of a bare lot. Bare ground is what is left of the land once its streets, roads,
+pavements, park motifs, bridges, cuts, buildings, filler houses and landmarks are taken out with a margin, and the
+sea. Each spot holds one patch: a STEP-metre square of blades, one geometry for every patch of a level, dense within
+NEAR of the camera and sparse out to FAR. The blades move with the wind and part round the car in manifoldx's vertex
+shader (StandardMaterial's sway and the engine's benders), so the CPU only spawns and drops the patches whose level
 changes when the camera has moved MOVE metres. A patch's turn, height and shade come from its spot, so a cell
 opens with the same grass every time.
+
+The city data holds no plazas, car parks, rail yards, inland water or industrial yards outside the blocks walks.py
+paves, and the ground there is drawn as any other: grass grows on them as on a bare lot.
 """
 
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -15,16 +20,18 @@ import numpy as np
 import shapely
 
 from contravia import parks
-from contravia.clearance import roads_around
 from contravia.geo import CELL
-from contravia.rules import trees
+from contravia.rules.buildings import filler_rings
+from contravia.rules.ground import SEA, relief
 
 STEP = 2.0  # metres between two patches' centres, and the side of a patch
 NEAR, FAR = 20.0, 45.0  # metres from the camera: dense patches out to NEAR, sparse ones out to FAR
 BLADES = (60, 16)  # blades in a dense and in a sparse patch
 MOVE = 4.0  # metres the camera moves before the patches' levels are checked again
+CLEAR = 1.0  # metres between a patch's centre and a street, pavement, motif, building or landmark
 ROAD_CLEAR = 1.5  # metres between a patch's centre and a road's edge
-CHUNK = 512  # spots tested at once against a cell's triangles, which bounds the arrays the test builds
+TUFT = 8.0  # metres: a bare lot's grass grows in tufts about this wide
+BARE_SHARE = 0.55  # of a bare lot's spots, about this share holds a patch
 BASE, TIP = (0.10, 0.22, 0.04), (0.45, 0.62, 0.18)  # linear colours of a blade's foot and tip
 BENDER = (2.6, 0.9)  # radius and strength of the parting round the car
 
@@ -53,84 +60,108 @@ def patch(blades: int, height=(0.25, 0.55), width=0.05, seed=0) -> dict:
             "colors": np.array(col, np.float32), "indices": np.vstack([idx, idx[:, ::-1]]).ravel()}
 
 
-def in_tris(tris) -> np.ndarray:
-    """The (N, 2) points of the STEP grid, in world metres, inside the (T, 3, 2) triangles."""
-    out = []
-    for t in np.asarray(tris, float).reshape(-1, 3, 2):
-        lo, hi = np.floor(t.min(0) / STEP), np.ceil(t.max(0) / STEP)
-        gx, gz = np.meshgrid(np.arange(lo[0], hi[0] + 1), np.arange(lo[1], hi[1] + 1))
-        p = np.stack([gx.ravel(), gz.ravel()], 1) * STEP
-        a, b, c = t
-        den = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
-        if abs(den) < 1e-9:
-            continue
-        u = ((b[1] - c[1]) * (p[:, 0] - c[0]) + (c[0] - b[0]) * (p[:, 1] - c[1])) / den
-        v = ((c[1] - a[1]) * (p[:, 0] - c[0]) + (a[0] - c[0]) * (p[:, 1] - c[1])) / den
-        out.append(p[(u >= 0) & (v >= 0) & (u + v <= 1)])
-    return np.unique(np.vstack(out), axis=0) if out else np.zeros((0, 2))
+def _hash(xz) -> np.ndarray:
+    """A number in [0, 1) for each (x, z), the same every time."""
+    h = np.sin(xz[:, 0] * 12.9898 + xz[:, 1] * 78.233) * 43758.5453
+    return h - np.floor(h)
 
 
-def clear_of_tris(xz, tris) -> np.ndarray:
-    """For each (x, z), whether it and the points a metre round it lie off every (T, 3, 3) triangle, tested
-    CHUNK spots at a time against the triangles near them."""
-    keep = np.ones(len(xz), bool)
-    if tris is None or not len(tris) or not len(xz):
-        return keep
-    tris = np.asarray(tris, float)
-    lo, hi = tris[:, :, [0, 2]].min(1), tris[:, :, [0, 2]].max(1)
-    for s in range(0, len(xz), CHUNK):
-        p = xz[s:s + CHUNK]
-        near = ((lo <= p.max(0) + 1.0) & (hi >= p.min(0) - 1.0)).all(1)
-        keep[s:s + CHUNK] = trees.off_streets(p, tris[near])
-    return keep
+def grid(i: int, j: int) -> np.ndarray:
+    """(N, 2) the points of the STEP grid in cell (i, j), from its corner up to but not on its far edges."""
+    g = np.arange(0.0, CELL, STEP)
+    gx, gz = np.meshgrid(i * CELL + g, j * CELL + g)
+    return np.stack([gx.ravel(), gz.ravel()], 1)
 
 
-def in_parks(city, i: int, j: int) -> np.ndarray:
-    """(N, 2) the points of the STEP grid in cell (i, j) inside the parks contravia.parks laid out there, which
-    have no OSM green under them; their kerbs and paths are pavements, which spots() leaves out."""
-    x0, z0 = i * CELL, j * CELL
-    box = shapely.box(x0, z0, x0 + CELL, z0 + CELL)
+def _hit(p, geoms, within: float = 0.0) -> np.ndarray:
+    """For each (x, z) of p, whether it lies within `within` metres of any of the shapely geoms (on or in at 0)."""
+    hit = np.zeros(len(p), bool)
+    geoms = [g for g in geoms if g is not None]
+    if not geoms or not len(p):
+        return hit
+    tree, pts = shapely.STRtree(geoms), shapely.points(p)
+    k = tree.query(pts, predicate="dwithin", distance=within)[0] if within else tree.query(pts, "intersects")[0]
+    hit[k] = True
+    return hit
+
+
+def _tris(tris) -> list:
+    """The shapely triangles of (T, 3, 3) x, y, z or (T, 3, 2) x, z triangles, or none for None."""
+    if tris is None or not len(tris):
+        return []
+    t = np.asarray(tris, float)
+    t = t[:, :, [0, 2]] if t.shape[2] == 3 else t
+    return list(shapely.polygons(np.concatenate([t, t[:, :1]], 1)))
+
+
+def _rings(rings) -> list:
+    """The shapely polygons of (K, 2) rings with three corners or more."""
+    return [shapely.Polygon(r) for r in (np.asarray(r, float) for r in rings) if len(r) >= 3]
+
+
+def park_lawns(city, i: int, j: int) -> list:
+    """The polygons of the parks contravia.parks laid out that meet cell (i, j); they have no OSM green under
+    them, and their kerbs and paths are pavements, which spots() leaves out."""
+    box = shapely.box(i * CELL, j * CELL, (i + 1) * CELL, (j + 1) * CELL)
     polys = []
     for k in city.provinces_of(i, j):
         a = city.province(k).a
         if "park_kind" in a and len(a["park_kind"]):
             tree = parks._lookup(a)[0]
             polys += list(tree.geometries.take(tree.query(box)))
-    if not polys:
-        return np.zeros((0, 2))
-    g = np.arange(0.0, CELL, STEP)
-    gx, gz = np.meshgrid(x0 + g, z0 + g)  # a cell's corner lies on the grid
-    p = np.stack([gx.ravel(), gz.ravel()], 1)
-    return p[shapely.contains_xy(shapely.union_all(polys), p[:, 0], p[:, 1])]
+    return polys
 
 
-def spots(city, i: int, j: int) -> np.ndarray:
-    """(N, 2) the centres of cell (i, j)'s patches: grid spots in its green or its parks' lawns, off its streets,
-    pavements and park motifs, and ROAD_CLEAR metres off every road's edge."""
+def spots(city, i: int, j: int, landmarks=None) -> tuple[np.ndarray, np.ndarray]:
+    """The (N, 2) centres of cell (i, j)'s patches and whether each stands on a bare lot rather than a lawn.
+
+    A lawn is the cell's green and its laid parks; every other spot of land is a bare lot, which keeps only its
+    tufts (about BARE_SHARE of it). No spot stands within CLEAR metres of the cell's streets, pavements, park motifs,
+    bridges, cuts, the buildings and filler houses of it and its neighbours, or a landmark's rings, within
+    ROAD_CLEAR metres of a road's edge, or on the sea."""
     c = city.cell(i, j)
-    p = [in_parks(city, i, j)]
-    if c.green_tris is not None and len(c.green_tris):
-        p.append(in_tris(c.green_tris))
-    p = np.unique(np.vstack(p), axis=0)
-    if not len(p):
-        return p
-    for tris in (c.street_tris, c.walk_tris, c.park_tris):
-        p = p[clear_of_tris(p, tris)]
-    return p[trees.clear_of(p, roads_around(city, i, j), ROAD_CLEAR)]
+    p = grid(i, j)
+    lawn = _hit(p, _tris(c.green_tris) + park_lawns(city, i, j))
+    near = [city.cell(i + di, j + dj) for di in (-1, 0, 1) for dj in (-1, 0, 1)]
+    lo, hi = p.min(0) - 2 * CLEAR, p.max(0) + 2 * CLEAR
+    houses = [r for n in near for r in n.buildings]
+    houses += [r for n in near for block, seed in zip(n.fillers, n.filler_seeds, strict=True)
+               for r in filler_rings(block, int(seed))]
+    if landmarks is not None:
+        houses += landmarks.clear + landmarks.wall_rings
+    houses = [r for r in (np.asarray(r, float) for r in houses)
+              if len(r) and (r.min(0) <= hi).all() and (r.max(0) >= lo).all()]
+    roads = np.concatenate([n.roads for n in near]).reshape(-1, 5).astype(float)
+    pad = roads[:, 4:5] / 2 + ROAD_CLEAR
+    roads = roads[((np.minimum(roads[:, 0:2], roads[:, 2:4]) - pad <= hi).all(1)
+                   & (np.maximum(roads[:, 0:2], roads[:, 2:4]) + pad >= lo).all(1))]
+    lines = shapely.linestrings(roads[:, :4].reshape(-1, 2, 2)) if len(roads) else []
+    # A road's edge stands ROAD_CLEAR from a spot when its strip widened by ROAD_CLEAR - CLEAR is CLEAR away.
+    strips = list(shapely.buffer(lines, roads[:, 4] / 2 + ROAD_CLEAR - CLEAR, quad_segs=2)) if len(roads) else []
+    paved = (_tris(c.street_tris) + _tris(c.walk_tris) + _tris(c.park_tris) + _tris(c.struct_tris)
+             + _tris(c.street_cuts) + _rings(houses) + strips)
+    keep = ~_hit(p, paved, CLEAR)
+    if relief(city.terrain):
+        keep &= city.terrain.height(p[:, 0], p[:, 1]) >= SEA
+    bare = ~lawn
+    tuft = 0.6 * _hash(np.floor(p / TUFT) * TUFT) + 0.4 * _hash(p)
+    keep &= lawn | (tuft < BARE_SHARE)
+    return p[keep], bare[keep]
 
 
 class Lawn:
     """One cell's patches: their spots, the ground under them, each one's level (-1 not drawn, 0 dense, 1
-    sparse) and the entity that draws it (-1 none)."""
+    sparse) and the entity that draws it (-1 none). A bare lot's patches are shorter and drier than a lawn's."""
 
-    def __init__(self, xz: np.ndarray, terrain):
+    def __init__(self, xz: np.ndarray, terrain, bare=None):
         self.xz = xz
         self.y = terrain.height(xz[:, 0], xz[:, 1]) + 0.02 if len(xz) else np.zeros(0)
-        h = np.sin(xz[:, 0] * 12.9898 + xz[:, 1] * 78.233) * 43758.5453  # a hash of the spot, in [0, 1)
-        h -= np.floor(h)
+        h = _hash(xz) if len(xz) else np.zeros(0)
+        b = np.zeros(len(xz), bool) if bare is None else np.asarray(bare, bool)
         self.turn = h * 2 * np.pi
-        self.height = 0.8 + 0.5 * h
-        self.tint = np.stack([0.85 + 0.3 * h, 0.9 + 0.2 * (1 - h), 0.8 + 0.2 * h], 1)
+        self.height = np.where(b, 0.45 + 0.3 * h, 0.8 + 0.5 * h)
+        self.tint = np.stack([0.85 + 0.3 * h, 0.9 + 0.2 * (1 - h), 0.8 + 0.2 * h], 1).reshape(-1, 3)
+        self.tint[b] *= (1.25, 1.0, 0.6)  # straw over green
         self.level = np.full(len(xz), -1)
         self.ents = np.full(len(xz), -1, np.int64)
         self.centre = xz.mean(0) if len(xz) else np.zeros(2)
@@ -141,11 +172,11 @@ class Lawn:
 class Grass:
     """The patches of the cells drawn in full, kept in step with the city's streamer."""
 
-    def __init__(self, engine, city, workers: int = 1):
+    def __init__(self, engine, city, landmarks=None, workers: int = 1):
         from manifoldx.components import Mesh
         from manifoldx.resources import StandardMaterial
 
-        self.engine, self.city = engine, city
+        self.engine, self.city, self.landmarks = engine, city, landmarks
         self.material = StandardMaterial("#ffffff", roughness=0.95, vertex_colors=True, tinted=True,
                                          sway=0.35, sway_reach=0.6)
         self.meshes = [Mesh(patch(BLADES[0], seed=1)), Mesh(patch(BLADES[1], height=(0.3, 0.6), width=0.09, seed=2))]
@@ -164,7 +195,7 @@ class Grass:
         for c in [c for c in self._pending if c not in cells]:
             self._pending.pop(c).cancel()
         for c in cells - self.lawns.keys() - self._pending.keys():
-            self._pending[c] = self._pool.submit(lambda c=c: Lawn(spots(self.city, *c), self.city.terrain))
+            self._pending[c] = self._pool.submit(self._lay, c)
         came = False
         for c, fut in list(self._pending.items()):
             if fut.done():
@@ -178,6 +209,11 @@ class Grass:
                 self.place(lawn, eye)
         if car is not None:
             self.engine.benders = [(float(car[0]), float(car[1]), *BENDER)]
+
+    def _lay(self, c: tuple[int, int]) -> Lawn:
+        """Cell c's lawn: its spots and the ground under them."""
+        xz, bare = spots(self.city, *c, self.landmarks)
+        return Lawn(xz, self.city.terrain, bare)
 
     def place(self, lawn: Lawn, eye) -> None:
         """Give each of lawn's patches the level its distance from eye calls for, respawning those that change."""

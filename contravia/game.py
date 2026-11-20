@@ -105,7 +105,7 @@ class Game:
         # The trees of the cells drawn in full: rows per cell, drawn as instances by level of detail (forest.py).
         self.forest = Forest(engine, city, self.walls.landmarks)
         # The grass on the green near the camera: instanced patches of blades that sway in the shader (grass.py).
-        self.grass = Grass(engine, city)
+        self.grass = Grass(engine, city, self.walls.landmarks)
         engine.state.teleport = {"to": None, "error": None}
         if self.walls.landmarks.mesh is not None:  # drawn once, not streamed: they are few and seen from afar
             from manifoldx.components import Material, Mesh, Transform
