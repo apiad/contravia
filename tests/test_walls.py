@@ -73,7 +73,7 @@ def test_a_car_hits_a_trunk_head_on_and_slides_past_a_glancing_one():
     d = Driven(spec, CarState(0, 0, 0, 0.0), FlatGround())
     d.launch(10.0)
     s = d.run(coast, 4.0, wall, strengths_for(30))
-    assert s.x < 20.0 and abs(s.speed) < 1.0
+    assert s.x < 20.0 and s.speed < 0.5  # stopped by the trunk, or bounced back off it
     half = spec.size[2] / 2
     # alongside the trunk already, its side 5 cm in: a graze along the side, not a corner on a corner
     d = Driven(spec, CarState(20.0, half + 0.5 - 0.05, 0.0, 0.0), FlatGround())
