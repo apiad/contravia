@@ -7,9 +7,14 @@ per part: wood, leaves, accent. Every tree of one species, variant, crown and le
 and the tinted material, so the engine draws each such group in one instanced call, and each instance's Tint
 carries its leaves' colour for the game's date, times its tone. Every few frames the forest measures each tree's
 distance to the camera and moves the trees that crossed a threshold to their new level of detail.
+
+Trees do not pop: the material is faded, a tree that comes fades in over FADE seconds, one that goes fades out
+before it is destroyed, and a tree that changes level keeps its old level that long, fading out over the
+complementary pixels of the new one (manifoldx's Fade), as the city's blocks do.
 """
 
 from concurrent.futures import Future, ThreadPoolExecutor
+from time import perf_counter
 
 import numpy as np
 
@@ -23,6 +28,7 @@ HYSTERESIS = 8.0  # metres a tree goes past a threshold before it changes level,
 EVERY = 6  # frames between two checks of the trees' levels of detail
 LINGER = 60  # frames a cell's trees stay after the streamer stops drawing it in full: it often comes back at once
 KEEP = 512  # cells whose rows are kept after they close, so a cell that opens again needs no growing
+FADE = 0.3  # seconds a tree takes to fade in or out, and an old level of detail to give way to the new one
 
 
 def linear(rgb) -> np.ndarray:
@@ -101,7 +107,7 @@ class Forest:
         from manifoldx.resources import StandardMaterial
 
         self.engine, self.city, self.landmarks = engine, city, landmarks
-        self.material = StandardMaterial("#ffffff", roughness=0.9, vertex_colors=True, tinted=True)
+        self.material = StandardMaterial("#ffffff", roughness=0.9, vertex_colors=True, tinted=True, faded=True)
         self._pool = ThreadPoolExecutor(workers, thread_name_prefix="forest")
         self._pending: dict[tuple[int, int], Future] = {}
         self.stands: dict[tuple[int, int], Stand] = {}
@@ -110,6 +116,8 @@ class Forest:
         self._rows: dict = {}  # closed cell -> its (Trees) rows, oldest first
         self.day = None
         self._frame = 0
+        self.clock = perf_counter
+        self._fading: list[list] = []  # [entities, started, out]: parts fading in, or out and then destroyed
 
     def grow(self, i: int, j: int):
         """The (Trees) rows of cell (i, j): those the cell's rules grow and the car hits. On this thread too, the
@@ -159,6 +167,7 @@ class Forest:
                 fresh = True
         if fresh or self._frame % EVERY == 0:
             self.place(eye)
+        self._step()
 
     def place(self, eye) -> None:
         """Give every tree the level of detail its distance from eye calls for, respawning those that change."""
@@ -185,7 +194,7 @@ class Forest:
 
     def _spawn(self, stand: Stand, idx) -> None:
         """Spawn the parts of trees idx of stand at their level of detail, one spawn per shared mesh."""
-        from manifoldx.components import Material, Mesh, Tint, Transform
+        from manifoldx.components import Fade, Material, Mesh, Tint, Transform
 
         t = stand.t
         # only near trees come in variants: far ones share one mesh per species, which halves their draw calls
@@ -205,18 +214,51 @@ class Forest:
                         mesh = self._meshes[(s, v, crown, lod, part)] = Mesh(geo)
                     h = self.engine.spawn(mesh, Material(self.material),
                                           Transform(pos=stand.pos[group], rot=stand.rot[group], scale=stand.scale[group]),
-                                          Tint(rgb=stand.tint[group, p]), n=len(group))
+                                          Tint(rgb=stand.tint[group, p]), Fade(value=0.0), n=len(group))
                     stand.ents[group, p] = h.indices
+                    self._fade(np.asarray(h.indices), out=False)
 
     def _drop(self, stand: Stand, idx) -> None:
-        """Destroy the entities of trees idx of stand."""
+        """Fade out the entities of trees idx of stand, to be destroyed once gone."""
         stand.settled = -1
         e = stand.ents[idx]
         e = e[e >= 0]
         if len(e):
-            self.engine.destroy(e)
+            self._fade(e, out=True)
         stand.ents[idx] = -1
         stand.lod[idx] = -1
+
+    def _fade(self, ents, out: bool) -> None:
+        """Fade ents in from nothing, or out over the pixels a level fading in leaves; a part still fading in
+        fades out from what shows of it now."""
+        now = self.clock()
+        if out:
+            for group in [g for g in self._fading if not g[2]]:
+                mid = np.isin(group[0], ents)
+                if mid.any():
+                    self._fading.append([group[0][mid], min(2 * now - group[1] - FADE, now), True])
+                    ents = ents[~np.isin(ents, group[0][mid])]
+                    group[0] = group[0][~mid]
+        if len(ents):
+            self._fading.append([ents, now, out])
+
+    def _step(self) -> None:
+        """Set every fading part's Fade for now: t in, -(1 - t) out; destroy the parts faded out."""
+        if not self._fading:
+            return
+        now, fade, keep = self.clock(), self.engine.store._components["Fade"], []
+        for ents, started, out in self._fading:
+            if not len(ents):
+                continue
+            t = min((now - started) / FADE, 1.0)
+            if t < 1.0:
+                fade[ents] = -(1.0 - t) if out else t
+                keep.append([ents, started, out])
+            elif out:
+                self.engine.destroy(ents)
+            else:
+                fade[ents] = 1.0
+        self._fading = keep
 
     def counts(self) -> dict:
         """Trees held and drawn per level of detail, for the stats panel and probes."""
@@ -228,5 +270,9 @@ class Forest:
         self._pool.shutdown(wait=False, cancel_futures=True)
         for stand in self.stands.values():
             self._drop(stand, np.arange(len(stand.t)))
+        for ents, _started, out in self._fading:
+            if out and len(ents):
+                self.engine.destroy(ents)
+        self._fading.clear()
         self.stands.clear()
         self._pending.clear()
