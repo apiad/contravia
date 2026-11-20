@@ -86,3 +86,13 @@ name = "Habana del Este"
 where = { municipio = "Habana del Este" }
 [region.buildings]
 types = [{ kind = "apartments", types = { prefab = 1 } }, { above = 300, types = { prefab = 1 } }, { types = { suburban = 1 } }]
+
+# The named regions: what a place asks for over its municipio's rules.
+
+[[region]]
+name = "Guanabacoa"
+where = { municipio = "Guanabacoa" }
+priority = 20
+[region.buildings]
+types = { colonial = 0.7, eclectic = 0.3 }
+storeys = [2, 2]

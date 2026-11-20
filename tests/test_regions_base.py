@@ -1,6 +1,7 @@
 """The base layer of regions changes no building: every building and filler box in 49 cells of Centro Habana,
-La Habana Vieja, Vedado and Guanabacoa gets the same Plan from contravia/regions.toml as from the municipio
-rules facades.choose held in code before regions, copied below. It reads the real island in data/cuba."""
+La Habana Vieja, Vedado and Guanabacoa gets the same Plan from the municipio regions of contravia/regions.toml
+(priority 0) as from the rules facades.choose held in code before regions, copied below. The regions over them
+change what they say and nothing else. It reads the real island in data/cuba."""
 
 import os
 from pathlib import Path
@@ -83,11 +84,17 @@ def _cells():
     return out
 
 
+def base() -> regions.Regions:
+    """The base layer of the shipped file: its municipio regions of priority 0."""
+    full = regions.Regions.load()
+    return regions.Regions([r for r in full.regions if r.shape == "municipio" and r.priority == 0], [])
+
+
 @pytest.mark.skipif(not (DATA / "la-habana.npz").exists(), reason="needs the island in data/cuba")
 def test_the_base_layer_gives_every_building_and_filler_its_old_plan():
     from contravia.world import World
 
-    world, rules = World.load(DATA), regions.Regions.load()
+    world, rules = World.load(DATA), base()
     cells = _cells()
     assert len(set(cells)) == 49
     count, types, munis = 0, set(), set()
@@ -111,3 +118,29 @@ def test_the_base_layer_gives_every_building_and_filler_its_old_plan():
                 count += 1
     assert count > 2000 and len(types) >= 5
     assert {"Centro Habana", "La Habana Vieja", "Plaza de la Revolución", "Guanabacoa"} <= munis
+
+
+@pytest.mark.skipif(not (DATA / "la-habana.npz").exists(), reason="needs the island in data/cuba")
+def test_guanabacoa_builds_two_storey_colonial_and_eclectic_houses_fillers_included():
+    from contravia.world import World
+
+    world, rules = World.load(DATA), regions.Regions.load()
+    (lat, lon), _ = PLACES["Guanabacoa"]
+    x, z = to_local(np.array([lat]), np.array([lon]))[0]
+    ci, cj = int(np.floor(x / CELL)), int(np.floor(z / CELL))
+    houses, fillers = [], []
+    for i, j in ((ci + a, cj + b) for a in range(-3, 4) for b in range(-3, 4)):
+        c = world.cell(i, j)
+        attrs = c.building_attrs if c.building_attrs is not None else [None] * len(c.buildings)
+        at_buildings, at_fillers = rules.cell(c)
+        for ring, osm_id, a, params in zip(c.buildings, c.building_ids, attrs, at_buildings, strict=True):
+            untagged = KINDS[int(a[KIND])] == "yes" and np.isnan(a[LEVELS]) and np.isnan(a[HEIGHT])
+            if municipio(a, c.muni_names) == "Guanabacoa" and untagged:
+                houses.append(plan(int(osm_id), a, params, abs(signed_area(np.asarray(ring, float)))))
+        for block, seed, params in zip(c.fillers, c.filler_seeds, at_fillers, strict=True):
+            fillers += [plan(abs(int(seed)) * 131 + k, None, params, abs(signed_area(r)))
+                        for k, r in enumerate(filler_rings(block, int(seed)))]
+    assert len(houses) > 100 and fillers
+    assert all(p.storeys == 2 and p.type in ("colonial", "eclectic") for p in houses + fillers)
+    share = sum(p.type == "colonial" for p in houses) / len(houses)
+    assert 0.6 < share < 0.8
