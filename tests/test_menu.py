@@ -371,3 +371,39 @@ def test_the_album_counts_by_province_opens_a_province_page_and_its_cards(city_n
     menu.press("Escape")
     menu.press("Escape")
     assert menu.current == "main"
+
+
+def test_the_maps_panel_names_what_lies_near_the_crosshair_at_each_height(city_npz, tmp_path, monkeypatch):
+    import manifoldx as mx
+
+    from contravia import mapview
+    from contravia.game import Game
+    from contravia.menu import Menu
+    from contravia.nearby import band
+    from contravia.world import World
+
+    monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path))
+    engine = mx.Engine("map", width=64, height=48)
+    game = Game(engine, World.load(str(city_npz)), clock=Clock(at=parse_at("Tue 10:00")))
+    menu = Menu(engine, game, FreeDrive.from_flags(when="Tue 10:00"), Options.load())
+    engine.render_frame(supersample=1)
+    menu.press("ArrowDown")  # Mapa de Cuba
+    menu.press("Enter")
+    screen = menu.screens["map"]
+    capitolio = game.places.by_id("L0333")
+
+    def settle(h):
+        game.map = mapview.MapCam(capitolio.x, capitolio.z, h, 0.0)
+        end = time.monotonic() + 10
+        while time.monotonic() < end:
+            screen.tick(0.0)
+            if screen.shown and screen.shown[0].band == band(h).name:  # the worker answered for this height
+                return [row[2].text for row in screen.here_rows if row[0] in screen.here_panel.children]
+            time.sleep(0.01)
+        raise AssertionError(f"no panel at {h} m")
+
+    close = settle(300.0)  # the fixture city's streets are "Calle 0", "Calle 1"...
+    assert screen.here_panel in screen.panels and screen.here_title.text.startswith("Calle ")
+    assert close[0] == capitolio.title and screen.here_header.text == "AQUÍ"
+    high = settle(500_000.0)
+    assert screen.here_title.text == "La Habana" and len(high) == 25 and screen.here_header.text == "LO MÁS NOTABLE" and capitolio.title in high
