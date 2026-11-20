@@ -582,6 +582,8 @@ class MapScreen(Screen):
 
     PAN_PX = 600.0  # screen pixels a second the arrows move the ground
     TURN = 1.2  # radians a second for Q and E
+    ZOOM = 1.5  # the log of the height a second for W and S
+    GRIP = 0.06  # seconds of drag the glide's speed is measured over
 
     def build(self, width):
         from manifoldx.gui import Image, Panel
@@ -589,6 +591,7 @@ class MapScreen(Screen):
         if self.menu.current_before not in ("map", "card"):  # a resized window or a card rebuilds it from the map
             self.back_to = "pause" if self.menu.current_before == "pause" else "main"
         self.marks, self.under, self.choice, self.picked, self.marks_for = [], None, None, 0, None
+        self.target, self.drawn, self.glide = None, None, (0.0, 0.0)  # the camera the input moves; _move
         for _ in range(MAP_MARKS):
             image = Image(placemarks.icon("lugar", False, MARK_PX), style_overrides={"width": MARK_PX})
             count = _text("", ui.BOLD, 13, ui.PAPER)
@@ -689,7 +692,7 @@ class MapScreen(Screen):
         if k == "enter" and self.under is not None:
             if len(self.under.ids) > 1:  # a group: come down over it, below the city stage
                 x, z = self.under.at
-                g.map = mapview.MapCam(x, z, placemarks.CITY_H / 2, g.map.yaw)
+                self.target = mapview.MapCam(x, z, placemarks.CITY_H / 2, g.map.yaw)  # the follow glides there
             else:
                 self._open_choice(True)
             return
@@ -741,23 +744,47 @@ class MapScreen(Screen):
             self.note.text = ""
 
     def _move(self, dt):
+        """Move the target camera by the input and let the drawn one follow it (mapview.follow): the wheel zooms
+        toward the pointer, a drag holds the ground under the pointer and glides on when released, the keys
+        zoom, pan and turn. A camera moved elsewhere (a flight, ENTER on a group) becomes the target."""
         g, inp = self.menu.game, self.menu.engine.input
-        cam, vh = g.map, max(self.menu.engine.h, 1)
+        cam = g.map
+        w, h = inp.viewport_size
+        w, h = max(w, 1), max(h, 1)
+        if self.target is None or cam != self.drawn:
+            self.target, self.glide = cam, (0.0, 0.0)
+        t = self.target
         wheel = inp.wheel_delta[1]
+        if wheel:
+            t = mapview.zoom_at(t, math.exp(mapview.WHEEL_LOG * wheel), *inp.mouse_pos, w, h, seen=cam)
         held = inp.is_pressed("s") - inp.is_pressed("w")
-        if wheel or held:
-            cam = mapview.zoom(cam, 1.0015 ** wheel * (1 + held * dt * 1.5))
+        if held:
+            t = mapview.zoom(t, math.exp(held * self.ZOOM * dt))
         if inp.is_mouse_pressed(1):
             dx, dy = inp.mouse_delta
-            cam = mapview.pan(cam, dx, dy, vh)
+            gx, gz = 0.0, 0.0
+            if dx or dy:
+                px, py = inp.mouse_pos
+                moved = mapview.drag(cam, (px - dx, py - dy), (px, py), w, h)
+                gx, gz = moved.x - cam.x, moved.z - cam.z
+                cam = mapview.MapCam(moved.x, moved.z, cam.h, cam.yaw)  # the ground stays under the pointer
+                t = mapview.MapCam(t.x + gx, t.z + gz, t.h, t.yaw)
+            k = math.exp(-dt / self.GRIP)  # the glide's speed: the drag's last moments, nothing once held still
+            self.glide = (self.glide[0] * k + gx / max(dt, 1e-3) * (1 - k), self.glide[1] * k + gz / max(dt, 1e-3) * (1 - k))
+        elif self.glide != (0.0, 0.0):
+            vx, vz = self.glide
+            t = mapview.MapCam(t.x + vx * dt, t.z + vz * dt, t.h, t.yaw)
+            k = math.exp(-dt / mapview.GLIDE_S)
+            self.glide = (vx * k, vz * k) if math.hypot(vx, vz) * k > t.h * 0.01 else (0.0, 0.0)
         ax = inp.is_pressed("ArrowRight") - inp.is_pressed("ArrowLeft")
         ay = inp.is_pressed("ArrowDown") - inp.is_pressed("ArrowUp")
         if ax or ay:  # the arrows move the view, so the ground goes the other way
-            cam = mapview.pan(cam, -ax * self.PAN_PX * dt, -ay * self.PAN_PX * dt, vh)
+            t = mapview.pan(t, -ax * self.PAN_PX * dt, -ay * self.PAN_PX * dt, h)
         turn = inp.is_pressed("e") - inp.is_pressed("q")
         if turn:
-            cam = mapview.MapCam(cam.x, cam.z, cam.h, cam.yaw + turn * self.TURN * dt)
-        g.map = cam
+            t = mapview.MapCam(t.x, t.z, t.h, t.yaw + turn * self.TURN * dt)
+        self.target = t
+        g.map = self.drawn = mapview.follow(cam, t, dt)
 
 
 TILE_W, TILE_H, TILE_GAP = 205, 92, 12  # a province's tile in the album
