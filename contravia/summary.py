@@ -32,6 +32,7 @@ ROAD_CAP = 1000  # segments a summary mesh draws, widest first
 BOX = (0.78, 0.76, 0.72)  # the colour of a square prepared before summaries kept colours
 TYPES = list(facades.TYPES)
 LIFT = 0.2  # metres: with relief, a summary's land never stands lower than this over the water
+ROAD_LIFT = 0.15  # metres a summary's road stands over its own ground: still under a cell's ground (BELOW)
 
 
 def min_width(L: int) -> float:
@@ -222,14 +223,14 @@ def _blend(colours, xz, x0, z0, sq) -> np.ndarray:
     return top * (1 - tz) + bottom * tz
 
 
-def _ground(mb, land, x0, z0, sq, side, terrain, colours, sea, L: int) -> None:
+def _ground(mb, land, x0, z0, sq, side, terrain, colours, sea, L: int) -> np.ndarray:
     """The ground over land: each of the GRID x GRID squares inside it as two triangles, those it crosses cut
     along the coast, coloured between its squares' centres and shaded by its slope (rules.cover.shade); and a skirt side / 64
-    deep down the node's edges under land."""
+    deep down the node's edges under land. Returns the ground's (T, 3, 3) triangles, for the roads to lie on."""
     import shapely
 
     if land.is_empty:
-        return
+        return np.zeros((0, 3, 3))
     r, c = np.divmod(np.arange(GRID * GRID), GRID)
     tiles = shapely.box(x0 + c * sq, z0 + r * sq, x0 + (c + 1) * sq, z0 + (r + 1) * sq)
     shapely.prepare(land)
@@ -264,6 +265,79 @@ def _ground(mb, land, x0, z0, sq, side, terrain, colours, sea, L: int) -> None:
         out /= np.maximum(np.linalg.norm(out, axis=1, keepdims=True), 1e-9)
         mb.add(quads.reshape(-1, 3), np.repeat(out, 4, axis=0), GROUND,
                (np.arange(len(quads))[:, None, None] * 4 + np.array([[0, 1, 2], [0, 2, 3]])).reshape(-1, 3))
+    return pos.reshape(-1, 3, 3)
+
+
+def _roads(mb, roads: np.ndarray, ground: np.ndarray, land, x0, z0, side, sea) -> None:
+    """The node's roads as quads cut along the ground's triangles, each piece laid on its triangle's plane
+    ROAD_LIFT over it, so no road dips under the coarse ground between its ends; the part off the land lies
+    flat, over the water with relief."""
+    import shapely
+
+    a_, b_ = roads[:, 0:2], roads[:, 2:4]
+    d = b_ - a_
+    d /= np.maximum(np.hypot(d[:, 0], d[:, 1]), 1e-9)[:, None]
+    half = np.maximum(roads[:, 4], side / 64) / 2
+    left = np.stack([-d[:, 1], d[:, 0]], axis=1) * half[:, None]
+    corners_xz = np.stack([a_ + left, b_ + left, b_ - left, a_ - left], axis=1)  # (K, 4, 2)
+    quads = shapely.polygons(corners_xz)
+    tris, ys = [], []
+    if len(ground):
+        corners = np.concatenate([np.ones((len(ground), 3, 1)), ground[:, :, [0, 2]]], axis=2)
+        flat = np.abs(np.linalg.det(corners)) > 1e-6  # leave out the slivers the coast cut leaves: no plane
+        ground, corners = ground[flat], corners[flat]
+        plane = np.linalg.solve(corners, ground[:, :, 1:])[..., 0]  # (T, 3): each triangle's y = p + q x + r z
+        q, k = shapely.STRtree(shapely.polygons(ground[:, :, [0, 2]])).query(quads)  # boxes that overlap
+        t, which = _clip(corners_xz[q], ground[k][:, :, [0, 2]])
+        p = plane[k[which]]
+        tris.append(t)
+        ys.append(p[:, :1] + p[:, 1:2] * t[..., 0] + p[:, 2:] * t[..., 1] + ROAD_LIFT)
+    off = shapely.difference(shapely.box(x0, z0, x0 + side, z0 + side), land)  # causeways and bridges
+    if not off.is_empty:
+        shapely.prepare(off)
+        out = quads[shapely.intersects(off, quads)]
+        t = _triangles(shapely.intersection(out, off))
+        tris.append(t)
+        ys.append(np.full(t.shape[:2], WATER_Y + LIFT if sea else ROAD_LIFT - BELOW))
+    if not tris:
+        return
+    t, y = np.concatenate(tris), np.concatenate(ys)
+    pos = np.stack([t[..., 0], y, t[..., 1]], -1).reshape(-1, 3)
+    mb.add(pos, np.tile((0.0, 1.0, 0.0), (len(pos), 1)), ROAD, np.arange(len(pos)).reshape(-1, 3))
+
+
+def _cross(u: np.ndarray, v: np.ndarray) -> np.ndarray:
+    """The z of the cross product of 2D vectors u and v."""
+    return u[..., 0] * v[..., 1] - u[..., 1] * v[..., 0]
+
+
+def _clip(polys: np.ndarray, tris: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Each convex (P, 4, 2) polygon clipped to its (P, 3, 2) triangle, fanned into (T, 3, 2) triangles, and the
+    pair each came from."""
+    m = 7  # a quad clipped by three edges has at most seven corners
+    pts = np.zeros((len(polys), m, 2))
+    pts[:, :4] = polys
+    n = np.full(len(polys), 4)
+    turn = np.sign(_cross(tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0]))[:, None]
+    for e in range(3):
+        a, b = tris[:, e][:, None], tris[:, (e + 1) % 3][:, None]
+        side = turn * _cross(b - a, pts - a)  # >= 0 inside the edge
+        i = np.arange(m)[None]
+        nxt = np.where(i + 1 < n[:, None], i + 1, 0)
+        p1, s1 = np.take_along_axis(pts, nxt[..., None], 1), np.take_along_axis(side, nxt, 1)
+        live = i < n[:, None]
+        keep = live & (side >= 0)
+        cross = live & ((side >= 0) != (s1 >= 0))
+        t = side / np.where(side == s1, 1.0, side - s1)
+        cut = pts + t[..., None] * (p1 - pts)
+        cand = np.stack([pts, cut], 2).reshape(len(pts), 2 * m, 2)
+        ok = np.stack([keep, cross], 2).reshape(len(pts), 2 * m)
+        order = np.argsort(~ok, axis=1, kind="stable")[:, :m]
+        pts, n = np.take_along_axis(cand, order[..., None], 1), np.minimum(ok.sum(1), m)
+    j = np.arange(1, m - 1)
+    row, col = np.nonzero(j[None] + 1 < n[:, None])
+    out = np.stack([pts[row, 0], pts[row, j[col]], pts[row, j[col] + 1]], 1)
+    return out, row
 
 
 def _boxes(mb, s: dict, x0: float, z0: float, sq: float, terrain, node) -> None:
@@ -326,7 +400,7 @@ def summary_mesh(s: dict, L: int, a: int, b: int, origin, terrain=None) -> MeshD
     if "cover" in s:  # what WorldCover says covers each square (contravia.cover), in the atlas palette
         colours = cover_colours(s["cover"], today())
     land = _land(s, x0, z0, sq, terrain, sea)
-    _ground(mb, land, x0, z0, sq, side, terrain, colours, sea, L)
+    ground = _ground(mb, land, x0, z0, sq, side, terrain, colours, sea, L)
     if "block_height" in s:  # the city's blocks (_blocks_mesh) instead of one box per square
         _blocks_mesh(mb, s, L, a, b, origin, terrain, sea)
     else:
@@ -334,21 +408,7 @@ def summary_mesh(s: dict, L: int, a: int, b: int, origin, terrain=None) -> MeshD
     roads = np.asarray(s["roads"], float)
     if len(roads):
         length = np.hypot(roads[:, 2] - roads[:, 0], roads[:, 3] - roads[:, 1])
-        roads = roads[np.lexsort((-length, -roads[:, 4]))][:ROAD_CAP]
-        a_, b_ = roads[:, 0:2], roads[:, 2:4]
-        d = b_ - a_
-        d /= np.maximum(np.hypot(d[:, 0], d[:, 1]), 1e-9)[:, None]
-        half = np.maximum(roads[:, 4], side / 64) / 2
-        left = np.stack([-d[:, 1], d[:, 0]], axis=1) * half[:, None]
-        mid = (a_ + b_) / 2
-        y = terrain.height(mid[:, 0], mid[:, 1]) if terrain is not None else np.zeros(len(mid))
-        if sea:  # over the ground, which never stands lower than LIFT over the water
-            y = np.maximum(y, WATER_Y + LIFT + BELOW)
-        quads = np.stack([a_ + left, b_ + left, b_ - left, a_ - left], axis=1)  # (K, 4, 2)
-        pos = np.concatenate([quads, np.repeat(y[:, None, None], 4, axis=1)], axis=2)[:, :, [0, 2, 1]]
-        n = len(roads)
-        tris = (np.arange(n)[:, None, None] * 4 + np.array([[0, 1, 2], [0, 2, 3]])).reshape(-1, 3)
-        mb.add(pos.reshape(-1, 3), np.tile((0.0, 1.0, 0.0), (4 * n, 1)), ROAD, tris)
+        _roads(mb, roads[np.lexsort((-length, -roads[:, 4]))][:ROAD_CAP], ground, land, x0, z0, side, sea)
     return mb.to_meshdata(x0, z0)
 
 
