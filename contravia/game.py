@@ -97,7 +97,8 @@ class Game:
         engine.camera.far = FAR
         self.streamer = QuadStreamer(engine, CELL, city.tree.origin, LEVELS, city.exists, build_node,
                                      error=lambda L: CELL * 2**L / 16, workers="process", tau=TAU[0],
-                                     builders=max(1, min(3, (os.cpu_count() or 2) - 1)), warm=warm)
+                                     builders=max(1, min(3, (os.cpu_count() or 2) - 1)), warm=warm,
+                                     crossfade=0.3)  # a level of detail fades into the next, it never pops
         # The detail ring: cornices, balconies, sills and roof tanks in the 3 x 3 cells around the car, drawn over
         # the massing (rules/detail.py). It narrows to the car's own cell when the frame time pushes tau to its top.
         self.detail = Streamer(engine, CELL, build_detail, radius=1, ready_radius=2, workers="process", warm=warm)
