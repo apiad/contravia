@@ -22,13 +22,15 @@ PAUSED_MUSIC = 10 ** (-10 / 20)  # the pause lowers the music by 10 dB
 DRIVING = ("drive", "aim")  # modes in which the car and the world are heard
 MODULES = ["contravia.rules.sound", "contravia.audio.engine", "contravia.audio.car", "contravia.audio.weather",
            "contravia.audio.traffic",
-           "contravia.audio.biome", "contravia.audio.ambience", "contravia.audio"]  # re-imported in the sound process on a reload
+           "contravia.audio.biome", "contravia.audio.ambience",
+           "contravia.audio.music.base", "contravia.audio.music", "contravia.audio"]  # re-imported in the sound process on a reload
 
 # Every control the game writes. A process started with fewer (by older code) is replaced.
 CONTROLS = (*pose_names("car"), "car.rpm", "car.throttle", "car.speed", "car.slip", "car.wet", "car.surface",
             "car.horn", "car.cabin", "car.under", "weather.rain", "traffic.count",
             *(f"traffic.{i}.{k}" for i in range(4) for k in ("x", "y", "z", "vx", "vy", "vz", "rpm", "cyl", "bright", "on")),
-            *(f"amb.{b}" for b in ("city", "barrio", "countryside", "coast", "night")))
+            *(f"amb.{b}" for b in ("city", "barrio", "countryside", "coast", "night")),
+            "music.style", "music.intensity", "music.date")
 
 
 class Sound:
@@ -62,11 +64,24 @@ class Sound:
         else:
             if old is not None:
                 old.close()
-            audio = Audio(backend=backend, path=path, stems=backend == "file", controls=CONTROLS)
+            audio = Audio(backend=backend, path=path, stems=backend == "file", controls=CONTROLS,
+                          streams={"music": "music"})
             s = cls(audio, CONTROLS)
+            s.start_music()
             state.sound = s
         s.apply_options(options)
         return s
+
+    def start_music(self) -> None:
+        """The music process, composing into the stream "music" from the controls music.*."""
+        import multiprocessing as mp
+
+        from contravia.audio.music import player
+
+        self.music_process = mp.get_context("spawn").Process(
+            target=player.run, args=(self.audio.stream("music"), self.audio.controls.spec()), daemon=True,
+            name="contravia-music")
+        self.music_process.start()
 
     def attach(self, game) -> None:
         """Register every source and voice of this game in the sound process: at the start, after a
@@ -297,13 +312,28 @@ class Sound:
                 a.set(f"amb.{b}", self._amb[b])
             when = getattr(game, "when_now", None)
             hour = when.hour + when.minute / 60 if when is not None else 12.0
+            self._music(game, when)
             lis = (a.controls.get("listener.x"), a.controls.get("listener.z"))
             for name, bearing in self._scatter.due(now, self.biome, hour):
                 r = 20.0 + 60.0 * ((self._frame * 7919) % 100) / 100
                 a.event("amb", kind=name, seed=self._frame, x=lis[0] + r * math.cos(bearing), y=1.5,
                         z=lis[1] + r * math.sin(bearing))
 
+    def _music(self, game, when) -> None:
+        """The style the music process plays: the region's, else the biome's; the menu's son, softer."""
+        from contravia.rules.sound import BY_BIOME, STYLES
+
+        a = self.audio
+        style = "son" if game.mode == "menu" else (self.music or BY_BIOME.get(self.biome, "son"))
+        a.set("music.style", float(STYLES.index(style)))
+        a.set("music.intensity", 0.5 if game.mode == "menu" else 1.0)
+        a.set("music.date", float(when.date().toordinal()) if when is not None else 0.0)
+
     def close(self) -> None:
+        p = getattr(self, "music_process", None)
+        if p is not None and p.is_alive():
+            p.terminate()
+            p.join(2)
         self.audio.close()
 
 

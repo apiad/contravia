@@ -149,3 +149,34 @@ def test_a_light_touch_is_not_a_crash():
     g.car.telemetry = {"impulse": 100.0}
     s.frame(g)
     assert not [c for c in s.audio.calls if c[0] == "event"]
+
+
+def test_every_event_builds_its_voice(monkeypatch):
+    """Each event the frame fires reaches a registered voice whose factory takes its values (the
+    position, for a placed voice, stays with the mixer)."""
+    from euterpe.sound import render
+
+    import contravia.audio.biome as B
+    from contravia.audio import CONTROLS
+    from contravia.audio.biome import Place
+
+    monkeypatch.setattr(B, "sample", lambda game, sampler: Place(built=.02, sea_m=1000, zone=2, sun_alt=10))
+    s = Sound(Recorder(), CONTROLS)
+    g = fake_game(2000.0)
+    g.engine.input = SimpleNamespace(is_pressed=lambda k: False)
+    s.attach(g)
+    g.weather_now = SimpleNamespace(state="storm", rain=1.0, wet=1.0, cloud=1.0)
+    g.when_now = __import__("datetime").datetime(2026, 11, 20, 6, 0)
+    for k in range(3000):
+        g.car.telemetry = {"impulse": 900.0 if k == 5 else 0.0, "travel": [0.1 + 0.05 * (k == 9)] * 4}
+        g.sinking = 0.0 if k == 20 else None
+        s.frame(g, now=k * 0.1)
+    voices = {c[1][0]: (c[1][1], c[2].get("placed", c[1][4] if len(c[1]) > 4 else False))
+              for c in s.audio.calls if c[0] == "voice"}
+    fired = [(c[1][0], c[2]) for c in s.audio.calls if c[0] == "event"]
+    assert {"crash", "bump", "thunder", "splash", "amb"} <= {n for n, _ in fired}
+    for name, values in {n: v for n, v in fired}.items():
+        factory, placed = voices[name]
+        values = {k: v for k, v in values.items() if not (placed and k in ("x", "y", "z"))}
+        u = factory(**values)
+        assert render(u, 0.05).size
