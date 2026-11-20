@@ -3,7 +3,7 @@ name = "contravia"
 version = "0.1.0"
 description = "An open-world driving game in a procedural, real-size Havana, built on manifoldx."
 requires-python = ">=3.14"
-dependencies = ["numpy", "shapely", "pillow", "manifold-gfx[desktop,svg]"]
+dependencies = ["numpy", "shapely", "pillow", "manifold-gfx[desktop,svg,audio]", "euterpe"]
 
 classifiers = [
     "Programming Language :: Python :: 3.14",
@@ -18,7 +18,8 @@ prepare = ["osmium", "tifffile", "imagecodecs"]
 dev = ["pytest", "pytest-xdist", "ruff", "osmium", "tifffile", "imagecodecs"]
 
 [tool.uv.sources]
-manifold-gfx = { git = "https://github.com/gia-uh/manifoldx", branch = "main" }
+manifold-gfx = { git = "https://github.com/gia-uh/manifoldx", branch = "audio" }  # main once gia-uh/manifoldx#326 merges
+euterpe = { git = "https://github.com/gia-uh/euterpe", rev = "01e33e0c50e01ec2ad5f6d2078e742f02bf8f810" }  # the merge of gia-uh/euterpe#158 once it lands
 
 [build-system]
 requires = ["hatchling"]
