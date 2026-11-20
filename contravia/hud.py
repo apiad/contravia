@@ -10,7 +10,8 @@ road MINIMAP_LEAD seconds ahead at the car's speed, between MINIMAP_AHEAD's city
 its height toward that over MINIMAP_EASE seconds, so it zooms out as the car speeds up and back in as it slows. Bottom left: the
 name of the municipio when the car enters it, large, fading out after AREA_SHOWN seconds. Bottom right: the
 speed, the gear in yellow and a rev counter in segments, from the car's own automatic gearbox, and the four
-assists' lamps, lit while an assist corrects.
+assists' lamps, lit while an assist corrects. Over them, when L changes the driving help, the new level's name,
+fading like the municipio's.
 
 F1 shows or hides a panel of numbers in the top left corner for working on the game: frames per second and
 the slowest frame lately, the streamed nodes drawn by level, what is building and uploading, the traffic, and
@@ -44,6 +45,7 @@ STATS_LINES = 9  # lines of the F1 panel
 STATS_EVERY = 10  # frames between two refreshes of its text
 AREA_SHOWN = 3.0  # seconds the municipio's name stays before it fades
 AREA_FADE = 0.8  # seconds it takes to fade
+NOTE_SHOWN = 1.5  # seconds the driving help's note stays before it fades
 ADDRESS_H = 84  # pixels the address takes at the bottom left; the municipio's flash shows above it
 REV_SEGMENTS = 10
 DAY_NAMES = ("LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM")
@@ -140,6 +142,7 @@ class Hud:
         self._address = None
         self._spot = ""  # the name of the place the photo hint shows, or "" with no hint
         self._pilot = ""  # the pilot's line over the lamps, or "" with the pilot off
+        self._note, self._note_t, self._note_a = "", 0.0, None  # the driving help's note and how long it has shown
         self.places, self.has = None, lambda pid: False  # the collectible places and whether one is photographed
         self.marks = []  # (panel, image) of the minimap's place icons, the unused ones at OFF
         self._clock_text, self._weather, self._lit, self._gear, self._speed = None, None, None, None, None
@@ -229,6 +232,10 @@ class Hud:
         self.pilot_text = Text(self._pilot, style_overrides={"font": ui.BOLD, "font_size": 14, "fg": ui.INK})
         self.pilot_panel = Panel([self.pilot_text], anchor="bottom-right", offset=(MARGIN, MARGIN + 162),
                                  style_overrides={"padding": "2 8", "bg": ui.YELLOW})
+        # Over the pilot's line, for a moment after L: the driving help's new level.
+        self.note_text = Text(self._note, style_overrides={"font": ui.TITLE, "font_size": 22, "fg": ui.alpha(ui.PAPER, 0)})
+        self.note_panel = Panel([self.note_text], anchor="bottom-right", offset=(MARGIN, MARGIN + 192),
+                                style_overrides={"padding": "2 10", "bg": ui.alpha(ui.INK, 0)})
         # Bottom centre, while a place without a photo is in reach and in sight: its name and the key F.
         self.spot_text = Text(self._spot, style_overrides={"font": ui.BOLD, "font_size": 17, "fg": ui.PAPER})
         key = Panel([Text("F", style_overrides={"font": ui.KEYS, "font_size": 15, "fg": ui.INK})],
@@ -238,14 +245,15 @@ class Hud:
                                 anchor="bottom-center", offset=(0, MARGIN),
                                 style_overrides={"direction": "h", "gap": 10, "padding": "6 14", "bg": ui.alpha(ui.INK, 0.85)})
         self.panels = [clock, area_back, area, self.address_back, self.address, speed_back, self._number_panel,
-                       gear_panel, tail, lamps]
+                       gear_panel, tail, lamps, self.note_panel]
         self.area_panel = area
         self.stats_lines = [Text("", style_overrides={"font": ui.KEYS, "font_size": 16, "fg": "#e8e8e8"})
                             for _ in range(STATS_LINES)]
         self.stats_panel = Panel(self.stats_lines, anchor="top-left", offset=(MARGIN, MARGIN + 60),
                                  style_overrides={"padding": 10, "gap": 2, "bg": "#000000b0", "width": 460,
                                                   "height": 24 + 22 * STATS_LINES})
-        for p in (clock, area, gear_panel, self.address_back, self.address, self.spot_panel, self.pilot_panel):  # the others fit by their anchor
+        for p in (clock, area, gear_panel, self.address_back, self.address, self.spot_panel, self.pilot_panel,
+                  self.note_panel):  # the others fit by their anchor
             ui.fit(p)
         if self.shown:
             self.shown = False
@@ -357,6 +365,22 @@ class Hud:
         if self.shown and bool(had) != bool(line):
             (self.engine.gui.append if line else self.engine.gui.remove)(self.pilot_panel)
 
+    def note(self, text: str) -> None:
+        """Show `text` over the lamps at once; update fades it after NOTE_SHOWN seconds, as the municipio's."""
+        self._note, self._note_t, self._note_a = text, 0.0, None
+        if self.panels:
+            self.note_text.text = text
+            ui.refit(self.note_panel)
+
+    def _fade_note(self, dt: float) -> None:
+        self._note_t += dt
+        a = 0.0 if not self._note else min(1.0, max(0.0, 1.0 - (self._note_t - NOTE_SHOWN) / AREA_FADE))
+        if a == self._note_a:
+            return
+        self._note_a = a
+        self.note_text.style_overrides = {**self.note_text.style_overrides, "fg": ui.alpha(ui.PAPER, a)}
+        self.note_panel.style_overrides = {**self.note_panel.style_overrides, "bg": ui.alpha(ui.INK, 0.85 * a)}
+
     def set_address(self, street: str, line: str, place: str) -> None:
         """The street the car is on, the line under it ("entre L y M") and "barrio · municipio"."""
         if not self.panels or (street, line, place) == self._address:
@@ -386,6 +410,7 @@ class Hud:
             if was != now:
                 text.style_overrides = {**text.style_overrides, "fg": ui.YELLOW if now else ui.alpha(ui.PAPER, 0.25)}
         self._lamps = lamps_lit(car)
+        self._fade_note(dt)
         gear, revs = gearbox(car, *rpm_range)
         if gear != self._gear:
             self._gear = gear

@@ -51,6 +51,11 @@ def level_from_realism(realism: float) -> int:
     return 5 if realism >= 90 else 4 if realism >= 60 else 3
 
 
+def next_level(level: int) -> int:
+    """The level the L key turns to: one more help a press, from Real (5) down to Casi piloto (0), then Real."""
+    return (level - 1) % len(LEVELS)
+
+
 @dataclass
 class Place:
     """Where the car is on the road: its edge, s metres along it, `right` metres right of its centreline, in

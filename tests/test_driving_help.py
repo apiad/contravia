@@ -6,7 +6,7 @@ import pytest
 from graphs import four_way, make_graph, straight
 
 from contravia.driving_help import ROAD_ASSISTS as ROAD
-from contravia.driving_help import Road, chassis_strengths, level_from_realism
+from contravia.driving_help import Road, chassis_strengths, level_from_realism, next_level
 from contravia.traffic import Cars, lane_geometry, lane_offsets
 
 
@@ -16,6 +16,10 @@ def test_each_level_sets_the_chassis_assists():
     for level in (0, 1, 2, 3):
         np.testing.assert_allclose(chassis_strengths(level), [1, 1, 1, 1])
     np.testing.assert_allclose(chassis_strengths(3, ("abs", "lane")), [1, 1, 0, 1])
+
+
+def test_l_cycles_from_real_down_to_almost_autopilot_and_round():
+    assert [next_level(k) for k in (5, 4, 3, 2, 1, 0)] == [4, 3, 2, 1, 0, 5]
 
 
 def test_an_old_realism_becomes_a_level():

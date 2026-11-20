@@ -133,6 +133,8 @@ shore's grid (`rules.shore.vegetated`). The
   The «Ayuda al manejo» option has six levels, from 0 (almost autopilot) to 5 (real), in `contravia/driving_help.py`
   (spec `docs/superpowers/specs/2026-11-20-driving-help-design.html`); a level sets the four chassis assists' strengths,
   `Options.locked_assists` keeps some off, and `Road.locate` finds the car's edge, lane and distance along it.
+  While driving, L turns it to the next level (5, 4, ... 0, then 5 again, `next_level`) as the options would,
+  saves it and names the level on the HUD for a moment.
 - A script of your own that builds `Game` (custom shots, probes) must run its code under
   `if __name__ == "__main__":`: the streamer starts worker processes with spawn, which re-imports the script and
   fails with "start a new process before the current process has finished its bootstrapping phase".

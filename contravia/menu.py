@@ -10,6 +10,7 @@ docs/superpowers/specs/2026-11-18-garaje-design.html proposes, over the vehicle 
 The game behind runs in one of these modes (game.mode): "menu" while a menu screen covers it (the car stands,
 the clock stops, the streamer keeps loading the start's cells), "drive", "paused", "photo", "map" and "garage". The menu tells
 the game what to do through Game.start, Game.pause, Game.resume and Game.to_menu.
+While driving, Escape pauses, F aims a camera at a place and L turns the driving help to its next level.
 """
 
 import math
@@ -17,6 +18,7 @@ import textwrap
 from typing import ClassVar
 
 from contravia import album, collect, garage, mapview, nearby, placemarks, ui, whereis
+from contravia.driving_help import next_level
 from contravia.hud import DAY_NAMES
 from contravia.rules import designs, fleet
 from contravia.settings import WEATHER_ICON, FreeDrive, Options
@@ -1198,7 +1200,7 @@ class DesignScreen(RowsScreen):
 
 SCREENS = {"main": MainScreen, "free": FreeScreen, "options": OptionsScreen, "pause": PauseScreen,
            "photo": PhotoScreen, "aim": AimScreen, "card": CardScreen, "map": MapScreen, "album": AlbumScreen, "province": ProvinceScreen, "garage": GarageScreen, "design": DesignScreen}
-KEY_NAMES = set(KEYS)
+KEY_NAMES = set(KEYS) | {"l"}  # L, while driving, turns the driving help to its next level
 
 
 class Menu:
@@ -1263,9 +1265,20 @@ class Menu:
                 self.pause()
             elif key == "f" and self.game.mode == "drive" and self.game.start_aim():
                 self.show("aim")
+            elif key == "l" and self.game.mode == "drive":
+                self.next_help()
             return
         if key in KEYS:
             self.screens[self.current].key(KEYS[key])
+
+    def next_help(self) -> None:
+        """Turn the «Ayuda al manejo» option to its next level, as choosing it in the options does: applied at
+        once, saved, and named for a moment on the HUD."""
+        row = self.options["help"]
+        row.pick(next_level(row.value))
+        self.game.apply_options(self.options)
+        self.options.save()
+        self.game.hud.note(f"Ayuda {row.value} · {row.text}".upper())
 
     def update(self, query, dt: float) -> None:
         """Read this frame's keys, follow a resized window and animate the screen."""
@@ -1275,7 +1288,7 @@ class Menu:
                 if self.current in ("photo", "map", "aim") and k in ("w", "s", "a", "d", "ArrowUp", "ArrowDown",
                                                             "ArrowLeft", "ArrowRight"):
                     continue  # the photo mode reads them as held keys
-                if self.current is None and k not in ("Escape", "f"):
+                if self.current is None and k not in ("Escape", "f", "l"):
                     continue
                 self.press(k)
                 break

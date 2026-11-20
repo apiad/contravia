@@ -430,3 +430,39 @@ def test_the_maps_panel_names_what_lies_near_the_crosshair_at_each_height(city_n
     assert close[0] == capitolio.title and screen.here_header.text == "AQUÍ"
     high = settle(500_000.0)
     assert screen.here_title.text == "La Habana" and len(high) == 25 and screen.here_header.text == "LO MÁS NOTABLE" and capitolio.title in high
+
+
+def test_l_in_drive_mode_turns_the_driving_help_and_saves_it(city_npz):
+    import manifoldx as mx
+
+    from contravia.driving_help import LEVELS
+    from contravia.game import Game
+    from contravia.menu import Menu
+    from contravia.world import World
+
+    engine = mx.Engine("help", width=64, height=48)
+    game = Game(engine, World.load(str(city_npz)), clock=Clock(at=parse_at("Tue 10:00")))
+    options = Options.load()
+    options.locked_assists = ("abs",)
+    menu = Menu(engine, game, FreeDrive.from_flags(when="Tue 10:00"), options, screen=None)
+    try:
+        engine.render_frame(supersample=1)
+        assert game.mode == "drive" and game.help_level == 3
+        np.testing.assert_allclose(game.strengths(), [1, 1, 0, 1])
+        menu.press("l")
+        assert menu.current is None and game.help_level == 2
+        menu.press("l")
+        menu.press("l")
+        menu.press("l")
+        assert game.help_level == 5
+        np.testing.assert_allclose(game.strengths(), [0, 0, 0, 0])
+        menu.press("l")
+        assert game.help_level == 4
+        np.testing.assert_allclose(game.strengths(), [0.0, 0.6, 0.0, 0.6])  # abs stays locked off
+        assert Options.load()["help"].value == 4
+        assert game.hud.note_text.text == f"AYUDA 4 · {LEVELS[4][0].upper()}"
+        menu.show("options")
+        menu.press("l")
+        assert game.help_level == 4  # a menu on the screen does not read L
+    finally:
+        game._shutdown()
