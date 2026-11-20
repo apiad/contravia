@@ -156,3 +156,28 @@ def test_the_spot_is_the_nearest_place_in_reach_and_sight_without_a_photo(city):
         assert game.spot is None  # the other one is out of reach
     finally:
         game._shutdown()
+
+
+def test_streamed_nodes_fade_in_instead_of_popping(city):
+    import time
+
+    import manifoldx as mx
+
+    from contravia.game import Game
+
+    engine = mx.Engine("fade", width=64, height=48)
+    game = Game(engine, city)
+    s = game.streamer
+    seen = set()
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < 60 and not (seen and not s._fading):
+        engine.render_frame(supersample=1)
+        fades = engine.store._components.get("Fade")
+        seen |= {round(float(np.ravel(fades[h.index])[0]), 2) for h, _, out in s._fading.values() if not out}
+    assert any(0.0 < v < 1.0 for v in seen)  # caught halfway in, not popped
+    drawn = [h for h in s._drawn.values() if h is not None]
+    fades = engine.store._components["Fade"]
+    assert drawn and all(np.ravel(fades[h.index])[0] == 1.0 for h in drawn)  # and whole once faded in
+    s.close()
+    if game.layer:
+        game.runner.stop()
