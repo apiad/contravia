@@ -830,7 +830,7 @@ class Game:
         if self.mode == "drive":
             e = self.driven.spec.engine
             self.hud.update(self.car, self.o, (e.idle_rpm, e.peak_power_rpm * 1.15),
-                            loading=bool(getattr(self.engine.state, "cells_waiting", 0)))
+                            loading=bool(getattr(self.engine.state, "cells_waiting", 0)), dt=self._dt)
             self.hud.set_time(self.clock.now(), self.weather_state)
             help = getattr(self, "help", None)
             self.hud.set_pilot(pilot_line(help.wanted, help.exit[1] if help.exit else None, self.hud.units)

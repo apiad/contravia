@@ -1,11 +1,13 @@
 """The HUD, in the four corners and nothing in the middle of the street, as docs/ux/contravia-ux.html draws it.
 
 Top left: the game's time, the day and the weather's icon. Top right: a round minimap with a cream rim, the
-scene itself seen from MINIMAP_HEIGHT metres straight above the car, rendered by the engine into a texture
-(render_to_texture) when the car has moved MINIMAP_MOVE metres or turned MINIMAP_TURN degrees since the last
-render, or while the cells around the car are still loading, at most every MINIMAP_EVERY frames and at least
-every MINIMAP_IDLE. Its top is the way the car faces, so the red arrow in its middle
-always points up and the streets turn around it; the N badge rides the rim where north is. Bottom left: the
+scene itself seen from straight above, rendered by the engine into a texture (render_to_texture) when the car
+has moved about a pixel of it or turned MINIMAP_TURN degrees since the last render, when its height changed by
+MINIMAP_ZOOM, or while the cells around the car are still loading, at most every MINIMAP_EVERY frames and at
+least every MINIMAP_IDLE. Its top is the way the car faces, so the red arrow, MINIMAP_CAR of the radius below its
+middle, always points up and the streets turn around it; the N badge rides the rim where north is. It shows the
+road MINIMAP_LEAD seconds ahead at the car's speed, between MINIMAP_AHEAD's city and highway metres, and eases
+its height toward that over MINIMAP_EASE seconds, so it zooms out as the car speeds up and back in as it slows. Bottom left: the
 name of the municipio when the car enters it, large, fading out after AREA_SHOWN seconds. Bottom right: the
 speed, the gear in yellow and a rev counter in segments, from the car's own automatic gearbox, and the four
 assists' lamps, lit while an assist corrects.
@@ -23,13 +25,17 @@ from contravia import placemarks, ui
 
 MINIMAP_SIZE = 256  # pixels of the texture
 MINIMAP_SHOWN = 190  # pixels across on screen
-MINIMAP_HEIGHT = 300.0  # metres above the car
 MINIMAP_EVERY = 4  # fewest frames between two renders of the minimap
-MINIMAP_MOVE = 2.0  # metres the car moves before the minimap renders again, about one pixel of it on screen
 MINIMAP_TURN = 1.5  # degrees the car turns before the minimap renders again
 MINIMAP_IDLE = 60  # most frames between two renders, so the traffic around a still car moves on
 RIM = 8  # pixels of the minimap's cream rim
-MINIMAP_METRES = MINIMAP_HEIGHT * math.tan(math.radians(30.0))  # ground metres from the minimap's centre to its edge
+MINIMAP_SPAN = math.tan(math.radians(30.0))  # ground metres from the minimap's centre to its edge per metre of height
+MINIMAP_CAR = 0.35  # how far below the minimap's centre the car sits, as a fraction of its radius
+MINIMAP_LEAD = 12.0  # seconds of road ahead the minimap shows at the car's speed
+MINIMAP_AHEAD = (175.0, 600.0)  # fewest and most metres ahead: a city street, a highway
+MINIMAP_EASE = 1.0  # seconds the minimap's height takes to cover about two thirds of the way to its target
+MINIMAP_ZOOM = 0.01  # change of height, as a fraction, that renders the minimap again
+MINIMAP_MOVE = 1.5  # metres the car moves before the minimap renders again at its lowest, about one pixel of it
 MINIMAP_MARKS = 12  # most places the minimap shows at once
 MARK_PX = 18  # pixels across a place's icon on the minimap
 OFF = (-1000, -1000)  # offset that puts an unused icon outside the window
@@ -73,18 +79,37 @@ def speed_text(speed: float, units: str = "kmh") -> str:
     return f"{abs(speed) * (3.6 if units == 'kmh' else 2.23694):.0f}"
 
 
-def minimap_stale(last, pose, frames: int, loading: bool = False) -> bool:
-    """Whether the minimap must render again for the car at pose = (x, z, yaw), `frames` frames after it
-    last rendered at `last` (None before its first render); while loading, the cells landing around the car
-    change it even when the car stands still."""
+def minimap_target(speed: float) -> float:
+    """The minimap's height in metres for a car at `speed` m/s: the road MINIMAP_LEAD seconds ahead fits between
+    the car and the top of the disc, clamped to MINIMAP_AHEAD."""
+    low, high = MINIMAP_AHEAD
+    ahead = min(high, max(low, abs(speed) * MINIMAP_LEAD))
+    return ahead / ((1.0 + MINIMAP_CAR) * MINIMAP_SPAN)
+
+
+MINIMAP_LOW = minimap_target(0.0)  # the minimap's height for a still car, its lowest
+
+
+def ease(height: float, target: float, dt: float, tau: float = MINIMAP_EASE) -> float:
+    """`height` moved toward `target` over dt seconds, exponentially with time constant tau: never past it, and
+    the same path whatever the frame rate."""
+    return target + (height - target) * math.exp(-max(dt, 0.0) / tau)
+
+
+def minimap_stale(last, pose, frames: int, loading: bool = False, height: float = MINIMAP_LOW,
+                  drawn: float = MINIMAP_LOW) -> bool:
+    """Whether the minimap must render again for the car at pose = (x, z, yaw) seen from `height`, `frames`
+    frames after it last rendered at `last` from `drawn` (None before its first render); while loading, the cells
+    landing around the car change it even when the car stands still."""
     if last is None or frames >= MINIMAP_IDLE:
         return True
     if frames < MINIMAP_EVERY:
         return False
-    if loading:
+    if loading or abs(height - drawn) >= MINIMAP_ZOOM * drawn:
         return True
     turn = abs((math.degrees(pose[2] - last[2]) + 180.0) % 360.0 - 180.0)
-    return bool(math.hypot(pose[0] - last[0], pose[1] - last[1]) >= MINIMAP_MOVE or turn >= MINIMAP_TURN)
+    moved = math.hypot(pose[0] - last[0], pose[1] - last[1])
+    return bool(moved >= MINIMAP_MOVE * height / MINIMAP_LOW or turn >= MINIMAP_TURN)
 
 
 def north_offset(yaw: float, side: float, size: float) -> tuple[float, float]:
@@ -104,11 +129,12 @@ class Hud:
         from manifoldx.camera import Camera
 
         self.engine = engine
-        self.camera = Camera(fov=60, near=10.0, far=MINIMAP_HEIGHT + 200.0)
+        self.camera = Camera(fov=60, near=10.0, far=MINIMAP_LOW + 200.0)
         self.texture = None
         self.units, self.minimap_on, self.shown = "kmh", True, False
         self._frame = 0
         self._drawn, self._drawn_frame = None, 0  # the car's pose at the minimap's last render, and its frame
+        self.height, self._drawn_height = None, MINIMAP_LOW  # the minimap's height now and at its last render
         self._loading = False
         self._area, self._area_t, self._area_a = "", 0.0, None
         self._address = None
@@ -143,7 +169,7 @@ class Hud:
         disc = Panel([Image(self.texture, style_overrides={"width": side, "radius": side // 2})],
                      anchor="top-right", offset=(MARGIN, MARGIN), style_overrides={**CLEAR, "width": side, "height": side})
         car = Panel([Image(ui.arrow(22), style_overrides={"width": 22})], anchor="top-right",
-                     offset=(MARGIN + side // 2 - 11, MARGIN + side // 2 - 11),
+                     offset=(MARGIN + side // 2 - 11, MARGIN + round(side / 2 * (1 + MINIMAP_CAR)) - 11),
                      style_overrides={**CLEAR, "width": 22, "height": 22})
         self.north = Panel([Image(ui.north(26), style_overrides={"width": 26})], anchor="top-right",
                            offset=north_offset(0.0, side, 26), style_overrides={**CLEAR, "width": 26, "height": 26})
@@ -344,11 +370,12 @@ class Hud:
         ui.refit(self.address)
 
     def update(self, car, origin: np.ndarray, rpm_range: tuple[float, float] = (850.0, 6500.0),
-               loading: bool = False) -> None:
+               loading: bool = False, dt: float = 1 / 60) -> None:
         """Show the car's speed, gear and revs between rpm_range's idle and redline, light the assists' lamps,
-        each written only when what it shows changed, and when the car has moved or turned enough, or the cells
-        around it are loading (minimap_stale), render the minimap above it and turn the north badge with it;
-        once loading ends it renders once more."""
+        each written only when what it shows changed, ease the minimap's height dt seconds toward the car's speed,
+        and when the car has moved or turned enough, the height changed, or the cells around it are loading
+        (minimap_stale), render the minimap above it and turn the north badge with it; once loading ends it
+        renders once more."""
         if not self.panels:
             return
         speed = speed_text(car.speed, self.units)
@@ -372,13 +399,18 @@ class Hud:
         if self._loading and not loading:  # the last cells landed after the last render
             self._drawn = None
         self._loading = loading
-        if not self.minimap_on or not minimap_stale(self._drawn, pose, self._frame - self._drawn_frame, loading):
+        target = minimap_target(car.speed)
+        self.height = target if self.height is None else ease(self.height, target, dt)
+        if not self.minimap_on or not minimap_stale(self._drawn, pose, self._frame - self._drawn_frame, loading,
+                                                    self.height, self._drawn_height):
             return
-        self._drawn, self._drawn_frame = pose, self._frame
+        self._drawn, self._drawn_frame, self._drawn_height = pose, self._frame, self.height
         self.north.offset = north_offset(car.yaw, MINIMAP_SHOWN, 26)
-        here = np.array([car.x, car.y, car.z]) - origin
-        self.camera.up = np.array([math.cos(car.yaw), 0.0, math.sin(car.yaw)], np.float32)
-        self.camera.set_pose(position=tuple(here + (0.0, MINIMAP_HEIGHT, 0.0)), target=tuple(here))
+        forward = np.array([math.cos(car.yaw), 0.0, math.sin(car.yaw)])
+        centre = np.array([car.x, car.y, car.z]) - origin + forward * (MINIMAP_CAR * self.height * MINIMAP_SPAN)
+        self.camera.up = forward.astype(np.float32)
+        self.camera.far = self.height + 200.0
+        self.camera.set_pose(position=tuple(centre + (0.0, self.height, 0.0)), target=tuple(centre))
         self.engine.refresh_texture(self.texture)
         self._place_marks(car)
 
@@ -387,10 +419,15 @@ class Hud:
         self.places, self.has = places, has
 
     def _place_marks(self, car) -> None:
-        """Put an icon on the minimap for each place inside its circle, the nearest first, and hide the rest."""
-        found = [] if self.places is None else placemarks.on_minimap(self.places, car.x, car.z, car.yaw,
-                                                                     MINIMAP_METRES, MINIMAP_SHOWN / 2)
-        found.sort(key=lambda f: math.hypot(f[1], f[2]))
+        """Put an icon on the minimap for each place inside its circle, the nearest to the car first, and hide
+        the rest."""
+        metres = self.height * MINIMAP_SPAN
+        ahead = MINIMAP_CAR * metres  # the minimap's centre lies this far ahead of the car
+        x, z = car.x + ahead * math.cos(car.yaw), car.z + ahead * math.sin(car.yaw)
+        found = [] if self.places is None else placemarks.on_minimap(self.places, x, z, car.yaw, metres,
+                                                                     MINIMAP_SHOWN / 2)
+        below = MINIMAP_CAR * MINIMAP_SHOWN / 2  # pixels the car sits below the centre
+        found.sort(key=lambda f: math.hypot(f[1], f[2] - below))
         centre = MARGIN + MINIMAP_SHOWN / 2 - MARK_PX / 2
         for k, (panel, image) in enumerate(self.marks):
             if k >= len(found):

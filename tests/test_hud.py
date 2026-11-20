@@ -1,4 +1,5 @@
 import math
+from itertools import pairwise
 
 import pytest
 
@@ -168,3 +169,67 @@ def test_the_pilot_line_says_its_speed_and_turn():
     assert pilot_line(11.1, 0.1) == "40 km/h · recto"
     assert pilot_line(11.1, 1.4) == "40 km/h · dobla a la derecha"
     assert pilot_line(11.1, -1.4, "mph") == "25 mph · dobla a la izquierda"
+
+
+def test_the_minimap_rises_with_speed_between_a_city_street_and_a_highway():
+    from contravia.hud import MINIMAP_AHEAD, MINIMAP_CAR, MINIMAP_LEAD, MINIMAP_SPAN, minimap_target
+
+    speeds = [s / 3.6 for s in range(0, 260, 5)]
+    heights = [minimap_target(s) for s in speeds]
+    assert all(a <= b for a, b in pairwise(heights))  # never lower when faster
+    assert heights[0] == minimap_target(30 / 3.6) < minimap_target(100 / 3.6) < heights[-1]
+    ahead = [h * MINIMAP_SPAN * (1 + MINIMAP_CAR) for h in heights]  # metres from the car to the disc's top
+    assert ahead[0] == pytest.approx(MINIMAP_AHEAD[0]) and ahead[-1] == pytest.approx(MINIMAP_AHEAD[1])
+    assert minimap_target(-20.0) == minimap_target(20.0)  # reversing looks the same way
+    assert minimap_target(25.0) * MINIMAP_SPAN * (1 + MINIMAP_CAR) == pytest.approx(25.0 * MINIMAP_LEAD)
+
+
+def test_the_minimap_eases_toward_its_height_at_any_frame_rate():
+    from contravia.hud import MINIMAP_EASE, ease
+
+    assert ease(200.0, 500.0, MINIMAP_EASE) == pytest.approx(500.0 - 300.0 / math.e)
+    assert ease(500.0, 200.0, 0.0) == 500.0
+    h60, h20 = 200.0, 200.0
+    for _ in range(60):
+        h60 = ease(h60, 500.0, 1 / 60)
+        assert 200.0 < h60 < 500.0  # moves every frame, never past the target
+    for _ in range(20):
+        h20 = ease(h20, 500.0, 1 / 20)
+    assert h60 == pytest.approx(h20)
+    assert ease(300.0, 600.0, 1 / 60) - 300.0 < 0.02 * 300.0  # no frame jumps
+
+
+def test_the_minimap_redraws_when_its_height_changed_and_steps_by_its_pixels():
+    from contravia.hud import MINIMAP_EVERY, MINIMAP_LOW, MINIMAP_MOVE, MINIMAP_ZOOM, minimap_stale
+
+    last = (0.0, 0.0, 0.0)
+    assert not minimap_stale(last, last, MINIMAP_EVERY, height=MINIMAP_LOW * (1 + MINIMAP_ZOOM * 0.5))
+    assert minimap_stale(last, last, MINIMAP_EVERY, height=MINIMAP_LOW * (1 + MINIMAP_ZOOM * 1.5))
+    high = MINIMAP_LOW * 3
+    step = (MINIMAP_MOVE * 2, 0.0, 0.0)  # one pixel low down, a fraction of one from three times as high
+    assert minimap_stale(last, step, MINIMAP_EVERY)
+    assert not minimap_stale(last, step, MINIMAP_EVERY, height=high, drawn=high)
+
+
+def test_the_minimap_zooms_out_smoothly_as_the_car_speeds_up():
+    import numpy as np
+
+    from contravia.hud import MINIMAP_LOW, Hud, minimap_target
+
+    engine = _Engine()
+    engine.refresh_texture = lambda t: None
+    hud = Hud(engine)
+    engine.started[0]()
+    car = CarState(0, 0, 0, 0.0)
+    hud.update(car, np.zeros(3), dt=1 / 60)
+    assert hud.height == MINIMAP_LOW and hud.camera.far == MINIMAP_LOW + 200.0
+    car.speed = 120 / 3.6
+    seen = []
+    for _ in range(240):
+        hud.update(car, np.zeros(3), dt=1 / 60)
+        seen.append(hud.height)
+    assert all(b > a for a, b in pairwise(seen))
+    jump = (minimap_target(car.speed) - MINIMAP_LOW) / 60  # what one frame of a 1 s ease can cover at most
+    assert max(b - a for a, b in pairwise(seen)) <= jump
+    assert seen[-1] == pytest.approx(minimap_target(car.speed), rel=0.03)
+    assert hud.camera.far > MINIMAP_LOW + 200.0  # the far plane follows the height
