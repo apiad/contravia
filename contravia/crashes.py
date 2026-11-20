@@ -96,6 +96,18 @@ class Crashes:
             pitch[i] = math.asin(max(-1.0, min(1.0, ahead[1])))
         return xyz, heading, pitch, np.array([b.look for b in self.bodies], np.int64)
 
+    def boxes(self) -> tuple[np.ndarray, np.ndarray]:
+        """The bodies' outlines as (W, 2, 2) segments and each segment's body's velocity (W, 2) in m/s."""
+        segs, vel = [], []
+        for i, b in enumerate(self.bodies):
+            x, z, yaw, _ = self._state(i + 1)
+            c, s = math.cos(yaw), math.sin(yaw)
+            hl, hw = LENGTH[b.kind] / 2, WIDTH[b.kind] / 2
+            corners = [(x + c * fx - s * fz, z + s * fx + c * fz) for fx, fz in ((hl, hw), (hl, -hw), (-hl, -hw), (-hl, hw))]
+            segs += [(corners[k], corners[(k + 1) % 4]) for k in range(4)]
+            vel += [tuple(self.fleet.velocity[i + 1][[0, 2]])] * 4
+        return np.array(segs, float).reshape(-1, 2, 2), np.array(vel, float).reshape(-1, 2)
+
     def obstacles(self, layer) -> list:
         """(edge, lane, front s, speed) of every body on a lane, for the traffic to stop behind or pass."""
         out = []

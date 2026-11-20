@@ -59,7 +59,7 @@ def gearbox(car, idle: float, redline: float) -> tuple[str, float]:
 
 
 LAMPS = (("steer", "DIR"), ("traction", "TRC"), ("abs", "ABS"), ("stability", "EST"),
-         ("lane", "SENDA"))  # the assists' lamps
+         ("lane", "SENDA"), ("brake", "FRENO"))  # the assists' lamps
 
 
 def lamps_lit(car) -> list[bool]:

@@ -380,10 +380,10 @@ pre .c{color:var(--faint)} pre .k{color:var(--accent)} pre .s{color:var(--ok)}
 
 <h2 id="brake"><span class="n">08</span>Emergency brake (level 1)</h2>
 <ul>
-  <li>Obstacles are the traffic's cars in the car's lane and the one beside it it is drifting into, the wrecked cars from <code>contravia/crashes.py</code>, and the walls straight ahead within 30 m.</li>
-  <li>Time to collision is the gap over the closing speed. Under 1.6 s the assist adds brake in proportion; under 0.8 s, full brake. It also cuts the throttle while it brakes.</li>
+  <li>Obstacles are the outlines of the traffic's cars with their velocities, the crashed cars from <code>contravia/crashes.py</code> and the walls, as segments. Each is clipped to the car's path: its width and 0.3 m each side, bent by the car's yaw rate, so a wall on the far side of a bend is not in the way. It looks as far as stopping at 3 m/s² takes, and 12 m more.</li>
+  <li>It brakes by the deceleration it would take to stop 2 m short: the closing speed squared over twice the gap. From 3 m/s² it adds brake in proportion, full brake at 6 m/s², and it cuts the throttle while it brakes. (A first draft used the time to collision, 1.6 s and 0.8 s: at 15 m/s full brake at 0.8 s left 12 m, which needs 9.4 m/s², more than the tyres hold. The car stopped inside the one ahead.)</li>
   <li>It never steers and never accelerates. The driver's own brake adds to it; the handbrake or a strong steer past 0.6 turns it off for that frame, so a swerve stays possible.</li>
-  <li>Under 2 m/s it lets go, so the car can creep out of a jam.</li>
+  <li>Under 2 m/s it lets the car creep out of a jam, but holds it when its nose is within 1.5 m of something in its path.</li>
   <li>The FRENO lamp is lit while it brakes.</li>
 </ul>
 
@@ -417,7 +417,7 @@ pre .c{color:var(--faint)} pre .k{color:var(--accent)} pre .s{color:var(--ok)}
 <ul>
   <li>Locating: on the fixture cities, points along each lane resolve to that edge and lane; at a corner the answer does not jump back and forth over 60 frames of driving through it.</li>
   <li>Keep lane: released wheel, a car started 1 m off centre on a curved street ends within 0.3 m of the centre and never leaves the lane; a held steer over 0.15 gets no correction.</li>
-  <li>Emergency brake: a car at 15 m/s toward a stopped traffic car stops without contact at level 1 and hits it at level 2; a swerve past 0.6 is not braked.</li>
+  <li>Emergency brake: a car at 15 m/s toward a stopped car stops without contact at level 1 and hits it at level 2; a swerve past 0.6, a leader as fast as the car and a car out of a bend's way are not braked for.</li>
   <li>Almost autopilot: follows a slower traffic car at the model's gap; stops at a red light and goes on green; with no input takes the straight exit, with a tap the side one.</li>
   <li>Each new test is broken on purpose once (assist off) to confirm it fails.</li>
   <li>T0: <code>test_settings</code>, <code>test_hud</code>, <code>test_traffic</code>, <code>test_car</code>, <code>test_crashes</code> and the new <code>test_driving_help</code>.</li>
@@ -429,7 +429,7 @@ pre .c{color:var(--faint)} pre .k{color:var(--accent)} pre .s{color:var(--ok)}
   <li>No pedestrians: the game has none yet.</li>
   <li>Driving the wrong way, off road or in a park turns the road assists off; level 0 does not drive back to the road.</li>
   <li>Open: whether the emergency brake should also brake for a car crossing at a corner, which needs the traffic's cars on the other edges of the junction. Step 3 starts with the lane only.</li>
-  <li>Open: the thresholds (0.15, 0.5, 1.6 s, 0.8 s) are first guesses, tuned by driving.</li>
+  <li>Open: the thresholds (0.15, 0.5, 3 and 6 m/s²) are first guesses, tuned by driving.</li>
 </ul>
 </main>
 </div>

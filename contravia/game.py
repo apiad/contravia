@@ -26,7 +26,7 @@ from contravia import collect
 from contravia.album import Album
 from contravia.camera import chase
 from contravia.car import CarState, Controls, Driven, settle
-from contravia.driving_help import DEFAULT, DrivingHelp, Road, chassis_strengths, road_assists
+from contravia.driving_help import DEFAULT, DrivingHelp, Road, brake_reach, chassis_strengths, road_assists
 from contravia.forest import Forest
 from contravia.geo import CELL, to_local
 from contravia.grass import Grass
@@ -416,8 +416,23 @@ class Game:
             self.help = None
             return c
         if getattr(self, "_help_for", None) != (id(graph), id(self.driven)):  # another province or vehicle
-            self.help, self._help_for = DrivingHelp(Road(graph), *self.driven.steering()), (id(graph), id(self.driven))
-        return self.help.apply(c, self.car, self._dt, level, locked, float(self.strengths()[0]))
+            length, _, width = self.driven.spec.size
+            self.help = DrivingHelp(Road(graph), *self.driven.steering(), length, width)
+            self._help_for = (id(graph), id(self.driven))
+        on = road_assists(level, locked)
+        return self.help.apply(c, self.car, self._dt, level, locked, float(self.strengths()[0]),
+                               self._ahead_of_car() if "brake" in on else None)
+
+    def _ahead_of_car(self) -> tuple[np.ndarray, np.ndarray]:
+        """What the emergency brake must not hit: the walls, the traffic and the crashed cars near the car, as
+        (W, 2, 2) segments and their velocities (W, 2)."""
+        x, z, reach = self.car.x, self.car.z, brake_reach(abs(self.car.speed))
+        walls = around(self.walls.near(x, z, self.car.y), x, z, reach)
+        parts = [(walls, np.zeros((len(walls), 2)))]
+        if self.layer:
+            parts.append(self.layer.moving_boxes_near(x, z, reach))
+            parts.append(self._crashes().boxes())
+        return np.concatenate([p[0] for p in parts]), np.concatenate([p[1] for p in parts])
 
     def strengths(self):
         """The chassis assists' strengths at the driving help's level."""

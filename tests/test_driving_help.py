@@ -166,3 +166,69 @@ def test_the_driver_steering_or_off_the_road_gets_no_correction():
     assert help.apply(ahead, CarState(100.0, 2.5, 0.0, 12.0), 1 / 60, 3) == ahead
     assert help.apply(ahead, CarState(100.0, 2.5, 0.0, 12.0), 1 / 60, 2).steer < 0  # back left, toward 1.5
     assert road_assists(2) == {"lane"} and road_assists(0) == set(ROAD) and road_assists(1, ("lane",)) == {"brake"}
+
+
+def box(x, z, length=4.5, width=1.8):
+    """A stopped car's outline at (x, z), facing +x, as 4 segments and their zero velocities."""
+    c = [(x + length / 2, z + width / 2), (x + length / 2, z - width / 2), (x - length / 2, z - width / 2),
+         (x - length / 2, z + width / 2)]
+    return np.array([(c[k], c[(k + 1) % 4]) for k in range(4)], float), np.zeros((4, 2))
+
+
+def brake_run(level, seconds=8.0, speed=15.0, at=80.0):
+    """The moderno at `speed` toward a stopped car `at` metres ahead in its lane, the throttle held: the gap
+    between its nose and that car's tail, each frame."""
+    from manifoldx.vehicles import FlatGround
+
+    from contravia.car import CarState, Controls, Driven
+    from contravia.driving_help import DrivingHelp
+    from contravia.rules import fleet, handling
+
+    road = Road(straight())
+    d = Driven(handling.spec_for(fleet.moderno(), "moderno"), CarState(0.0, 1.5, 0.0, 0.0), FlatGround())
+    walls, k = np.zeros((0, 2, 2)), chassis_strengths(level)
+    d.run(Controls(0, 0, 0, False), 0.5, walls, k)
+    d.launch(speed)
+    length, _, width = d.spec.size
+    help, car, dt, gaps = DrivingHelp(road, *d.steering(), length, width), d.state, 1 / 60, []
+    obstacle = box(at, 1.5)
+    for _ in range(int(seconds / dt)):
+        c = Controls(throttle=0.3 if car.speed < speed else 0.0, brake=0, steer=0.0, handbrake=False)
+        car = d.step(help.apply(c, car, dt, level, (), float(k[0]), obstacle), dt, walls, k)
+        gaps.append(at - 2.25 - car.x - length / 2)
+    return gaps, help
+
+
+def test_the_emergency_brake_stops_short_of_a_stopped_car():
+    gaps, _ = brake_run(level=1)
+    assert min(gaps) > 0.3
+
+
+def test_without_the_emergency_brake_the_car_reaches_it():
+    gaps, _ = brake_run(level=2)
+    assert min(gaps) < 0
+
+
+def test_the_emergency_brake_lets_a_swerve_a_slower_leader_and_a_bend_away_pass():
+    from contravia.car import CarState, Controls
+    from contravia.driving_help import DrivingHelp
+
+    road = Road(straight())
+    car = CarState(100.0, 1.5, 0.0, 15.0)
+    ahead = box(115.0, 1.5)
+    go = Controls(0.5, 0, 0.0, False)
+    braked = DrivingHelp(road, 0.6, 2.7).apply(go, car, 1 / 60, 1, obstacles=ahead)
+    assert braked.brake == 1.0 and braked.throttle == 0.0
+    help = DrivingHelp(road, 0.6, 2.7)
+    swerve = Controls(0.5, 0, 0.8, False)
+    assert help.apply(swerve, car, 1 / 60, 1, obstacles=ahead) == swerve and not help.lit["brake"]
+    assert DrivingHelp(road, 0.6, 2.7).apply(go, car, 1 / 60, 2, obstacles=ahead).brake == 0  # level 2: no brake
+    same_speed = ahead[0], np.tile((15.0, 0.0), (4, 1))  # a leader as fast as the car: never closer
+    assert DrivingHelp(road, 0.6, 2.7).apply(go, car, 1 / 60, 1, obstacles=same_speed).brake == 0
+    creeping = CarState(100.0, 1.5, 0.0, 1.5)  # 1.5 m/s, 2 m behind a car: it may creep on; 0.5 m: held
+    assert DrivingHelp(road, 0.6, 2.7).apply(go, creeping, 1 / 60, 1, obstacles=box(106.5, 1.5)).brake == 0
+    assert DrivingHelp(road, 0.6, 2.7).apply(go, creeping, 1 / 60, 1, obstacles=box(105.0, 1.5)).brake == 1
+    # turning right at 0.5 rad/s, 15 m ahead is 7.5 m right of where it goes: a car there is out of its way
+    help = DrivingHelp(road, 0.6, 2.7)
+    help.apply(Controls(0, 0, 0.0, False), CarState(100.0, 1.5, -0.5 / 60, 15.0), 1 / 60, 1)
+    assert help.apply(go, car, 1 / 60, 1, obstacles=ahead).brake == 0

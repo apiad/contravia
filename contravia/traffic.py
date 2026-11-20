@@ -711,18 +711,24 @@ class TrafficLayer:
 
     def boxes_near(self, x: float, z: float, r: float = 30.0) -> np.ndarray:
         """The outlines of the cars within r metres as (W, 2, 2) wall segments, for the player's collisions."""
+        return self.moving_boxes_near(x, z, r)[0]
+
+    def moving_boxes_near(self, x: float, z: float, r: float = 30.0) -> tuple[np.ndarray, np.ndarray]:
+        """The outlines of the cars within r metres as (W, 2, 2) segments, and each segment's car's velocity
+        (W, 2) in m/s, for what must know where they are going."""
         if not len(self.cars):
-            return np.zeros((0, 2, 2))
+            return np.zeros((0, 2, 2)), np.zeros((0, 2))
         xyz, heading, _ = self.cars.world()
         near = np.flatnonzero(np.hypot(xyz[:, 0] - x, xyz[:, 2] - z) < r)
-        segs = []
+        segs, vel = [], []
         for i in near.tolist():
             c, s = np.cos(heading[i]), np.sin(heading[i])
             hl, hw = self.cars.length[i] / 2, self.kind_width[self.cars.kind[i]] / 2
             corners = [(xyz[i, 0] + c * fx - s * fz, xyz[i, 2] + s * fx + c * fz)
                        for fx, fz in ((hl, hw), (hl, -hw), (-hl, -hw), (-hl, hw))]
             segs += [(corners[k], corners[(k + 1) % 4]) for k in range(4)]
-        return np.array(segs, float).reshape(-1, 2, 2)
+            vel += [(c * self.cars.v[i], s * self.cars.v[i])] * 4
+        return np.array(segs, float).reshape(-1, 2, 2), np.array(vel, float).reshape(-1, 2)
 
     def stats(self) -> dict:
         return {"cars": len(self.cars), "edges": int(self.owned.sum()), **self.counts}

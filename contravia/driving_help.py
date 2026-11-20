@@ -134,6 +134,11 @@ MIX = 0.15  # the driver's steer under which the lane keeping mixes in, all of i
 CHANGE, CHANGE_HOLD = 0.5, 0.3  # steer past CHANGE for CHANGE_HOLD seconds: the next lane on that side
 MOVING = 2.0  # m/s: slower, the road assists stand down
 LIT = 0.02  # a change of the steer past this lights the assist's lamp
+A_SOFT, A_HARD = 3.0, 6.0  # m/s² it would take to stop short: the emergency brake starts at the first, full at the second
+SWERVE = 0.6  # a steer past this is a swerve: the emergency brake lets the driver have it
+MARGIN = 0.3  # metres each side of the car's width that the brake keeps clear
+HOLD = 1.5  # metres: creeping this close to something in its path, the car is held
+STOP_AT = 2.0  # metres short of something in its path where the emergency brake aims to stop
 
 
 def road_assists(level: int, locked=()) -> set[str]:
@@ -145,20 +150,68 @@ class DrivingHelp:
     """The road assists of the player's car: each frame they read where it is on the road and correct the driver's
     controls before the chassis assists and the physics. `lit` says which corrected in the last frame."""
 
-    def __init__(self, road: Road, max_steer: float, wheelbase: float):
+    def __init__(self, road: Road, max_steer: float, wheelbase: float, length: float = 4.5, width: float = 1.8):
         self.road, self.max_steer, self.wheelbase = road, max_steer, wheelbase
+        self.length, self.width = length, width
+        self.yaw = None  # the last frame's, for the yaw rate
         self.edge = self.lane = None  # the edge and the lane the car keeps to
         self.off = 0.0  # metres right of the centreline it aims at, easing toward its lane's
         self.held, self.held_lane, self.side = 0.0, 0, 0.0  # a long tap of the wheel: how long, from which lane
         self.lit = {name: False for name in ROAD_ASSISTS}
 
-    def apply(self, c, car, dt: float, level: int, locked=(), steer_strength: float = 1.0):
+    def apply(self, c, car, dt: float, level: int, locked=(), steer_strength: float = 1.0, obstacles=None):
         """The controls after the road assists of this level; steer_strength is the chassis steering assist's,
-        which narrows the wheel with speed."""
+        which narrows the wheel with speed. obstacles: (W, 2, 2) segments and their velocities (W, 2), what the
+        emergency brake must not hit."""
+        self.lit = {name: False for name in ROAD_ASSISTS}
+        on = road_assists(level, locked)
+        yaw_rate = 0.0 if self.yaw is None else ((car.yaw - self.yaw + np.pi) % (2 * np.pi) - np.pi) / dt
+        self.yaw = car.yaw
+        out = self._keep_lane(c, car, dt, on, steer_strength)
+        if "brake" in on and obstacles is not None:
+            out = self._brake(out, c, car, yaw_rate, *obstacles)
+        return out
+
+    def _brake(self, out, c, car, yaw_rate: float, segs: np.ndarray, vel: np.ndarray):
+        """Brake when stopping short of a segment in the car's path would take more than A_SOFT, and hold a car
+        creeping within HOLD of one; never while the driver swerves or pulls the handbrake."""
         from dataclasses import replace
 
-        self.lit = {name: False for name in ROAD_ASSISTS}
-        p = self.road.locate(car.x, car.z, car.yaw) if "lane" in road_assists(level, locked) else None
+        if not len(segs) or c.handbrake or abs(c.steer) > SWERVE or car.speed <= 0:
+            return out
+        f = np.array([np.cos(car.yaw), np.sin(car.yaw)])
+        r = np.array([-f[1], f[0]])
+        rel = np.asarray(segs, float) - (car.x, car.z)
+        ahead, side = rel @ f, rel @ r  # (W, 2) each: metres ahead of and right of the car's middle
+        side = side - yaw_rate / car.speed * ahead ** 2 / 2  # right of the arc the car is turning on
+        w = self.width / 2 + MARGIN
+        d0, d1 = side[:, 0], side[:, 1]
+        dd = np.where(np.abs(d1 - d0) < 1e-9, 1e-9, d1 - d0)
+        ta, tb = (-w - d0) / dd, (w - d0) / dd
+        lo = np.where(np.abs(d1 - d0) < 1e-9, np.where(np.abs(d0) <= w, 0.0, 2.0), np.maximum(np.minimum(ta, tb), 0.0))
+        hi = np.where(np.abs(d1 - d0) < 1e-9, np.where(np.abs(d0) <= w, 1.0, -1.0), np.minimum(np.maximum(ta, tb), 1.0))
+        inside = lo <= hi  # the part of the segment within the car's path
+        a0, a1 = ahead[:, 0], ahead[:, 1]
+        gap = np.minimum(a0 + (a1 - a0) * lo, a0 + (a1 - a0) * hi) - self.length / 2
+        closing = car.speed - np.asarray(vel, float) @ f
+        hit = inside & (gap > -self.length / 2) & (closing > 0)
+        if not hit.any():
+            return out
+        if car.speed < MOVING:  # creeping out of a jam: only a nose almost touching is held
+            brake = 1.0 if gap[hit].min() < HOLD else 0.0
+        else:
+            need = float(np.max(closing[hit] ** 2 / (2 * np.maximum(gap[hit] - STOP_AT, 0.1))))  # m/s² to stop short
+            brake = float(np.clip((need - A_SOFT) / (A_HARD - A_SOFT), 0.0, 1.0))
+        if brake <= 0:
+            return out
+        self.lit["brake"] = True
+        return replace(out, brake=max(out.brake, brake), throttle=0.0)
+
+    def _keep_lane(self, c, car, dt: float, on: set, steer_strength: float):
+        """Steer toward the lane's centre ahead while the driver's wheel is near the middle."""
+        from dataclasses import replace
+
+        p = self.road.locate(car.x, car.z, car.yaw) if "lane" in on else None
         if p is None or car.speed < MOVING:
             self.edge = None
             return c
@@ -207,3 +260,8 @@ class DrivingHelp:
                     return float(x[0]), float(z[0])
         x, z, _ = g.points([e], [min(s, length)], [off])
         return float(x[0]), float(z[0])
+
+
+def brake_reach(speed: float) -> float:
+    """How far ahead the emergency brake must look at this speed: where stopping would take A_SOFT, and 10 m."""
+    return speed ** 2 / (2 * A_SOFT) + STOP_AT + 10.0
