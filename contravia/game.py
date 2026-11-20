@@ -26,6 +26,7 @@ from contravia import collect
 from contravia.album import Album
 from contravia.camera import chase
 from contravia.car import CarState, Controls, Driven, settle
+from contravia.driving_help import DEFAULT, chassis_strengths
 from contravia.forest import Forest
 from contravia.geo import CELL, to_local
 from contravia.grass import Grass
@@ -121,7 +122,7 @@ class Game:
         self.shadow = self._spawn_shadow()
         self.model = kept(engine.state, "player car", "CarParams()", _player_car)
         self.handles = spawn_car(engine, self.model)
-        self.family, self.driven, self.realism, self.locked_assists = "moderno", None, 30.0, ()
+        self.family, self.driven, self.help_level, self.locked_assists = "moderno", None, DEFAULT, ()
         self.physics_ms = 0.0
         if "car" in engine.state:  # a reload under contravia dev: drive on from where the old code left the car
             self._resume(engine.state.car)
@@ -396,11 +397,18 @@ class Game:
                 "eye": self.eye.tolist() if hasattr(self, "eye") else [self.car.x, self.car.y + 3.0, self.car.z],
                 "driven": self.driven.snapshot()}
 
-    def strengths(self):
-        """The assists' strengths from the realism option."""
-        from manifoldx.vehicles import strengths_for
+    def _crashes(self):
+        """The traffic cars with a body, in the fleet of the car driven now (a new car starts with none)."""
+        from contravia.crashes import Crashes
 
-        return strengths_for(getattr(self, "realism", 30.0), getattr(self, "locked_assists", ()))
+        c = getattr(self, "crashes", None)
+        if c is None or c.driven is not self.driven:
+            c = self.crashes = Crashes(self.driven)
+        return c
+
+    def strengths(self):
+        """The chassis assists' strengths at the driving help's level."""
+        return chassis_strengths(getattr(self, "help_level", DEFAULT), getattr(self, "locked_assists", ()))
 
     def _follow_province(self) -> None:
         """When the car is in another province, drive on that province's graph: its traffic starts over there."""
@@ -524,7 +532,7 @@ class Game:
         self.tau_range = options["view"].value
         self.streamer.tau = min(max(self.streamer.tau, self.tau_range[0]), self.tau_range[1])
         self.rain_on = options["rain"].value
-        self.realism, self.locked_assists = options["realism"].value, options.locked_assists
+        self.help_level, self.locked_assists = options["help"].value, options.locked_assists
         self.hud.configure(options["units"].value, options["minimap"].value)
 
     def _find_area(self, now: float) -> None:
@@ -738,7 +746,7 @@ class Game:
             walls = around(walls, self.car.x, self.car.z, WALL_REACH + 2 * abs(self.car.speed) * self._dt)
             self._before = self.car
             t0 = time.perf_counter()
-            self.car = self.driven.step(c, self._dt, walls, self.strengths())
+            self.car = self.driven.step(c, self._dt, walls, self.strengths(), self._crashes().controls())
             self.physics_ms = (time.perf_counter() - t0) * 1000
             self.km += math.hypot(self.car.x - self._before.x, self.car.z - self._before.z) / 1000
         # manifoldx turns +x toward -z for a positive yaw; the game turns it toward +z.
@@ -930,16 +938,13 @@ class Game:
         heading = self.car.yaw
         me = self.layer.locate(x, z, heading)
         obstacles = [(me[0], me[1], me[2] + 2.1, abs(self.car.speed))] if me else []
-        self.layer.update(x, z, dt, obstacles)
+        crashes = self._crashes()
+        self.layer.update(x, z, dt, obstacles + crashes.obstacles(self.layer))
+        crashes.update(self.layer, dt)  # the cars about to be hit get a body; those at rest go back or stay
         cars = self.layer.cars
         xyz, head, pitch = cars.world(self.surface)
-        self.fleet.draw(xyz - self.o, head, pitch, cars.look)
-        # A contact: the player stopped against a traffic car this frame.
-        if len(cars) and abs(before.speed) * 3.6 > 25 and abs(self.car.speed) < abs(before.speed) * 0.5:
-            d = np.hypot(xyz[:, 0] - x, xyz[:, 2] - z)
-            k = int(np.argmin(d))
-            if d[k] < cars.length[k] / 2 + 3.0:
-                self.layer.accident(int(cars.edge[k]), 40.0)
+        bxyz, bhead, bpitch, blook = crashes.poses()
+        self.fleet.draw(np.r_[xyz, bxyz] - self.o, np.r_[head, bhead], np.r_[pitch, bpitch], np.r_[cars.look, blook])
         now = time.perf_counter()
         if now - self._state_at > 0.5:
             self._state_at = now

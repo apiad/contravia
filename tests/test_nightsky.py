@@ -57,3 +57,19 @@ def test_the_catalogue_exists_only_while_stars_show():
     frame(0.0)  # dawn: destroyed at this frame's flush
     assert frame(0.0) == 7
     assert frame(1.0) == len(ns.v) + 7  # and back the next night
+
+
+def test_a_storm_hides_the_stars_before_the_dome_turns_again():
+    from types import SimpleNamespace
+
+    import manifoldx as mx
+
+    from contravia.nightsky import NightSky
+
+    engine = mx.Engine("night-test", width=64, height=48)
+    when = datetime(2026, 11, 15, 23, 0)
+    ns = NightSky(engine, when)
+    moon, sun = sky.Body(alt=-20.0, az=90.0, ra=0.0, dec=0.0), sky.Body(alt=-40.0, az=270.0, ra=0.0, dec=0.0)
+    eye = (0.0, 2.0, 0.0)
+    assert ns.update(when, eye, SimpleNamespace(night=1.0, star_limit=6.0), moon, sun) > 0
+    assert ns.update(when, eye, SimpleNamespace(night=1.0, star_limit=-5.0), moon, sun) == 0  # same second, same place

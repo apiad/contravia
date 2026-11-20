@@ -45,10 +45,10 @@ def test_a_reload_keeps_place_and_speed(city):
     assert g.car.speed == pytest.approx(12.0, abs=0.1)
 
 
-def test_strengths_follow_the_realism(city):
+def test_strengths_follow_the_help_level(city):
     g = bare_game(city)
-    g.realism, g.locked_assists = 30.0, ("abs",)
-    np.testing.assert_allclose(g.strengths(), [0.7, 0.7, 0.0, 0.7])
+    g.help_level, g.locked_assists = 4, ("abs",)
+    np.testing.assert_allclose(g.strengths(), [0.0, 0.6, 0.0, 0.6])
 
 
 class TwoLevels:

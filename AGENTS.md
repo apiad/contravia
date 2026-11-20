@@ -37,7 +37,9 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
 - The map colours far land by what covers it (`contravia/cover.py`, palette in `contravia/rules/cover.py`): ESA WorldCover
   2021 at 100 m in `cover.src`, beside `coast.src`. `contravia cover --out data/cuba` downloads the tiles over the coast
   (deleting each once read) and writes it; the index keeps each square's class shares in its summary (`summary_version`
-  3), and `summary_mesh` mixes the flat atlas tones and shades the slopes away from a north-west light. Its licence
+  3), and `summary_mesh` mixes the flat atlas tones and shades the slopes away from a north-west light.
+  Far buildings are the city's blocks, not boxes (`contravia/summary.py`, `summary_version` 4): each built
+  block cut by its streets, merged level by level across the streets a level no longer draws, in height tiers. Its licence
   (CC BY 4.0) asks for `contravia.cover.CREDIT` wherever the game names its data.
 - In the map the camera stretches heights (`mapview.exaggeration`: 1 up to 10 km of height, 20 at 1 000 km, through
   manifoldx's `Camera.vertical_scale`), the summaries mix in height tints from the city stage up and shade the
@@ -98,7 +100,9 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
 - The car is `manifoldx.vehicles` (spec `docs/superpowers/specs/2026-11-18-vehicle-physics-design.html`): a rigid body on
   ray wheels with tyres, engine, gearbox and brakes, stepped at 120 Hz by `contravia/car.py` (`Driven`); each family's
   numbers are in `contravia/rules/handling.py` and `tests/test_handling_targets.py` holds them to the spec's targets.
-  The Realismo option (0 easy to 100 real) sets the four assists' strengths; `Options.locked_assists` keeps some off.
+  The «Ayuda al manejo» option has six levels, from 0 (almost autopilot) to 5 (real), in `contravia/driving_help.py`
+  (spec `docs/superpowers/specs/2026-11-20-driving-help-design.html`); a level sets the four chassis assists' strengths,
+  `Options.locked_assists` keeps some off, and `Road.locate` finds the car's edge, lane and distance along it.
 - A script of your own that builds `Game` (custom shots, probes) must run its code under
   `if __name__ == "__main__":`: the streamer starts worker processes with spawn, which re-imports the script and
   fails with "start a new process before the current process has finished its bootstrapping phase".
