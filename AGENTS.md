@@ -67,6 +67,11 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   Prado and wild parks outside the city, some with a lake. `contravia/props.py` builds their motifs as `park_tris`, the
   car hits `park_walls`, and `contravia walks` rebuilds them with the pavements. Land OSM tags as a cemetery, industry,
   a school or a sports ground never becomes a park.
+- OSM lacks the houses of whole towns (Guanabacoa, Cotorro), so an empty block is not trusted to be a park:
+  `prepare --worldcover DIR` and `source --worldcover DIR` (required) read ESA WorldCover's built-up class on a 20 m
+  grid over each province (`contravia/builtup.py`, tiles downloaded into DIR) and keep it in the province's `Raw`;
+  a block the satellite sees at least half built (`parks.SEEN_BUILT`) is never a park unless OSM calls it green, and
+  keeps its filler houses.
 - No tree's look is stored (`contravia/rules/trees.py`, `contravia/rules/species.py`, spec
   `docs/superpowers/specs/2026-11-18-trees-design.html`): when a cell opens, `cell_trees` gives each tree a species
   from its zone, its park and a seed from its position. A cell's mesh holds no tree: `contravia/forest.py` keeps one

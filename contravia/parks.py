@@ -33,6 +33,7 @@ MIN_WIDE = 15.0  # metres: nor one narrower than this
 MAX_BUILDINGS = 3  # an almost empty block has at most this many buildings
 MAX_BUILT = 0.05  # and this share of it built over
 GREEN_SHARE, GREEN_BUILT = 0.5, 0.10  # a block this green in OSM and built under this share is a park anywhere
+SEEN_BUILT = 0.5  # a block the satellite sees at least this share built over is houses OSM lacks, never a park
 OUT_MIN = 10_000.0  # m²: outside the city an empty block is a park only from this size (else OSM just lacks houses)
 PARK_MAX = 200_000.0  # m²: larger faces of the road network are not parks
 PASEO_RATIO, PASEO_WIDE = 4.0, 45.0  # a block at least 4 times as long as wide and at most 45 m wide is a paseo
@@ -102,10 +103,11 @@ def frame(poly):
     return r.mean(axis=0), u, np.array([-u[1], u[0]]), L, W
 
 
-def classify(blocks, built, buildings, green, city, boulevard, prado) -> np.ndarray:
+def classify(blocks, built, buildings, green, city, boulevard, prado, seen=None) -> np.ndarray:
     """The kind of each block (polygons) given, per block, the area built over, the number of buildings, the area
     OSM calls green, whether it is in the city's municipios, whether contravia.medians calls it the ground between a
-    boulevard's carriageways, and whether it is the Paseo del Prado's."""
+    boulevard's carriageways, whether it is the Paseo del Prado's and, when known, the share of it the satellite
+    sees built over (contravia.builtup): an empty block the satellite sees built is not a park."""
     out = np.full(len(blocks), NONE)
     for k, poly in enumerate(blocks):
         area = poly.area
@@ -116,6 +118,7 @@ def classify(blocks, built, buildings, green, city, boulevard, prado) -> np.ndar
             continue
         share = built[k] / area
         empty = buildings[k] <= MAX_BUILDINGS and share < MAX_BUILT
+        empty = empty and (seen is None or seen[k] < SEEN_BUILT)
         is_green = green[k] >= GREEN_SHARE * area and share < GREEN_BUILT
         if prado[k]:
             out[k] = PRADO
