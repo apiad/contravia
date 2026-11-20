@@ -36,6 +36,30 @@ CROWNSHAFT = (0.30, 0.48, 0.22)
 NUT = (0.38, 0.30, 0.12)
 
 
+@dataclass(frozen=True)
+class Foliage:
+    """The small leaves a near tree carries over its crown (rules/foliage.py). A broadleaf tree has `count`
+    twigs per leaf cluster with `per` leaves each; a palm has `count` pairs of leaflets per frond, in `per`
+    planes (3 a plume, 1 a V), hanging `hang` degrees under the frond. Each leaf is `length` by `width` metres."""
+
+    count: int
+    per: int
+    length: float
+    width: float
+    hang: float = 0.0
+
+
+FOLIAGE = {
+    "laurel": Foliage(14, 3, 0.38, 0.13),  # Ficus: small, dense, glossy
+    "flamboyan": Foliage(12, 4, 0.48, 0.08),  # fine fern-like leaves in flat sprays
+    "almendro": Foliage(8, 4, 0.5, 0.22),  # big leaves in rosettes at the twig tips
+    "palma": Foliage(40, 3, 0.95, 0.05, hang=20),  # leaflets in three planes: the royal palm's plume
+    "coco": Foliage(36, 1, 1.05, 0.07, hang=45),  # leaflets hanging in a V
+    "ceiba": Foliage(11, 5, 0.42, 0.09),  # palmate: five leaflets fanning from each twig
+    "mangle": Foliage(12, 3, 0.32, 0.12),  # thick oval leaves in threes
+}
+
+
 class _Mesh:
     def __init__(self):
         self.pos, self.nrm, self.role, self.rgb, self.shade = [], [], [], [], []

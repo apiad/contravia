@@ -11,6 +11,10 @@ distance to the camera and moves the trees that crossed a threshold to their new
 Trees do not pop: the material is faded, a tree that comes fades in over FADE seconds, one that goes fades out
 before it is destroyed, and a tree that changes level keeps its old level that long, fading out over the
 complementary pixels of the new one (manifoldx's Fade), as the city's blocks do.
+
+A tree at LOD 0 within foliage.NEAR metres also carries its detail layer (rules/foliage.py): small leaves over
+its clusters or leaflets along its fronds, swaying in the shader. The same check spawns and drops it, with its
+own hysteresis, and it fades in and out with the tree.
 """
 
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -21,7 +25,7 @@ import numpy as np
 from contravia import regions
 from contravia.clearance import roads_around
 from contravia.grass import yard_trees
-from contravia.rules import trees
+from contravia.rules import foliage, trees
 from contravia.rules.species import CROWNS, SPECIES, season
 from contravia.rules.treegrammar import LODS, PARTS, VARIANTS, meshes
 from contravia.shore import of as shore_of
@@ -52,6 +56,11 @@ def levels(d, old=None) -> np.ndarray:
     return np.where(keep, old, new).astype(np.int8)
 
 
+def zones(d) -> np.ndarray:
+    """0 for a tree d metres away that carries its detail layer, 1 for the rest of LOD 0, 2 and 3 for LOD 1 and 2."""
+    return np.searchsorted((foliage.NEAR, *LOD_AT), np.asarray(d, float))
+
+
 def warm(species) -> None:
     """Grow every mesh a tree of each species may be drawn with (its levels of detail, crowns and near
     variants), so the main thread finds them made: a species' meshes take about a second to grow."""
@@ -80,8 +89,11 @@ class Stand:
         # a ball round the trees, so place() can skip a stand whose trees all stay in one level
         self.centre = self.pos.mean(axis=0) + (0.0, 5.0, 0.0) if n else np.zeros(3)
         self.reach = float(np.linalg.norm(self.pos + (0.0, 5.0, 0.0) - self.centre, axis=1).max()) if n else 0.0
-        self.settled = -1  # the level every tree has, or -1 while they differ
+        self.settled = -1  # the zone (zones()) every tree is in, or -1 while they differ
         self.ents = np.full((n, len(PARTS)), -1, np.int64)
+        self.spin = trees.unit(seeds, 9)  # turns each tree's leaf clumps its own way
+        self.near = np.zeros(n, bool)  # whether the tree carries its detail layer
+        self.leaves = [[] for _ in range(n)]  # the entities of each tree's detail layer
         self.dress(day)
 
     def dress(self, day) -> None:
@@ -111,6 +123,11 @@ class Forest:
 
         self.engine, self.city, self.landmarks = engine, city, landmarks
         self.material = StandardMaterial("#ffffff", roughness=0.9, vertex_colors=True, tinted=True, faded=True)
+        # the detail layer sways: clumps by their height in the cluster, fronds by the length along them
+        self.foliage = {kind: StandardMaterial("#ffffff", roughness=0.85, vertex_colors=True, tinted=True, faded=True,
+                                               sway=sway, sway_reach=reach)
+                        for kind, (sway, reach) in (("clump", foliage.SWAY), ("frond", foliage.FROND_SWAY))}
+        self._leaf_meshes = {}  # foliage mesh key -> its Mesh component, registered once
         self._pool = ThreadPoolExecutor(workers, thread_name_prefix="forest")
         self._pending: dict[tuple[int, int], Future] = {}
         self.stands: dict[tuple[int, int], Stand] = {}
@@ -179,11 +196,11 @@ class Forest:
         stands = [s for s in self.stands.values() if len(s.t)]
         if not stands:
             return
-        # a stand whose ball lies in one level, its trees already there, has no tree to move
+        # a stand whose ball lies in one zone, its trees already there, has no tree to move
         d = np.linalg.norm(np.array([s.centre for s in stands]) - eye, axis=1)
         reach = np.array([s.reach for s in stands]) + HYSTERESIS
-        same = levels(d - reach) == levels(d + reach)
-        band = levels(d)
+        same = zones(d - reach) == zones(d + reach)
+        band = zones(d)
         for k, stand in enumerate(stands):
             if same[k] and stand.settled == band[k]:
                 continue
@@ -194,7 +211,11 @@ class Forest:
                 self._drop(stand, moved)
                 stand.lod[moved] = new[moved]
                 self._spawn(stand, moved)
-            stand.settled = int(stand.lod[0]) if (stand.lod == stand.lod[0]).all() else -1
+            want = foliage.near(d, stand.near) & (stand.lod == 0)
+            self._shed(stand, np.flatnonzero(stand.near & ~want))
+            self._leaf(stand, np.flatnonzero(want & ~stand.near))
+            zone = np.where(stand.lod == 0, 1 - stand.near, stand.lod + 1)
+            stand.settled = int(zone[0]) if (zone == zone[0]).all() else -1
 
     def _spawn(self, stand: Stand, idx) -> None:
         """Spawn the parts of trees idx of stand at their level of detail, one spawn per shared mesh."""
@@ -222,8 +243,45 @@ class Forest:
                     stand.ents[group, p] = h.indices
                     self._fade(np.asarray(h.indices), out=False)
 
+    def _leaf(self, stand: Stand, idx) -> None:
+        """Spawn the detail layer of trees idx of stand, at LOD 0: one spawn per foliage mesh and group of trees
+        of one species, variant and crown, tinted as each tree's leaves or accent."""
+        from manifoldx.components import Fade, Material, Mesh, Tint, Transform
+
+        t = stand.t
+        key = np.stack([t.species[idx], stand.variant[idx]], axis=1)
+        crowns = stand.crown[idx]
+        for crown in np.unique(crowns):
+            for k in np.unique(key[crowns == crown], axis=0):
+                group = idx[(crowns == crown) & (key == k).all(axis=1)]
+                sp = foliage.spots(SPECIES[int(k[0])], int(k[1]), crown)
+                made = foliage.instances(sp, stand.pos[group], stand.rot[group], stand.scale[group], stand.spin[group])
+                for mk, (tree, accent, pos, rot, scale) in made.items():
+                    mesh = self._leaf_meshes.get(mk)
+                    if mesh is None:
+                        mesh = self._leaf_meshes[mk] = Mesh(foliage.geometry(mk))
+                    h = self.engine.spawn(mesh, Material(self.foliage[mk[0]]), Transform(pos=pos, rot=rot, scale=scale),
+                                          Tint(rgb=stand.tint[group[tree], np.where(accent, 2, 1)]), Fade(value=0.0),
+                                          n=len(tree))
+                    ents = np.asarray(h.indices)
+                    for j in np.unique(tree):
+                        stand.leaves[group[j]].append(ents[tree == j])
+                    self._fade(ents, out=False)
+        stand.near[idx] = True
+
+    def _shed(self, stand: Stand, idx) -> None:
+        """Fade out the detail layer of trees idx of stand, to be destroyed once gone."""
+        stand.settled = -1
+        e = [a for k in idx for a in stand.leaves[k]]
+        if e:
+            self._fade(np.concatenate(e), out=True)
+        for k in idx:
+            stand.leaves[k] = []
+        stand.near[idx] = False
+
     def _drop(self, stand: Stand, idx) -> None:
-        """Fade out the entities of trees idx of stand, to be destroyed once gone."""
+        """Fade out the entities of trees idx of stand, its detail layer with them, to be destroyed once gone."""
+        self._shed(stand, np.atleast_1d(np.arange(len(stand.t))[idx]))
         stand.settled = -1
         e = stand.ents[idx]
         e = e[e >= 0]
@@ -267,7 +325,10 @@ class Forest:
     def counts(self) -> dict:
         """Trees held and drawn per level of detail, for the stats panel and probes."""
         lod = np.concatenate([s.lod for s in self.stands.values()]) if self.stands else np.zeros(0, int)
-        return {"trees": len(lod), **{f"lod{k}": int((lod == k).sum()) for k in range(3)}}
+        near = np.concatenate([s.near for s in self.stands.values()]) if self.stands else np.zeros(0, bool)
+        leaves = sum(len(a) for s in self.stands.values() for k in np.flatnonzero(s.near) for a in s.leaves[k])
+        return {"trees": len(lod), **{f"lod{k}": int((lod == k).sum()) for k in range(3)},
+                "near": int(near.sum()), "leaves": leaves}
 
     def close(self) -> None:
         """Stop growing and destroy every drawn tree."""
