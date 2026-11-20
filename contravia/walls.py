@@ -16,6 +16,7 @@ from contravia.geo import CELL
 from contravia.grass import yard_trees
 from contravia.landmarks import cached
 from contravia.rules import trees
+from contravia.shore import of as shore_of
 
 
 def _edges(ring) -> np.ndarray:
@@ -53,7 +54,7 @@ class Walls:
         rings = [ring for ring, *_ in boxes(c, near, streets_around(self.city, i, j))]
         parks = [] if c.park_walls is None else [np.asarray(c.park_walls[:, :4], np.float32).reshape(-1, 2, 2)]
         grown = trees.cell_trees(i, j, c, self.city.terrain, near, trees.arrays_of(self.city, i, j),
-                                 yard_trees(self.city, i, j, self.landmarks))
+                                 yard_trees(self.city, i, j, self.landmarks), shore_of(self.city))
         return np.concatenate([_edges(r) for r in rings] + [self.landmarks.walls(i, j)] + parks + [trees.trunks(grown)])
 
     def _cell(self, i: int, j: int) -> np.ndarray:

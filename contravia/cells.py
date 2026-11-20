@@ -14,6 +14,8 @@ from contravia.geo import CELL
 from contravia.landmarks import Landmarks, cached
 from contravia.mesh import MeshBuilder
 from contravia.rules import buildings, detail, facades, ground, roads
+from contravia.rules import shore as shore_rules
+from contravia.shore import of as shore_of
 from contravia.terrain import seat
 from contravia.world import World
 
@@ -54,14 +56,17 @@ def warm() -> None:
 
 
 def build(i: int, j: int):
-    """The MeshData of cell (i, j): its ground, roads, buildings and filler boxes. Its trees are not in it: the
-    game draws them as instances (forest.py)."""
+    """The MeshData of cell (i, j): its ground, its shore's rocks near the sea (rules/shore.py), roads, buildings
+    and filler boxes. Its trees are not in it: the game draws them as instances (forest.py)."""
     global SKIPPED_ROOFS
     c = landmarks().keep(i, j, city().cell(i, j))
     x0, z0 = i * CELL, j * CELL
     mb = MeshBuilder()
     terrain = city().terrain
-    ground.ground(mb, i, j, terrain, c.street_cuts)
+    shore = shore_of(city())
+    ground.ground(mb, i, j, terrain, c.street_cuts, shore)
+    if shore is not None and (f := shore.field(i, j)) is not None:
+        shore_rules.dress(mb, f)
     if c.street_tris is None:
         roads.ribbon(mb, c.roads, terrain)
     else:

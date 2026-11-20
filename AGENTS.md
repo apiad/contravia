@@ -41,6 +41,16 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   Far buildings are the city's blocks, not boxes (`contravia/summary.py`, `summary_version` 4): each built
   block cut by its streets, merged level by level across the streets a level no longer draws, in height tiers. Its licence
   (CC BY 4.0) asks for `contravia.cover.CREDIT` wherever the game names its data.
+- The shore near the car is not the relief's hard edge (`contravia/shore.py`, `contravia/rules/shore.py`): a cell
+  with sea within 40 m draws its ground on a 2.5 m grid where each node has a signed distance to the water and a
+  share of four types: beach where OSM maps beach or sand, cliff where OSM maps one or the ground rises 4 m within
+  30 m of the water, mangrove where OSM maps a wetland or WorldCover sees mangrove or wetland, rocky shore
+  elsewhere. Each type has a profile (sand sloping into the water, a low rock shelf with seeded rocks baked in the
+  cell, a cliff dropping straight into the sea, a mud flat with mangroves on stilt roots, `mangle` in
+  `rules/species.py`), a band of shallows over the water that fades into the sea's colour, and keeps the ground's
+  height within 4 m of anything built. The wheels and the trees stand on the same grid. OSM's features are kept in
+  `shore.src` beside `coast.src` (3 MB): `contravia shore <pbf> --out data/cuba` writes it into a built island
+  without rebuilding it, and `prepare` and `source` write it with the coast.
 - In the map the camera stretches heights (`mapview.exaggeration`: 1 up to 10 km of height, 20 at 1 000 km, through
   manifoldx's `Camera.vertical_scale`), the summaries mix in height tints from the city stage up and shade the
   slope as stretched at their level (`rules/cover.py`): a stylised relief atlas, not a photo.

@@ -1,5 +1,5 @@
 """What the car's wheels stand on: the road where there is one, level across like the drawn road, the
-terrain elsewhere.
+terrain elsewhere, shaped by the shore near the sea (contravia/shore.py).
 
 A wheel on a road takes the road's height at the point of the centreline beside it, so the four wheels of
 a car on a hillside street agree from side to side and the car does not roll; it only pitches with the
@@ -30,7 +30,10 @@ class Surface:
     """height(x, z) like a Terrain, with the roads of the city data laid on it."""
 
     def __init__(self, city, terrain):
+        from contravia.shore import of
+
         self.city, self.terrain = city, terrain
+        self.shore = of(city)  # near the sea the ground is the shore's (contravia/shore.py), as the cells draw it
         self._cache: dict[tuple[int, int], np.ndarray] = {}
         self._tris: dict[tuple[int, int], tuple | None] = {}
         self._roofs: dict[tuple[int, int], tuple | None] = {}
@@ -92,7 +95,7 @@ class Surface:
         height (a number or one per point) each point stood at a moment ago, as the module says. Points are
         taken a cell at a time, against all of the cell's triangles at once."""
         x, z = np.atleast_1d(np.asarray(x, float)), np.atleast_1d(np.asarray(z, float))
-        out = self.terrain.height(x, z).astype(float)
+        out = (self.terrain if self.shore is None else self.shore).height(x, z).astype(float)
         nears = None if near is None else np.broadcast_to(np.asarray(near, float), x.shape)
         ci, cj = np.floor(x / CELL).astype(np.int64), np.floor(z / CELL).astype(np.int64)
         key = ci * 1_000_003 + cj

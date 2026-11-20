@@ -23,6 +23,7 @@ from contravia.grass import yard_trees
 from contravia.rules import trees
 from contravia.rules.species import CROWNS, SPECIES, season
 from contravia.rules.treegrammar import LODS, PARTS, VARIANTS, meshes
+from contravia.shore import of as shore_of
 
 LOD_AT = (60.0, 160.0)  # metres from the camera where a tree drops to LOD 1, then to LOD 2
 HYSTERESIS = 8.0  # metres a tree goes past a threshold before it changes level, so it does not flicker
@@ -126,7 +127,7 @@ class Forest:
         c = self.landmarks.keep(i, j, self.city.cell(i, j))
         near = roads_around(self.city, i, j)
         t = trees.cell_trees(i, j, c, self.city.terrain, near, trees.arrays_of(self.city, i, j),
-                             yard_trees(self.city, i, j, self.landmarks))
+                             yard_trees(self.city, i, j, self.landmarks), shore_of(self.city))
         warm(np.unique(t.species))
         return t
 
