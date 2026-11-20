@@ -119,6 +119,7 @@ class Recorder:
 
     def __init__(self):
         self.calls, self.values, self.alive = [], {}, True
+        self.controls = SimpleNamespace(get=lambda name: self.values.get(name, 0.0))
 
     def set(self, name, value):
         self.values[name] = value

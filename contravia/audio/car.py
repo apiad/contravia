@@ -10,8 +10,21 @@ car.cabin (1 with the camera in the cabin). The one-shots are built from an even
 from __future__ import annotations
 
 import numpy as np
-from euterpe.sound import (ADSR, BandPass, HighPass, Live, LowPass, Modal, PinkNoise, Saw, Share, Sine, Square,
-                           Unit, WhiteNoise)
+from euterpe.sound import (
+    ADSR,
+    BandPass,
+    HighPass,
+    Live,
+    LowPass,
+    Modal,
+    PinkNoise,
+    Saw,
+    Share,
+    Sine,
+    Square,
+    Unit,
+    WhiteNoise,
+)
 
 CRASH_MIN = 300.0  # N·s of contact impulse a crash needs to be heard
 GLASS_MIN = 3000.0  # N·s from which a crash breaks glass

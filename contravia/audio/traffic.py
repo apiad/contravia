@@ -9,8 +9,19 @@ behind a stopped player honks once per wait, and a guagua that stops hisses its 
 from __future__ import annotations
 
 import numpy as np
-from euterpe.sound import ADSR, BandPass, BrownNoise, HighPass, Live, LowPass, PinkNoise, Share, Unit, Wavetable, \
-    WhiteNoise
+from euterpe.sound import (
+    ADSR,
+    BandPass,
+    BrownNoise,
+    HighPass,
+    Live,
+    LowPass,
+    PinkNoise,
+    Share,
+    Unit,
+    Wavetable,
+    WhiteNoise,
+)
 
 from contravia.audio.car import HORNS, Quiet, Timed, _horn_kind
 from contravia.rules.sound import of

@@ -12,6 +12,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+BIOMES = ("city", "barrio", "countryside", "coast", "night")
+STYLES = ("son", "guaguanco", "guajira", "changui", "bolero")
+BY_BIOME = {"city": "son", "barrio": "guaguanco", "countryside": "guajira", "coast": "changui", "night": "bolero"}
+
 
 @dataclass(frozen=True)
 class FamilySound:

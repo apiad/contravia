@@ -21,12 +21,14 @@ ROWS = {"engine": "vol_engine", "effects": "vol_effects", "ambience": "vol_ambie
 PAUSED_MUSIC = 10 ** (-10 / 20)  # the pause lowers the music by 10 dB
 DRIVING = ("drive", "aim")  # modes in which the car and the world are heard
 MODULES = ["contravia.rules.sound", "contravia.audio.engine", "contravia.audio.car", "contravia.audio.weather",
-           "contravia.audio.traffic", "contravia.audio"]  # re-imported in the sound process on a reload
+           "contravia.audio.traffic",
+           "contravia.audio.biome", "contravia.audio.ambience", "contravia.audio"]  # re-imported in the sound process on a reload
 
 # Every control the game writes. A process started with fewer (by older code) is replaced.
 CONTROLS = (*pose_names("car"), "car.rpm", "car.throttle", "car.speed", "car.slip", "car.wet", "car.surface",
             "car.horn", "car.cabin", "car.under", "weather.rain", "traffic.count",
-            *(f"traffic.{i}.{k}" for i in range(4) for k in ("x", "y", "z", "vx", "vy", "vz", "rpm", "cyl", "bright", "on")))
+            *(f"traffic.{i}.{k}" for i in range(4) for k in ("x", "y", "z", "vx", "vy", "vz", "rpm", "cyl", "bright", "on")),
+            *(f"amb.{b}" for b in ("city", "barrio", "countryside", "coast", "night")))
 
 
 class Sound:
@@ -43,6 +45,11 @@ class Sound:
         from contravia.audio.traffic import Honks
 
         self._honks, self._traffic_v, self._traffic_slow = Honks(), np.zeros(0), np.zeros(0, bool)
+        from contravia.audio.ambience import Scatter
+        from contravia.audio.biome import Biome
+
+        self._biome, self._sampler, self._scatter = Biome(), None, Scatter(seed=11)
+        self.biome, self.music, self._amb, self._place_at = None, None, {}, -1e9
 
     @classmethod
     def start(cls, state, options, backend: str = "device", path=None) -> Sound:
@@ -86,6 +93,12 @@ class Sound:
         a.source("traffic.bed", traffic.bed, "ambience")
         a.voice("honk", traffic.honk, "effects", cap=3, placed=True)
         a.voice("brakes", traffic.brakes, "effects", cap=2, placed=True)
+        from contravia.audio import ambience
+        from contravia.rules.sound import BIOMES
+
+        for biome in BIOMES:
+            a.source(f"amb.{biome}", functools.partial(ambience.bed, biome), "ambience")
+        a.voice("amb", ambience.oneshot, "ambience", cap=4, placed=True)
         self.vehicle(game)
 
     def vehicle(self, game) -> None:
@@ -166,6 +179,7 @@ class Sound:
         self._events(game)
         self._weather(game, now)
         self._traffic(game)
+        self._place(game, now)
         a.tick()
         if now - self._published > 0.5:
             self._published = now
@@ -261,6 +275,33 @@ class Sound:
             for k in np.flatnonzero((kinds == "bus") & (v < 0.5) & ~self._traffic_slow):
                 a.event("brakes", seed=self._frame + int(k), x=float(xyz[k, 0]), y=float(xyz[k, 1]), z=float(xyz[k, 2]))
         self._traffic_slow = v < 0.5
+
+    def _place(self, game, now: float) -> None:
+        """The biome twice a second, the beds crossing toward it over 3 s, and the scattered one-shots."""
+        from contravia.audio.biome import Sampler, resolve, sample
+        from contravia.rules.sound import BIOMES
+
+        a = self.audio
+        if now - self._place_at >= 0.5 or self.biome is None:
+            dt = min(now - self._place_at, 1.0) if self._place_at > -1e8 else 1.0
+            self._place_at = now
+            if self._sampler is None:
+                self._sampler = Sampler(getattr(getattr(game, "city", None), "folder", None))
+            p = sample(game, self._sampler)
+            self.biome = self._biome.update(now, resolve(p))
+            self.music = p.music
+            for b in BIOMES:
+                want = 1.0 if b == self.biome else 0.0
+                lv = self._amb.get(b, 0.0)
+                self._amb[b] = min(want, lv + dt / 3) if want > lv else max(want, lv - dt / 3)
+                a.set(f"amb.{b}", self._amb[b])
+            when = getattr(game, "when_now", None)
+            hour = when.hour + when.minute / 60 if when is not None else 12.0
+            lis = (a.controls.get("listener.x"), a.controls.get("listener.z"))
+            for name, bearing in self._scatter.due(now, self.biome, hour):
+                r = 20.0 + 60.0 * ((self._frame * 7919) % 100) / 100
+                a.event("amb", kind=name, seed=self._frame, x=lis[0] + r * math.cos(bearing), y=1.5,
+                        z=lis[1] + r * math.sin(bearing))
 
     def close(self) -> None:
         self.audio.close()

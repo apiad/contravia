@@ -109,6 +109,8 @@ class Params:
     parks: str = "keep"  # whether the parks contravia prepare laid stand, or are dropped
     pantheons: float = 0.08  # the share of the plots along a cemetery's main lanes that a pantheon takes
     stones: tuple[str, ...] = ("#e9e6de", "#d6d2c8", "#c4beb2", "#b3ada3")  # a cemetery's stone (cemetery.palette)
+    audio_biome: str | None = None  # the sound's biome here, over the one the place gives (contravia/audio/biome.py)
+    audio_music: str | None = None  # the music's style here, over the biome's
     regions: tuple[str, ...] = ()  # the names of the regions merged into these, lowest layer first
 
     def pick(self, kind: str, area: float) -> Case:
@@ -240,6 +242,26 @@ def _cemetery(name, group) -> dict:
     return out
 
 
+def _audio(name, group) -> dict:
+    from contravia.rules.sound import BIOMES, STYLES
+
+    if not isinstance(group, dict):
+        _fail(name, "audio", "must be a table")
+    out = {}
+    for key, v in group.items():
+        if key == "biome":
+            if v not in BIOMES:
+                _fail(name, "audio.biome", f"must be one of {', '.join(BIOMES)}")
+            out["audio_biome"] = v
+        elif key == "music":
+            if v not in STYLES:
+                _fail(name, "audio.music", f"must be one of {', '.join(STYLES)}")
+            out["audio_music"] = v
+        else:
+            _fail(name, f"audio.{key}", "unknown key (known: biome, music)")
+    return out
+
+
 def _polygon(name, where) -> shapely.Polygon:
     from contravia.geo import to_local
 
@@ -350,14 +372,14 @@ class Regions:
             if name in names:
                 _fail(name, "name", "two regions have this name")
             names.add(name)
-            for bad in set(raw) - {"name", "where", "priority", "buildings", "blocks", "cemetery"}:
-                _fail(name, bad, "unknown key (known: where, priority, buildings, blocks, cemetery)")
+            for bad in set(raw) - {"name", "where", "priority", "buildings", "blocks", "cemetery", "audio"}:
+                _fail(name, bad, "unknown key (known: where, priority, buildings, blocks, cemetery, audio)")
             priority = raw.get("priority", 0)
             if not isinstance(priority, int):
                 _fail(name, "priority", "must be a whole number")
             shape, value, poly = _shape(name, raw.get("where"), src)
             fields = (_buildings(name, raw.get("buildings", {}), tuple(TYPES)) | _blocks(name, raw.get("blocks", {}), shape)
-                      | _cemetery(name, raw.get("cemetery", {})))
+                      | _cemetery(name, raw.get("cemetery", {})) | _audio(name, raw.get("audio", {})))
             if shape == "municipio" and fields.get("fill") == "cemetery":  # the fill lays out a polygon
                 _fail(name, "blocks.fill", "a municipio region cannot fill with a cemetery: name the place by a shape")
             if shape in ("barrio", "osm", "tag") and poly is None:  # no regions.src: nothing places it
@@ -403,6 +425,11 @@ class Regions:
             return [], []
         crossing = shapely.intersects(self.edges[hits], box)
         return [int(h) for h in hits[~crossing]], [int(h) for h in hits[crossing]]
+
+    def at(self, x: float, z: float, muni: str | None) -> Params:
+        """The Params of one point in a municipio (or None), such as where the car is."""
+        whole, cut = self.around(x - 1.0, z - 1.0, x + 1.0, z + 1.0)
+        return self._assign(whole, cut, lambda: np.array([[x, z]], float), [muni])[0]
 
     def assign(self, points: np.ndarray, munis: list) -> list[Params]:
         """The Params of each item, from its (x, z) centroid and its municipio's name (or None)."""

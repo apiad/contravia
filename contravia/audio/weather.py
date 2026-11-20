@@ -9,7 +9,18 @@ into the sea makes a splash, then the world is muffled and bubbles rise while it
 from __future__ import annotations
 
 import numpy as np
-from euterpe.sound import ADSR, BandPass, BrownNoise, HighPass, Live, LowPass, PinkNoise, Share, Unit, WhiteNoise
+from euterpe.sound import (
+    ADSR,
+    BandPass,
+    BrownNoise,
+    HighPass,
+    Live,
+    LowPass,
+    PinkNoise,
+    Share,
+    Unit,
+    WhiteNoise,
+)
 
 from contravia.audio.car import Quiet, Timed
 
@@ -42,7 +53,7 @@ def rain(ctl) -> Unit:
     hiss = HighPass(PinkNoise(seed=51), 1200.0) * (lv.tap() * 0.12)
     drops = BandPass(Drops(lv.tap(), seed=52), 3000.0, 0.6) * 0.5
     spray = Live(lambda: min(abs(ctl("car.speed")) / 25.0, 1.0) * min(max(ctl("car.wet"), 0.0), 1.0) * 0.08)
-    wet = lambda: max(ctl("weather.rain"), ctl("car.wet") * min(abs(ctl("car.speed")), 1.0))  # noqa: E731
+    wet = lambda: max(ctl("weather.rain"), ctl("car.wet") * min(abs(ctl("car.speed")), 1.0))
     return Quiet(hiss + drops + HighPass(WhiteNoise(seed=53), 2500.0) * spray, wet)
 
 
