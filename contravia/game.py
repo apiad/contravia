@@ -29,6 +29,7 @@ from contravia.car import CarState, Controls, Driven, settle
 from contravia.driving_help import DEFAULT, chassis_strengths
 from contravia.forest import Forest
 from contravia.geo import CELL, to_local
+from contravia.grass import Grass
 from contravia.hud import Hud
 from contravia.input import Driver
 from contravia.kept import kept, source
@@ -102,6 +103,8 @@ class Game:
         self.detail = Streamer(engine, CELL, build_detail, radius=1, ready_radius=2, workers="process", warm=warm)
         # The trees of the cells drawn in full: rows per cell, drawn as instances by level of detail (forest.py).
         self.forest = Forest(engine, city, self.walls.landmarks)
+        # The grass on the green near the camera: instanced patches of blades that sway in the shader (grass.py).
+        self.grass = Grass(engine, city)
         engine.state.teleport = {"to": None, "error": None}
         if self.walls.landmarks.mesh is not None:  # drawn once, not streamed: they are few and seen from afar
             from manifoldx.components import Material, Mesh, Transform
@@ -683,6 +686,7 @@ class Game:
         self.streamer.close()
         self.detail.close()
         self.forest.close()
+        self.grass.close()
         self.walls.close()
         if self.layer:
             self.runner.stop()
@@ -831,7 +835,9 @@ class Game:
         self.detail.radius = 0 if self.streamer.tau >= self.tau_range[1] else 1
         self.detail.focus(self.car.x, self.car.z)
         o = self.city.tree.origin
-        self.forest.update({(o[0] + a, o[1] + b) for L, a, b in self.streamer.drawn() if L == 0}, self.eye)
+        full = {(o[0] + a, o[1] + b) for L, a, b in self.streamer.drawn() if L == 0}
+        self.forest.update(full, self.eye)
+        self.grass.update(full, self.eye, (self.car.x, self.car.z))
         tiles = self.streamer.stats()
         with self._state_lock:
             st = self.engine.state
@@ -1053,6 +1059,7 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     game.streamer.close()
     game.detail.close()
     game.forest.close()
+    game.grass.close()
 
 
 def _player_car():
