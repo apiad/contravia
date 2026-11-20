@@ -7,6 +7,8 @@ docs/superpowers/specs/2026-11-20-gps-design.html).
 
 from __future__ import annotations
 
+import threading
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +21,8 @@ RIGHT, LEFT = 3.0, 8.0  # seconds a turn past STRAIGHT costs, right and left (ac
 CONTROL_COST = np.array([0.0, 10.0, 4.0, 2.0])  # seconds by g_control: none, signal, stop, give way
 SERVICE = 1.5  # service roads (car parks, lanes) take this much longer than their speed says
 UTURN = np.radians(150)  # a turn sharper than this is not an arc, as the pilot never takes one
+ROAD_NEAR = 300.0  # metres: farther than this from every street, a point has no route
+SAME_STREET = 10.0  # metres: edges this much farther than the nearest from a destination are not its street
 JOIN = 15.0  # metres: a dead end of one province this close to a start of another is the same junction
 THIN = 50.0  # metres: route.npz keeps a polyline point at least this often
 ARRAYS = ("offsets", "length", "vfree", "cls", "control", "way", "name", "names", "head0", "head1", "poly",
@@ -163,3 +167,192 @@ class RouteGraph:
         """(province, edge in its graph) of an island edge."""
         k = int(np.searchsorted(self.offsets, edge, side="right") - 1)
         return k, int(edge - self.offsets[k])
+
+    def drive(self, edge, metres) -> np.ndarray:
+        """Seconds driving `metres` of edge at its speed, a service road taking SERVICE times longer."""
+        edge = np.asarray(edge, np.int64)
+        slow = np.where(self.cls[edge] == CLASSES.index("service"), SERVICE, 1.0)
+        return np.asarray(metres, float) / np.maximum(self.vfree[edge], 0.1) * slow
+
+    def csr(self):
+        """The arcs as a sparse matrix, the cheapest of any repeated (in, out) pair; built once."""
+        if self._csr is None:
+            from scipy.sparse import csr_matrix
+
+            order = np.lexsort((self.cost, self.arc_out, self.arc_in))
+            a, b, c = self.arc_in[order], self.arc_out[order], self.cost[order].astype(np.float64)
+            first = np.r_[True, (a[1:] != a[:-1]) | (b[1:] != b[:-1])] if len(a) else np.zeros(0, bool)
+            n = len(self.length)
+            self._csr = csr_matrix((np.maximum(c[first], 1e-6), (a[first], b[first])), shape=(n, n))
+        return self._csr
+
+    def near(self, x: float, z: float, within: float) -> list[tuple[int, float, float]]:
+        """(edge, s, distance) of every edge whose polyline passes within `within` metres of (x, z), at the foot of
+        the point on it; s is scaled from the thinned polyline to the edge's length."""
+        from scipy.spatial import cKDTree
+
+        if self._tree is None:
+            self._tree = cKDTree(self.poly)
+            self._edge_of = np.repeat(np.arange(len(self.length)), np.diff(self.poly_start))
+        hit = self._tree.query_ball_point((x, z), within + THIN)
+        if not len(hit):
+            return []
+        edges = np.unique(self._edge_of[np.asarray(hit)])
+        out = []
+        for e in edges.tolist():
+            pts = self.poly[self.poly_start[e]:self.poly_start[e + 1]].astype(np.float64)
+            d = np.diff(pts, axis=0)
+            seg = np.maximum(np.hypot(*d.T), 1e-9)
+            t = np.clip(((np.array([x, z]) - pts[:-1]) * d).sum(1) / seg ** 2, 0, 1)
+            foot = pts[:-1] + d * t[:, None]
+            dist = np.hypot(*(foot - (x, z)).T)
+            k = int(np.argmin(dist))
+            if dist[k] <= within:
+                along = (np.concatenate([[0], np.cumsum(seg)])[k] + t[k] * seg[k]) / seg.sum()
+                out.append((int(e), float(along * self.length[e]), float(dist[k])))
+        return out
+
+    def start_at(self, x: float, z: float, heading: float) -> tuple[int, float] | None:
+        """Where a car at (x, z) facing `heading` joins the graph: the nearest edge within ROAD_NEAR running within
+        90° of its heading, else the nearest; None with no edge that near."""
+        near = self.near(x, z, ROAD_NEAR)
+        if not near:
+            return None
+        e, s, _ = min(near, key=lambda n: n[2])
+        along = [n for n in near if np.cos(self._heading_at(n[0], n[1]) - heading) > 0]
+        if along:
+            e, s, _ = min(along, key=lambda n: n[2])
+        return e, s
+
+    def _heading_at(self, e: int, s: float) -> float:
+        pts = self.poly[self.poly_start[e]:self.poly_start[e + 1]].astype(np.float64)
+        k = min(int(s / max(self.length[e], 1e-9) * (len(pts) - 1)), len(pts) - 2)
+        d = pts[k + 1] - pts[k]
+        return float(np.arctan2(d[1], d[0]))
+
+    def ends_at(self, x: float, z: float) -> list[tuple[int, float]]:
+        """The edges a route to (x, z) may end on: the street nearest the point (both its directions, every edge
+        within SAME_STREET of the nearest), when it is within ROAD_NEAR; [] past it."""
+        near = self.near(x, z, ROAD_NEAR)
+        if not near:
+            return []
+        reach = min(n[2] for n in near) + SAME_STREET
+        return [(e, s) for e, s, d in near if d <= reach]
+
+
+@dataclass
+class Route:
+    """A way through the island's edges: from s0 along the first to s1 along the last, its metres and seconds,
+    and where it goes (to, and the place's title when it was one)."""
+
+    edges: np.ndarray
+    s0: float
+    s1: float
+    metres: float
+    seconds: float
+    to: tuple[float, float] | None = None
+    title: str | None = None
+
+    def polyline(self, rg: RouteGraph) -> np.ndarray:
+        """The route's points in metres, from the thinned polylines, cut at s0 and s1."""
+        parts = []
+        for k, e in enumerate(self.edges.tolist()):
+            pts = rg.poly[rg.poly_start[e]:rg.poly_start[e + 1]].astype(np.float64)
+            n = len(pts) - 1
+            lo = self.s0 / max(rg.length[e], 1e-9) * n if k == 0 else 0.0
+            hi = self.s1 / max(rg.length[e], 1e-9) * n if k == len(self.edges) - 1 else float(n)
+            idx = np.arange(np.floor(lo), np.ceil(hi) + 1).astype(int).clip(0, n)
+            f = np.clip(np.r_[lo, idx[1:-1], hi], 0, n)
+            i0 = np.minimum(np.floor(f).astype(int), n - 1)
+            parts.append(pts[i0] + (pts[i0 + 1] - pts[i0]) * (f - i0)[:, None])
+        return np.concatenate(parts) if parts else np.zeros((0, 2))
+
+
+def route(rg: RouteGraph, start: tuple[int, float], ends: list[tuple[int, float]]) -> Route | None:
+    """The quickest route from s along edge start[0] to any of the ends (edge, s); None when none is reachable."""
+    from scipy.sparse.csgraph import dijkstra
+
+    e0, s0 = start
+    base = float(rg.drive(e0, rg.length[e0] - s0))
+    d, pred = dijkstra(rg.csr(), indices=e0, return_predecessors=True)
+    best = None  # (seconds, end edge, s1, back into e0 by a loop: the edge before it)
+    for e, s1 in ends:
+        if e == e0 and s1 >= s0:
+            cand = (float(rg.drive(e0, s1 - s0)), e, s1, None)
+        elif e == e0:  # behind on the same edge: round a loop back into it
+            into = rg.arc_out == e0
+            if not into.any():
+                continue
+            k = np.argmin(d[rg.arc_in[into]] + rg.cost[into])
+            loop = float(d[rg.arc_in[into]][k] + rg.cost[into][k])
+            cand = (base + loop - float(rg.drive(e0, rg.length[e0] - s1)), e, s1, int(rg.arc_in[into][k]))
+        else:
+            cand = (base + float(d[e]) - float(rg.drive(e, rg.length[e] - s1)), e, s1, None)
+        if np.isfinite(cand[0]) and (best is None or cand[0] < best[0]):
+            best = cand
+    if best is None:
+        return None
+    seconds, e1, s1, loop = best
+    path, k = [e1], (loop if loop is not None else e1)
+    if loop is not None:
+        path.append(k)
+    while k != e0:
+        k = int(pred[k])
+        if k < 0:
+            return None
+        path.append(k)
+    if loop is not None and path[-1] == e0 and len(path) >= 2 and path[1] == e0:
+        path = path[1:]
+    edges = np.array(path[::-1], np.int64)
+    metres = float(rg.length[edges].sum() - s0 - (rg.length[e1] - s1)) if len(edges) > 1 else float(s1 - s0)
+    return Route(edges, float(s0), float(s1), metres, float(seconds))
+
+
+class Router:
+    """Finds routes on a daemon thread, the routing graph built by rg_factory on the first ask. ask() replaces any
+    ask not started yet; take() gives the last answer once: a Route, "none" (no road near or no way there), or
+    None while nothing new is in."""
+
+    def __init__(self, rg_factory):
+        self._factory, self.rg = rg_factory, None
+        self._lock = threading.Lock()
+        self._pending = self._result = None
+        self.busy = False
+
+    def ask(self, start: tuple[float, float, float], to: tuple[float, float], title: str | None = None) -> None:
+        with self._lock:
+            self._pending = (start, to, title)
+            if self.busy:
+                return
+            self.busy = True
+        threading.Thread(target=self._run, name="gps-router", daemon=True).start()
+
+    def take(self):
+        with self._lock:
+            got, self._result = self._result, None
+        return got
+
+    def _run(self) -> None:
+        while True:
+            with self._lock:
+                job, self._pending = self._pending, None
+            if job is not None:
+                if self.rg is None:
+                    self.rg = self._factory()
+                got = self._solve(*job)
+            with self._lock:
+                if job is not None:
+                    self._result = got
+                if self._pending is None:
+                    self.busy = False
+                    return
+
+    def _solve(self, start, to, title):
+        rg = self.rg
+        s = rg.start_at(*start)
+        ends = rg.ends_at(*to)
+        r = route(rg, s, ends) if s is not None and ends else None
+        if r is None:
+            return "none"
+        r.to, r.title = (float(to[0]), float(to[1])), title
+        return r
