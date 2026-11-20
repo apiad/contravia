@@ -205,6 +205,8 @@ def test_dev_reloads_when_the_region_rules_or_a_side_file_change(tmp_path, monke
 
     monkeypatch.setattr(hot, "_watched", [])  # as manifoldx run sets it while it loads the app
     monkeypatch.setattr(game.World, "load", stop)
+    # main points HAVANA_DATA at tmp_path; restore it, or later tests' cell builders load an empty folder
+    monkeypatch.setenv("HAVANA_DATA", os.environ.get("HAVANA_DATA", "data/cuba"))
     with pytest.raises(Built):
         game.main(str(tmp_path))
     rules = os.path.join(os.path.dirname(game.__file__), "regions.toml")
