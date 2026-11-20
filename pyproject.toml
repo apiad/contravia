@@ -18,7 +18,7 @@ prepare = ["osmium", "tifffile", "imagecodecs"]
 dev = ["pytest", "pytest-xdist", "ruff", "osmium", "tifffile", "imagecodecs"]
 
 [tool.uv.sources]
-manifold-gfx = { git = "https://github.com/gia-uh/manifoldx", branch = "main" }
+manifold-gfx = { git = "https://github.com/gia-uh/manifoldx", branch = "feat/vehicle-contacts" }
 
 [build-system]
 requires = ["hatchling"]
