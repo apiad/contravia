@@ -187,3 +187,26 @@ def test_streamed_nodes_fade_in_instead_of_popping(city):
     s.close()
     if game.layer:
         game.runner.stop()
+
+
+def test_dev_reloads_when_the_region_rules_or_a_side_file_change(tmp_path, monkeypatch):
+    import os
+
+    import pytest
+    from manifoldx import hot
+
+    from contravia import game
+
+    class Built(Exception):
+        pass
+
+    def stop(data):
+        raise Built  # the engine and its watch list are made; the world is not needed
+
+    monkeypatch.setattr(hot, "_watched", [])  # as manifoldx run sets it while it loads the app
+    monkeypatch.setattr(game.World, "load", stop)
+    with pytest.raises(Built):
+        game.main(str(tmp_path))
+    rules = os.path.join(os.path.dirname(game.__file__), "regions.toml")
+    assert os.path.isfile(rules)
+    assert [os.fspath(p) for p in hot._watched] == [rules, os.path.join(str(tmp_path), "*.src")]

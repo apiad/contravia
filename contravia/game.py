@@ -1127,6 +1127,11 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
 
     os.environ["HAVANA_DATA"] = os.path.abspath(data)
     engine = mx.Engine("contravia", width=size[0], height=size[1], pipelined=pipelined)
+    # Under contravia dev, saving the region rules or rebuilding a side file reloads like a source save.
+    # hasattr: a dev session started on a manifoldx without engine.watch keeps reloading until restarted.
+    if hasattr(engine, "watch"):
+        engine.watch(os.path.join(os.path.dirname(__file__), "regions.toml"),
+                     os.path.join(os.path.abspath(data), "*.src"))
     clock = Clock(warp=warp) if when == "now" else Clock(at=parse_at(when or "10:00"), warp=warp)
     sky_config = load_sky_config(sky) if sky else None
     look = screen == "map" and height  # then `at` is where the map looks; the car waits at the Capitolio
