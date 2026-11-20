@@ -11,7 +11,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 import numpy as np
 
 from contravia.citydata import CityData
-from contravia.clearance import boxes, roads_around
+from contravia.clearance import boxes, roads_around, streets_around
 from contravia.geo import CELL
 from contravia.landmarks import cached
 from contravia.rules import trees
@@ -49,7 +49,7 @@ class Walls:
     def _build(self, i: int, j: int) -> np.ndarray:
         c = self.landmarks.keep(i, j, self.city.cell(i, j))
         near = roads_around(self.city, i, j)
-        rings = [ring for ring, *_ in boxes(c, near)]
+        rings = [ring for ring, *_ in boxes(c, near, streets_around(self.city, i, j))]
         parks = [] if c.park_walls is None else [np.asarray(c.park_walls[:, :4], np.float32).reshape(-1, 2, 2)]
         grown = trees.cell_trees(i, j, c, self.city.terrain, near, trees.arrays_of(self.city, i, j))
         return np.concatenate([_edges(r) for r in rings] + [self.landmarks.walls(i, j)] + parks + [trees.trunks(grown)])

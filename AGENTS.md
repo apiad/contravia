@@ -125,7 +125,8 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   `engine.state.sky` reports it. `contravia skymap out.png` draws a year of weather; `contravia timelapse out.mp4`
   renders a day over the Capitolio.
 - No building or filler box stands in a road's drivable width (`contravia/clearance.py`): the cells and the walls the
-  car hits leave out the same boxes. Service roads a landmark's walls cross are not drawn and the car is never put
+  car hits leave out the same boxes, and cut each one back off the street triangles the cells draw
+  (`clearance.streets_around`), which are wider than the tagged width at narrow streets, junctions and avenues. Service roads a landmark's walls cross are not drawn and the car is never put
   on them; the Malecón leaves out its wall pieces across the coast road. `contravia walls-check` counts what would
   stand inside a road over all of Havana and must read 0 (about 3 minutes; it needs `data/`, so it is not a rift
   rule; tests/test_walls.py checks the same rule on the fixture city).

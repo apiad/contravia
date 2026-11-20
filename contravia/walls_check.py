@@ -12,7 +12,7 @@ from dataclasses import replace
 import numpy as np
 
 from contravia.citydata import CityData
-from contravia.clearance import boxes, entering, roads_around
+from contravia.clearance import boxes, entering, roads_around, streets_around
 from contravia.landmarks import Landmarks
 
 
@@ -35,8 +35,9 @@ def count(city) -> Counter:
     for i, j in city.cells().tolist():
         c = kept.cell(i, j)
         roads = roads_around(kept, i, j)
-        drawn = {"footprint": boxes(replace(c, fillers=[], filler_seeds=no), roads_around(city, i, j)),
-                 "filler": boxes(replace(c, buildings=[], building_ids=no, building_attrs=None), roads_around(city, i, j))}
+        near, streets = roads_around(city, i, j), streets_around(city, i, j)
+        drawn = {"footprint": boxes(replace(c, fillers=[], filler_seeds=no), near, streets),
+                 "filler": boxes(replace(c, buildings=[], building_ids=no, building_attrs=None), near, streets)}
         for source, items in drawn.items():
             out[source] += sum(bool(entering(ring, roads).any()) for ring, *_ in items)
         out["landmark"] += sum(bool(entering(seg, roads).any()) for seg in landmarks.walls(i, j))

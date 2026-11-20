@@ -9,7 +9,7 @@ clears are left out; the landmarks themselves are drawn once by the game, not pe
 
 import os
 
-from contravia.clearance import boxes, roads_around
+from contravia.clearance import boxes, roads_around, streets_around
 from contravia.geo import CELL
 from contravia.landmarks import Landmarks, cached
 from contravia.mesh import MeshBuilder
@@ -72,7 +72,7 @@ def build(i: int, j: int):
         if c.park_tris is not None:
             roads.structures(mb, c.park_tris, c.park_paint)
     near = roads_around(city(), i, j)
-    for ring, style_id, plan in boxes(c, near):
+    for ring, style_id, plan in boxes(c, near, streets_around(city(), i, j)):
         portals = facades.portal_walls(ring, near) if plan.portal else None
         if not buildings.box(mb, ring, style_id, base=seat(ring, terrain), plan=plan, portals=portals):
             SKIPPED_ROOFS += 1
@@ -86,7 +86,7 @@ def build_detail(i: int, j: int):
     terrain = city().terrain
     near = roads_around(city(), i, j)
     mb = MeshBuilder()
-    for ring, style_id, plan in boxes(c, near):
+    for ring, style_id, plan in boxes(c, near, streets_around(city(), i, j)):
         portals = facades.portal_walls(ring, near) if plan.portal else None
         detail.dress(mb, ring, style_id, seat(ring, terrain), plan, near, portals)
     if not mb._pos:

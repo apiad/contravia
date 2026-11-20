@@ -4,11 +4,15 @@ OSM draws some buildings across a street or a service road, and a filler box can
 edge does not follow. Such a box is a wall in the middle of the road, and a car put on that road starts inside
 it, where the box's walls cannot be seen (a wall shows only its outside) but still stop the car. A box is left
 out when a road's centreline comes nearer to it than half the road's width less MARGIN, crosses it, or ends
-inside it. The cells the worker draws and the walls the car hits both take their boxes from boxes(), so they
-leave out the same ones.
+inside it. A box that stays is then cut back to the street surface the cells draw (streets_around): that
+surface is wider than the road's tagged width wherever streets.py widens a narrow street to its MIN_WIDTH, rounds
+a junction or joins an avenue's carriageways, and a house front left there would stand on the asphalt. A box the
+street takes more than half of, or holds a piece of street inside, is left out. The cells the worker draws and
+the walls the car hits both take their boxes from boxes(), so they leave out and cut the same ones.
 """
 
 import numpy as np
+import shapely
 
 from contravia.citydata import Cell
 from contravia.mesh import signed_area
@@ -16,6 +20,10 @@ from contravia.rules.buildings import filler_rings
 from contravia.rules.facades import Plan, municipio, plan
 
 MARGIN = 0.5  # metres of a road's half-width a box may reach into, for the kerb
+SLIVER = 0.05  # m²: a box the street surface overlaps by less than this is kept as it is
+KEEP = 0.5  # the least share of a box's footprint that must stay off the street surface for the box to stay
+SIMPLIFY = 0.01  # metres: tolerance for the corners a cut leaves along the street's triangles
+UNDER = 2.0  # metres under the ground where a street outside an open cut is a tunnel, which boxes stand over
 
 
 def _inside(points, ring) -> np.ndarray:
@@ -104,9 +112,57 @@ def roads_around(city, i: int, j: int) -> np.ndarray:
     return np.concatenate([city.cell(i + di, j + dj).roads for di in (-1, 0, 1) for dj in (-1, 0, 1)]).reshape(-1, 5)
 
 
-def boxes(cell: Cell, roads: np.ndarray) -> list[tuple[np.ndarray, int, Plan]]:
-    """The footprints of a cell's buildings and filler boxes that leave every road clear, each with the id
-    its draws are seeded by (the OSM id, or the block's seed for a filler box) and its facade plan."""
+def streets_around(city, i: int, j: int) -> np.ndarray:
+    """(T, 3, 2) x, z of the street surface cell (i, j) and its eight neighbours draw, covered tunnels left out:
+    the surface is cut per cell, so a box near a cell's edge may reach a street of the next cell."""
+    parts = []
+    for di in (-1, 0, 1):
+        for dj in (-1, 0, 1):
+            t = city.cell(i + di, j + dj).street_tris
+            if t is None or not len(t):
+                continue
+            t = np.asarray(t, float)
+            mid = t.mean(axis=1)
+            keep = mid[:, 1] > city.terrain.height(mid[:, 0], mid[:, 2]) - UNDER
+            cuts = city.cell(i + di, j + dj).street_cuts
+            if not keep.all() and cuts is not None and len(cuts):  # a deep street in an open cut is still seen
+                deep = np.flatnonzero(~keep)
+                k, _ = shapely.STRtree(shapely.polygons(np.asarray(cuts, float))).query(
+                    shapely.points(mid[deep][:, [0, 2]]), predicate="intersects")
+                keep[deep[k]] = True
+            parts.append(t[keep][:, :, [0, 2]])
+    return np.concatenate(parts) if parts else np.zeros((0, 3, 2))
+
+
+def off_streets(rings: list, streets: np.ndarray) -> list:
+    """Each ring cut back to stand off the (T, 3, 2) street triangles: the ring itself when they overlap it by
+    less than SLIVER, else what is left of it, or None where less than KEEP of it is left or a street lies
+    inside it."""
+    out = list(rings)
+    if not len(rings) or not len(streets):
+        return out
+    tris = shapely.polygons(np.asarray(streets, float))
+    polys = shapely.make_valid(np.array([shapely.Polygon(r) for r in rings], dtype=object))
+    ring_k, tri_k = shapely.STRtree(tris).query(polys, predicate="intersects")
+    for k in np.unique(ring_k):
+        poly = polys[k]
+        rest = poly.difference(shapely.union_all(tris[tri_k[ring_k == k]]))
+        if poly.area - rest.area < SLIVER:
+            continue
+        parts = [g for g in shapely.get_parts(rest) if g.geom_type == "Polygon"]
+        big = max(parts, key=lambda g: g.area) if parts else None
+        if big is None or big.area < KEEP * poly.area or len(big.interiors):
+            out[k] = None
+            continue
+        ring = np.asarray(big.simplify(SIMPLIFY).exterior.coords, float)[:-1]
+        out[k] = ring if signed_area(ring) * signed_area(rings[k]) > 0 else ring[::-1].copy()
+    return out
+
+
+def boxes(cell: Cell, roads: np.ndarray, streets: np.ndarray) -> list[tuple[np.ndarray, int, Plan]]:
+    """The footprints of a cell's buildings and filler boxes that leave every road clear, cut back to stand off
+    the (T, 3, 2) street triangles the cells draw (streets_around), each with the id its draws are seeded by
+    (the OSM id, or the block's seed for a filler box) and its facade plan."""
     attrs = cell.building_attrs if cell.building_attrs is not None else [None] * len(cell.buildings)
     items, munis = [], []
     for r, i, a in zip(cell.buildings, cell.building_ids, attrs, strict=True):
@@ -119,5 +175,6 @@ def boxes(cell: Cell, roads: np.ndarray) -> list[tuple[np.ndarray, int, Plan]]:
         for k, r in enumerate(filler_rings(block, int(seed))):
             sid = abs(int(seed)) * 131 + k
             items.append((r, sid, plan(sid, None, zone, abs(signed_area(r)))))
-    keep = ~crossing([r for r, *_ in items], roads)
-    return [item for item, k in zip(items, keep, strict=True) if k]
+    items = [item for item, k in zip(items, ~crossing([r for r, *_ in items], roads), strict=True) if k]
+    cut = off_streets([r for r, *_ in items], streets)
+    return [(r, sid, p) for r, (_, sid, p) in zip(cut, items, strict=True) if r is not None]
