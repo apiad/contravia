@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contravía: de Pinar del Río a Baracoa</title>
+<meta name="description" content="Un juego de manejar en mundo abierto por Cuba entera, a tamaño real, generado mientras manejas.">
+<link rel="stylesheet" href="../branding/brand.css">
+<style>
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; overflow-x: clip; }
+  body { margin: 0; background: var(--cv-ink); color: var(--cv-paper); font-family: "Contravia Text", system-ui, sans-serif;
+         font-size: 19px; line-height: 1.45; overflow-x: clip; }
+  a { color: inherit; }
+  img { display: block; max-width: 100%; }
+  .tag { font-family: "Contravia Tag"; text-transform: uppercase; letter-spacing: .14em; }
+  .wrap { width: min(1200px, 100% - 40px); margin-inline: auto; }
+
+  /* Halftone dots, the comic print texture laid over the dark sections. */
+  .dots { background-image: radial-gradient(rgba(244, 239, 228, .07) 1.2px, transparent 1.6px); background-size: 9px 9px; }
+
+  /* ---------- Hero ---------- */
+  .hero { position: relative; min-height: 100svh; display: grid; place-items: end center; overflow: hidden;
+          isolation: isolate; padding-bottom: clamp(40px, 8vh, 90px); }
+  .hero-bg { position: absolute; inset: -8% 0 0; z-index: -2; background: url("../branding/poster/panels/malecon.jpg") 60% 40% / cover;
+             transform: translateY(calc(var(--scroll, 0) * 0.25px)) scale(1.08); will-change: transform; }
+  .hero::before { content: ""; position: absolute; inset: 0; z-index: -1;
+                  background: linear-gradient(180deg, rgba(11, 11, 11, .15) 0%, rgba(11, 11, 11, 0) 35%, rgba(11, 11, 11, .75) 72%, var(--cv-ink) 100%); }
+  .hero .cv-logo { --cv-size: clamp(64px, 13vw, 190px); padding-bottom: calc(var(--cv-size) * 0.3); }
+  .hero .cv-sign { animation: spin-in 1s cubic-bezier(.2, 1.4, .4, 1) both; }
+  .hero .cv-word { animation: slam 0.7s 0.25s cubic-bezier(.2, 1.5, .4, 1) both; }
+  .hero .cv-tag { animation: fade-up 0.6s 0.8s both; font-size: calc(var(--cv-size) * 0.12); }
+  .hero-sub { text-align: center; max-width: 34em; margin: 10px auto 26px; font-size: clamp(18px, 2.2vw, 23px);
+              text-shadow: 0 2px 10px var(--cv-ink); animation: fade-up 0.6s 1s both; }
+  .ctas { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; animation: fade-up 0.6s 1.15s both; }
+  .btn { font-family: "Contravia Tag"; text-transform: uppercase; letter-spacing: .12em; font-size: 17px; text-decoration: none;
+         padding: 14px 26px; border: 3px solid var(--cv-ink); transform: skewX(-8deg); display: inline-block;
+         transition: transform .15s, box-shadow .15s; }
+  .btn > span { display: inline-block; transform: skewX(8deg); }
+  .btn-main { background: var(--cv-yellow); color: var(--cv-ink); box-shadow: 6px 6px 0 var(--cv-red); }
+  .btn-alt { background: var(--cv-paper); color: var(--cv-ink); box-shadow: 6px 6px 0 var(--cv-ink), 6px 6px 0 3px var(--cv-paper); }
+  .btn:hover { transform: skewX(-8deg) translate(-3px, -3px); box-shadow: 9px 9px 0 var(--cv-red); }
+  .scroll-cue { position: absolute; bottom: 16px; left: 50%; width: 4px; height: 40px; margin-left: -2px;
+                background: repeating-linear-gradient(var(--cv-yellow) 0 10px, transparent 10px 20px); animation: road 0.8s linear infinite; }
+
+  /* ---------- The road sign ticker ---------- */
+  .ticker { background: var(--cv-yellow); color: var(--cv-ink); border-block: 5px solid var(--cv-ink);
+            outline: 4px solid var(--cv-paper); transform: rotate(-2deg) scale(1.03); overflow: hidden; position: relative; z-index: 2;
+            margin: -30px 0 40px; }
+  .ticker-track { display: flex; width: max-content; animation: ticker 50s linear infinite; }
+  .ticker span { font-family: "Contravia Logo"; font-size: clamp(24px, 3.4vw, 40px); padding: 10px 0; white-space: nowrap; }
+  .ticker span::after { content: ""; display: inline-block; width: .55em; height: .55em; margin: 0 .7em; vertical-align: .1em;
+                        border-radius: 50%; background: var(--cv-red); box-shadow: inset 0 -.2em 0 -.14em var(--cv-paper), inset 0 .2em 0 -.14em var(--cv-paper); }
+
+  /* ---------- Section titles ---------- */
+  section { padding: clamp(60px, 9vw, 120px) 0; position: relative; }
+  .kicker { color: var(--cv-red); font-size: 15px; margin: 0 0 8px; }
+  h2 { font-family: "Contravia Logo"; font-weight: normal; font-size: clamp(40px, 6.4vw, 84px); line-height: .95; margin: 0 0 22px;
+       color: var(--cv-yellow); -webkit-text-stroke: 2px var(--cv-ink); paint-order: stroke fill; text-shadow: 4px 4px 0 var(--cv-red);
+       transform: skewX(-6deg); transform-origin: left; }
+  .lede { max-width: 38em; font-size: clamp(19px, 2vw, 22px); color: #dcd6c8; margin: 0; }
+
+  /* ---------- Numbers ---------- */
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; margin-top: 48px; }
+  .stat { background: var(--cv-paper); color: var(--cv-ink); padding: 22px 20px 18px; border: 4px solid var(--cv-ink);
+          outline: 3px solid var(--cv-paper); box-shadow: 8px 8px 0 var(--cv-red); transform: rotate(var(--r, -1deg)); }
+  .stat:nth-child(2) { --r: 1.2deg; } .stat:nth-child(3) { --r: -.6deg; } .stat:nth-child(4) { --r: 1.6deg; }
+  .stat b { display: block; font-family: "Contravia Logo"; font-weight: normal; font-size: clamp(42px, 5vw, 64px); line-height: 1; }
+  .stat small { display: block; font-size: 17px; margin-top: 6px; }
+
+  /* ---------- Comic grid ---------- */
+  .comic { display: grid; gap: 14px; margin-top: 46px;
+           grid-template-columns: repeat(6, minmax(0, 1fr)); grid-auto-rows: clamp(120px, 15vw, 190px);
+           grid-template-areas:
+             "cap cap cap cap cho cho"
+             "cap cap cap cap cho cho"
+             "tri tri tcl tcl mot mot"
+             "tri tri tcl tcl mot mot"
+             "san san par par par par"
+             "san san par par par par"
+             "met met met noc noc noc"
+             "met met met noc noc noc"; }
+  .panel { position: relative; overflow: hidden; margin: 0; outline: 6px solid var(--cv-paper); outline-offset: -6px; background: #222; }
+  .panel img { width: 100%; height: 100%; object-fit: cover; transition: transform .6s cubic-bezier(.2, .8, .2, 1); }
+  .panel:hover img { transform: scale(1.06); }
+  .panel figcaption { position: absolute; left: 14px; top: 14px; max-width: calc(100% - 28px); background: var(--cv-paper); color: var(--cv-ink);
+                      padding: 6px 12px; border: 3px solid var(--cv-ink); font-size: 16px; line-height: 1.2; transform: rotate(-1.5deg);
+                      box-shadow: 4px 4px 0 var(--cv-ink); }
+  .panel figcaption.bubble { border-radius: 18px; transform: none; top: auto; bottom: 18px; left: auto; right: 16px; }
+  .panel figcaption.bubble::after { content: ""; position: absolute; left: 22px; top: -14px; border: 8px solid transparent;
+                                    border-bottom: 10px solid var(--cv-ink); border-top: 0; }
+
+  /* ---------- Vehicles ---------- */
+  .fleet-sec { background: var(--cv-red); color: var(--cv-paper); }
+  .fleet-sec h2 { color: var(--cv-paper); text-shadow: 4px 4px 0 var(--cv-ink); }
+  .fleet-sec .kicker { color: var(--cv-yellow); }
+  .fleet-sec .lede { color: #fbe9e4; }
+  .fleet { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 26px; margin-top: 44px; }
+  .car { background: var(--cv-ink); border: 4px solid var(--cv-ink); outline: 4px solid var(--cv-paper); outline-offset: -10px;
+         transform: rotate(var(--r, -1.5deg)); transition: transform .25s; }
+  .car:nth-child(2) { --r: 1.2deg; } .car:nth-child(3) { --r: -.8deg; } .car:nth-child(5) { --r: 1.8deg; }
+  .car:hover { transform: rotate(0) translateY(-6px); }
+  .car img { aspect-ratio: 4 / 3; width: 100%; object-fit: cover; }
+  .car div { padding: 14px 18px 18px; }
+  .car h3 { font-family: "Contravia Logo"; font-weight: normal; margin: 0; font-size: 30px; color: var(--cv-yellow); }
+  .car p { margin: 4px 0 0; font-size: 17px; color: #cfc9bb; }
+
+  /* ---------- How it is made ---------- */
+  .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 30px; margin-top: 50px; counter-reset: step; }
+  .step { border-top: 6px dashed var(--cv-yellow); padding-top: 18px; position: relative; }
+  .step::before { counter-increment: step; content: counter(step); position: absolute; top: -32px; right: 0; width: 56px; height: 56px;
+                  display: grid; place-items: center; border-radius: 50%; background: var(--cv-red); color: var(--cv-paper);
+                  font-family: "Contravia Logo"; font-size: 32px; box-shadow: 0 0 0 4px var(--cv-paper), 0 0 0 7px var(--cv-ink); }
+  .step h3 { font-family: "Contravia Tag"; text-transform: uppercase; letter-spacing: .08em; font-size: 22px; margin: 0 0 8px; color: var(--cv-paper); }
+  .step p { margin: 0; color: #cfc9bb; }
+  .term { margin-top: 56px; background: #161616; border: 3px solid var(--cv-paper); box-shadow: 10px 10px 0 var(--cv-yellow);
+          font-family: ui-monospace, "JetBrains Mono", monospace; font-size: 16px; padding: 22px 24px; overflow-x: auto; }
+  .term p { margin: 0; white-space: pre; color: #e6e1d4; }
+  .term .c { color: #8e8a80; }
+  .term .p { color: var(--cv-yellow); }
+
+  /* ---------- Night finale ---------- */
+  .finale { min-height: 90vh; display: grid; place-items: center; text-align: center; overflow: hidden; isolation: isolate; }
+  .finale-bg { position: absolute; inset: 0; z-index: -2; background: url("../branding/poster/panels/noche.jpg") center / cover; }
+  .finale::before { content: ""; position: absolute; inset: 0; z-index: -1;
+                    background: radial-gradient(ellipse at center, rgba(11, 11, 11, .35), rgba(11, 11, 11, .92) 75%); }
+  .finale h2 { transform: skewX(-6deg); transform-origin: center; font-size: clamp(46px, 8vw, 110px); }
+  .finale .lede { margin: 0 auto 32px; color: var(--cv-paper); }
+
+  footer { padding: 40px 0 60px; border-top: 4px solid var(--cv-yellow); font-size: 15px; color: #a9a397; }
+  footer .cv-logo { --cv-size: 46px; justify-content: flex-start; margin-bottom: 18px; }
+  footer .cv-tag { display: none; }
+  footer ul { margin: 0; padding-left: 18px; }
+
+  /* ---------- Reveal on scroll ---------- */
+  .reveal { opacity: 0; transform: translateY(40px) rotate(var(--r, 0deg)); transition: opacity .7s, transform .7s cubic-bezier(.2, .8, .2, 1); }
+  .reveal.in { opacity: 1; transform: rotate(var(--r, 0deg)); }
+  .panel.reveal { transform: scale(.92); } .panel.reveal.in { transform: none; }
+
+  @keyframes spin-in { from { transform: rotate(-540deg) scale(0); } to { transform: none; } }
+  @keyframes slam { from { transform: skewX(-6deg) translateX(60vw); opacity: 0; } to { transform: skewX(-6deg); opacity: 1; } }
+  @keyframes fade-up { from { opacity: 0; transform: translateY(20px); } }
+  @keyframes ticker { to { transform: translateX(-50%); } }
+  @keyframes road { to { background-position: 0 20px; } }
+
+  @media (max-width: 760px) {
+    body { font-size: 17px; }
+    .hero > div:first-of-type { padding: 0 18px; }
+    .hero .cv-logo { --cv-size: 11vw; gap: 8px; }
+    .hero .cv-tag { letter-spacing: .1em; }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .comic { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 46vw;
+             grid-template-areas: "cap cap" "cho tri" "tcl mot" "san par" "met met" "noc noc"; }
+    .fleet, .steps { grid-template-columns: minmax(0, 1fr); }
+    .steps { gap: 46px; }
+    .term { font-size: 13px; padding: 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .reveal { opacity: 1; transform: rotate(var(--r, 0deg)); }
+    .panel.reveal { transform: none; }
+    .hero-bg { transform: scale(1.08); }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-bg"></div>
+  <div>
+    <div class="cv-logo">
+      <div class="cv-sign"></div>
+      <div class="cv-word">CONTRAVÍA</div>
+      <div class="cv-tag">DE PINAR DEL RÍO A BARACOA</div>
+    </div>
+    <p class="hero-sub">Cuba entera, a tamaño real, para manejarla de punta a punta. Cada calle sale del mapa y la ciudad se levanta mientras avanzas.</p>
+    <div class="ctas">
+      <a class="btn btn-main" href="#isla"><span>Arranca</span></a>
+      <a class="btn btn-alt" href="#jugar"><span>Cómo jugar</span></a>
+    </div>
+  </div>
+  <div class="scroll-cue" aria-hidden="true"></div>
+</header>
+
+<div class="ticker" aria-label="Las 16 provincias">
+  <div class="ticker-track">
+    <span>Pinar del Río</span><span>Artemisa</span><span>La Habana</span><span>Mayabeque</span><span>Matanzas</span><span>Cienfuegos</span><span>Villa Clara</span><span>Sancti Spíritus</span><span>Ciego de Ávila</span><span>Camagüey</span><span>Las Tunas</span><span>Holguín</span><span>Granma</span><span>Santiago de Cuba</span><span>Guantánamo</span><span>Isla de la Juventud</span>
+    <span aria-hidden="true">Pinar del Río</span><span aria-hidden="true">Artemisa</span><span aria-hidden="true">La Habana</span><span aria-hidden="true">Mayabeque</span><span aria-hidden="true">Matanzas</span><span aria-hidden="true">Cienfuegos</span><span aria-hidden="true">Villa Clara</span><span aria-hidden="true">Sancti Spíritus</span><span aria-hidden="true">Ciego de Ávila</span><span aria-hidden="true">Camagüey</span><span aria-hidden="true">Las Tunas</span><span aria-hidden="true">Holguín</span><span aria-hidden="true">Granma</span><span aria-hidden="true">Santiago de Cuba</span><span aria-hidden="true">Guantánamo</span><span aria-hidden="true">Isla de la Juventud</span>
+  </div>
+</div>
+
+<section id="isla" class="dots">
+  <div class="wrap">
+    <p class="kicker tag reveal">El mapa es el país</p>
+    <h2 class="reveal">La isla entera.<br>Una sola carretera.</h2>
+    <p class="lede reveal">No hay una Habana de juguete ni un pueblo inventado. Las calles, los edificios y la costa vienen de OpenStreetMap; las lomas, del relieve satelital. Sales del Capitolio, coges la Carretera Central y sigues hasta Baracoa.</p>
+    <div class="stats">
+      <div class="stat reveal"><b>16</b><small>provincias, todas en el mismo mapa</small></div>
+      <div class="stat reveal"><b>1:1</b><small>tamaño real, cuadra por cuadra</small></div>
+      <div class="stat reveal"><b>30 m</b><small>de detalle en el relieve de La Habana</small></div>
+      <div class="stat reveal"><b>0</b><small>ciudades modeladas a mano</small></div>
+    </div>
+  </div>
+</section>
+
+<section id="ver">
+  <div class="wrap">
+    <p class="kicker tag reveal">Lo que vas a ver</p>
+    <h2 class="reveal">Cuba de hoy,<br>con el sol de frente.</h2>
+    <p class="lede reveal">El Capitolio y el Malecón, las calles de piedra de Trinidad, las lomas de Santiago, una parada en la Plaza de la Revolución. Y de noche, otra ciudad.</p>
+    <div class="comic">
+      <figure class="panel reveal" style="grid-area:cap"><img src="../branding/poster/panels/capitolio.jpg" alt="Un almendrón turquesa frente al Capitolio"><figcaption>El Capitolio, kilómetro cero.</figcaption></figure>
+      <figure class="panel reveal" style="grid-area:cho"><img src="../branding/poster/panels/chofer.jpg" alt="Un chofer de almendrón sonríe con gafas de sol"><figcaption class="bubble">¿Pa' dónde vas?</figcaption></figure>
+      <figure class="panel reveal" style="grid-area:tri"><img src="../branding/poster/panels/trinidad.jpg" alt="Un Lada rojo en una calle de piedra de Trinidad"><figcaption>Trinidad, adoquín y campanario.</figcaption></figure>
+      <figure class="panel reveal" style="grid-area:tcl"><img src="../branding/poster/panels/triciclo.jpg" alt="Un triciclo eléctrico amarillo con pasajeros"><figcaption>El triciclo de la esquina.</figcaption></figure>
+      <figure class="panel reveal" style="grid-area:mot"><img src="../branding/poster/panels/motorista.jpg" alt="Una muchacha en moto eléctrica entre casas de colores" style="object-position: 50% 30%"><figcaption>Moto eléctrica entre colores.</figcaption></figure>
+      <figure class="panel reveal" style="grid-area:san"><img src="../branding/poster/panels/santiago.jpg" alt="Una moto con sidecar en una loma de Santiago, con la bahía detrás"><figcaption>Santiago, loma arriba.</figcaption></figure>
+      <figure class="panel reveal" style="grid-area:par"><img src="../branding/poster/panels/parada.jpg" alt="Gente con sombrillas en una parada frente a la Plaza de la Revolución"><figcaption>La parada de la Plaza.</figcaption></figure>
+      <figure class="panel reveal" style="grid-area:met"><img src="../branding/poster/panels/metroguagua.jpg" alt="Una metroguagua articulada llena en La Habana Vieja"><figcaption>La metroguagua, hasta la puerta.</figcaption></figure>
+      <figure class="panel reveal" style="grid-area:noc"><img src="../branding/poster/panels/noche.jpg" alt="Dos almendrones de frente en una calle de noche"><figcaption>De noche, cara a cara.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section class="fleet-sec dots">
+  <div class="wrap">
+    <p class="kicker tag reveal">Lo que vas a manejar</p>
+    <h2 class="reveal">Lo que rueda,<br>rueda.</h2>
+    <p class="lede reveal">Los carros que de verdad andan por la calle: almendrones de los cincuenta, Ladas, triciclos eléctricos, metroguaguas, motos con sidecar. El tráfico circula por la red de calles de la provincia donde estés.</p>
+    <div class="fleet">
+      <article class="car reveal"><img src="../branding/poster/panels/malecon.jpg" alt="Un almendrón en el Malecón con una ola encima" style="object-position: 75% 70%"><div><h3>Almendrón</h3><p>Cromo de 1956 y una ola del Malecón en el parabrisas.</p></div></article>
+      <article class="car reveal"><img src="../branding/poster/panels/trinidad.jpg" alt="Un Lada rojo" style="object-position: 30% 85%"><div><h3>Lada</h3><p>Cuadrado, rojo e inmortal.</p></div></article>
+      <article class="car reveal"><img src="../branding/poster/panels/triciclo.jpg" alt="Un triciclo eléctrico amarillo" style="object-position: 50% 60%"><div><h3>Triciclo</h3><p>Seis pasajeros y una batería.</p></div></article>
+    </div>
+  </div>
+</section>
+
+<section id="jugar">
+  <div class="wrap">
+    <p class="kicker tag reveal">Cómo se hace</p>
+    <h2 class="reveal">Un país hecho<br>de reglas.</h2>
+    <p class="lede reveal">El juego no trae una ciudad modelada: trae datos y reglas. La isla se construye una vez en tu máquina y cada cuadra se arma cuando llegas a ella, igual todas las veces.</p>
+    <div class="steps">
+      <div class="step reveal"><h3>El mapa</h3><p>OpenStreetMap da las calles, los edificios, los puentes y la costa. Copernicus da la altura del suelo.</p></div>
+      <div class="step reveal"><h3>Las reglas</h3><p>Cada zona tiene su receta de edificios. Las avenidas se juntan, las esquinas se redondean, las aceras suben 15 cm y los parques echan árboles.</p></div>
+      <div class="step reveal"><h3>La calle</h3><p>Cada celda se arma mientras manejas, sobre manifoldx. Las ruedas pisan los mismos triángulos que ves.</p></div>
+    </div>
+    <div class="term reveal" aria-label="Comandos para jugar">
+      <p><span class="c"># la primera vez arma la isla en tu máquina</span></p>
+      <p><span class="p">$</span> contravia play</p>
+      <p><span class="c"># o salta a Santiago</span></p>
+      <p><span class="p">$</span> manifoldx emit teleport lat=20.02 lon=-75.83</p>
+    </div>
+  </div>
+</section>
+
+<section class="finale">
+  <div class="finale-bg"></div>
+  <div class="wrap">
+    <h2 class="reveal">Métete en contravía.</h2>
+    <p class="lede reveal">Una demo técnica para estudiantes y una prueba de fuerza para manifoldx. Por ahora, en funciones privadas.</p>
+    <div class="ctas reveal"><a class="btn btn-main" href="#isla"><span>Otra vuelta</span></a></div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="cv-logo"><div class="cv-sign"></div><div class="cv-word">CONTRAVÍA</div><div class="cv-tag"></div></div>
+    <ul>
+      <li>Calles, edificios, lugares y costa: © OpenStreetMap contributors, bajo la Open Database License.</li>
+      <li>Relieve: Copernicus GLO-30 Digital Elevation Model, © DLR e.V. 2010-2014 y © Airbus Defence and Space GmbH 2014-2018, provisto bajo COPERNICUS por la Unión Europea y la ESA.</li>
+      <li>Cobertura del suelo: © ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium, bajo CC BY 4.0.</li>
+    </ul>
+  </div>
+</footer>
+
+<script>
+  // Parallax on the hero and reveal of each block as it enters the screen.
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!still) addEventListener("scroll", () => document.documentElement.style.setProperty("--scroll", scrollY), { passive: true });
+  const seen = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); seen.unobserve(e.target); }
+  }, { threshold: 0.12 });
+  document.querySelectorAll(".reveal").forEach((el) => seen.observe(el));
+</script>
+</body>
+</html>
