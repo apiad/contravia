@@ -24,7 +24,7 @@ import numpy as np
 
 from contravia import collect
 from contravia.album import Album
-from contravia.camera import chase, seen_from
+from contravia.camera import Orbit, chase, orbit, seen_from
 from contravia.car import CarState, Controls, Driven, settle
 from contravia.driving_help import DEFAULT, DrivingHelp, Road, brake_reach, chassis_strengths, road_assists
 from contravia.forest import Forest
@@ -146,6 +146,7 @@ class Game:
         self._photo_pending = None  # (PNG path, future of its pixels) between a shot and its saving
         self.camera_override = None  # bench.py sets a function () -> (eye, target) in world metres
         self.rig, self._chased = None, None  # the chase camera's contravia.camera.Rig, and the eye it last placed
+        self.mouse_orbit = Orbit()  # the mouse's turn of the chase camera round the car
         self.mode = "drive"  # or "menu", "paused", "photo", "map", "garage": see contravia/menu.py
         self.photo = None  # the photo mode's and the Garaje's camera around the car: (yaw, pitch, distance)
         self.map = None  # the map's camera, a contravia.mapview.MapCam, while the map shows
@@ -790,6 +791,9 @@ class Game:
         ground = float(self.surface.height(np.array([self.car.x]), np.array([self.car.z]), near=self.car.y)[0])
         self.shadow.transform.pos = (self.car.x, ground + SHADOW_LIFT, self.car.z)
         self.shadow.transform.rot = (0.0, float(np.sin(half)), 0.0, float(np.cos(half)))
+        captured = self.mode == "drive" and not self.camera_override  # the mouse turns the camera while driving
+        if inp.pointer_captured != captured:
+            inp.capture_pointer(captured)
         if self.camera_override:
             eye, target = self.camera_override()
             self.eye, target = np.asarray(eye, float), np.asarray(target, float)
@@ -812,8 +816,10 @@ class Game:
         else:
             seen = self.driven.seen()
             if self.eye is not self._chased:  # another camera moved the eye: the chase starts from there
-                self.rig = seen_from(self.eye, seen)
-            self.rig, self.eye, target = chase(self.rig, seen, self._dt, self.surface)
+                self.rig, self.mouse_orbit = seen_from(self.eye, seen), Orbit()
+            if inp.pointer_captured:
+                self.mouse_orbit = orbit(self.mouse_orbit, *inp.mouse_delta, seen.speed, self._dt)
+            self.rig, self.eye, target = chase(self.rig, seen, self._dt, self.surface, self.mouse_orbit)
             self._chased = self.eye
         self.o = self._recentre()
         if not self._sea:
