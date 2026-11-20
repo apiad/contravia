@@ -111,8 +111,6 @@ class Backdrop:
 
     def show(self, names: list[str]) -> None:
         """Go through these panels from now on, starting with the first."""
-        if name == "card" and getattr(self.game, "sound", None) is not None:
-            self.game.sound.ui("card")
         if names != self.names:
             self.names, self.k, self.t = names, 0, 0.0
             self.image.svg = ui.panel(names[0])
@@ -1239,6 +1237,8 @@ class Menu:
 
     def show(self, name: str | None) -> None:
         """Take the current screen off and put `name` on; None leaves no menu."""
+        if name == "card" and getattr(self.game, "sound", None) is not None:
+            self.game.sound.ui("card")
         g = self.engine.gui
         if self.current is not None:
             for p in self.screens[self.current].panels:
