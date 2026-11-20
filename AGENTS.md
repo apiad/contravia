@@ -37,7 +37,9 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
 - The map colours far land by what covers it (`contravia/cover.py`, palette in `contravia/rules/cover.py`): ESA WorldCover
   2021 at 100 m in `cover.src`, beside `coast.src`. `contravia cover --out data/cuba` downloads the tiles over the coast
   (deleting each once read) and writes it; the index keeps each square's class shares in its summary (`summary_version`
-  3), and `summary_mesh` mixes the flat atlas tones and shades the slopes away from a north-west light. Its licence
+  3), and `summary_mesh` mixes the flat atlas tones and shades the slopes away from a north-west light.
+  Far buildings are the city's blocks, not boxes (`contravia/summary.py`, `summary_version` 4): each built
+  block cut by its streets, merged level by level across the streets a level no longer draws, in height tiers. Its licence
   (CC BY 4.0) asks for `contravia.cover.CREDIT` wherever the game names its data.
 - In the map the camera stretches heights (`mapview.exaggeration`: 1 up to 10 km of height, 20 at 1 000 km, through
   manifoldx's `Camera.vertical_scale`), the summaries mix in height tints from the city stage up and shade the
