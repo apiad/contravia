@@ -157,6 +157,7 @@ class Game:
         self.rig, self._chased = None, None  # the chase camera's contravia.camera.Rig, and the eye it last placed
         self.mouse_orbit = Orbit()  # the mouse's turn of the chase camera round the car
         self.mode = "drive"  # or "menu", "paused", "photo", "map", "garage": see contravia/menu.py
+        self.sound = None  # contravia.audio.Sound, started by main() or the bench
         self.photo = None  # the photo mode's and the Garaje's camera around the car: (yaw, pitch, distance)
         self.map = None  # the map's camera, a contravia.mapview.MapCam, while the map shows
         self.flight = None  # the camera's flight between the street and the map (contravia/flight.py), while it flies
@@ -640,6 +641,8 @@ class Game:
         self.rain_on = options["rain"].value
         self.help_level, self.locked_assists = options["help"].value, options.locked_assists
         self.hud.configure(options["units"].value, options["minimap"].value)
+        if self.sound is not None:
+            self.sound.apply_options(options)
 
     def _find_area(self, now: float) -> None:
         """Twice a second, from the road graph, the street the car drives on: its municipio and its address."""
@@ -948,6 +951,8 @@ class Game:
         st.y = round(self.car.y, 1)
         st.grade = round(math.tan(self.car.pitch) * 100, 1)  # percent, positive uphill
         st.frame_ms = round(self.frame_ms, 2)
+        if self.sound is not None:
+            self.sound.frame(self)
 
     def _fly(self) -> tuple[np.ndarray, np.ndarray]:
         """This frame's (eye, target) on the camera's flight. Going up it ends on the map's pose as it is now;
@@ -1149,7 +1154,8 @@ def roofs_near(city, landmarks, x: float, z: float, reach: float) -> tuple[list,
 def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, size=(1280, 720),
          traffic: str | None = None, when: str | None = None, warp: float = 1.0, sky: str | None = None,
          pipelined: bool = True, with_traffic: bool = False,
-         screen: str | None = None, height: float | None = None, yaw: float = 0.0, place: str | None = None) -> None:
+         screen: str | None = None, height: float | None = None, yaw: float = 0.0, place: str | None = None,
+         mute: bool = False, audio_out: str | None = None) -> None:
     """Open a window on the main menu, or with `shot`, render offscreen until the city is drawn and save a PNG.
 
     screen opens a menu screen ("main", "free", "options", "pause", "photo", "map", "garage", "design") or "drive"
@@ -1164,6 +1170,7 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     frame while the window draws this one; --no-pipeline is the serial path, for comparing the two.
     With screen "map", height (metres) puts the map's camera that high over `at`, turned yaw degrees from north,
     and the car stays at the Capitolio: `at` may be far from any road.
+    mute plays no sound (a shot never does); audio_out records the mix, and a WAV per bus beside it, to that path.
     """
     import manifoldx as mx
 
@@ -1205,7 +1212,12 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
 
     free = FreeDrive.from_flags(at=at, when=when, force=sky_config.force if sky_config else None,
                                 traffic=with_traffic or bool(traffic), warp=warp)
-    menu = Menu(engine, game, free, Options.load(), screen=screen if screen in ("main", "free", "options") else None)
+    options = Options.load()
+    from contravia.audio import Sound
+
+    game.sound = Sound.start(engine.state, options, backend="file" if audio_out else "null" if mute or shot else "device",
+                             path=audio_out)
+    menu = Menu(engine, game, free, options, screen=screen if screen in ("main", "free", "options") else None)
     if screen in ("pause", "photo", "map"):
         engine.on("startup")(lambda _=None: (menu.pause(), screen != "pause" and menu.show(screen)))
     if screen in ("album", "province"):  # over the pause; the province of --place, or La Habana
