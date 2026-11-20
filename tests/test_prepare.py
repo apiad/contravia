@@ -109,6 +109,7 @@ def test_with_the_satellite_seeing_houses_everywhere_only_green_blocks_stay_park
     _, plain = build_city(raw)
     raw.built_up = BuiltUp.of(np.ones((400, 400), bool), (-4000.0, -4000.0))
     _, seen = build_city(raw)
-    assert seen["parks"] == plain["parks"]  # the fixture's one park is green in OSM
+    assert sum(seen["parks"].values()) == sum(plain["parks"].values()) == 1  # the fixture's one park is green in OSM
+    assert plain["parks"]["organic"] == 1 and seen["parks"]["city"] == 1  # in a town the satellite sees, it is urban
     assert seen["filler_blocks"] == plain["filler_blocks"]
     assert given[0] is None and np.allclose(given[1], 1.0)  # every block seen built over

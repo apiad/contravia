@@ -183,3 +183,98 @@ def test_a_park_the_drawn_street_mostly_covers_is_not_laid_out():
     assert not len(city.a["park_kind"]) and not len(parks.laid(city.a))
     kept = _street_city(strip, parks.PASEO, (-10, -5, 310, 2))  # a street along its edge leaves it a park
     assert parks.drop_covered(kept) == {"parks_under_streets": 0} and len(kept.a["park_kind"]) == 1
+
+
+def _grid(built: bool, size=4_000.0, at=(0.0, 0.0)):
+    """A 20 m built-up grid size metres a side from `at`, all built or all open."""
+    from contravia.builtup import BuiltUp
+
+    n = int(size / 20)
+    return BuiltUp.of(np.full((n, n), built), at)
+
+
+def _town(ring, kind, city, built):
+    return parks.in_town(np.array([kind]), [Polygon(ring)], np.array([city]), _grid(built))[0]
+
+
+def test_a_park_in_a_built_town_is_urban_and_one_in_the_country_stays_wild():
+    big = _rect(120, 100)  # 12 000 m²: too big for a plaza
+    assert _kind(big, city=False) == parks.ORGANIC
+    assert _town(big, parks.ORGANIC, False, built=True) == parks.CITY
+    assert _town(big, parks.ORGANIC, False, built=False) == parks.ORGANIC
+    assert _town(big, parks.CITY, False, built=False) == parks.ORGANIC  # the rule decides again, both ways
+
+
+def test_a_park_half_ringed_by_houses_is_urban_and_one_with_a_few_is_not():
+    from contravia.builtup import BuiltUp
+
+    ring = _rect(120, 100, at=(2000.0, 2000.0))  # its ring runs from z 1750 to 2250
+    half, strip = np.zeros((200, 200), bool), np.zeros((200, 200), bool)
+    half[:100] = True  # houses everywhere south of z 2000: half the ring
+    strip[88:90] = True  # one row of houses along z 1760 to 1800
+    for mask, urban in ((half, True), (strip, False)):
+        grid = BuiltUp.of(mask, (0.0, 0.0))
+        share = parks.surroundings([Polygon(ring)], grid)[0]
+        got = parks.in_town(np.array([parks.ORGANIC]), [Polygon(ring)], np.array([False]), grid)[0]
+        assert (got == parks.CITY) == urban and (share >= parks.URBAN_BUILT) == urban, share
+
+
+def test_the_city_municipios_parks_keep_their_kind_whatever_the_satellite_sees():
+    for kind in (parks.CITY, parks.PASEO, parks.PRADO):
+        for built in (True, False):
+            assert _town(_rect(60, 50), kind, True, built) == kind
+    assert _town(_rect(300, 35), parks.PASEO, False, False) == parks.PASEO  # a paseo is a paseo anywhere
+
+
+def test_a_small_square_park_in_a_dense_town_centre_is_a_plaza():
+    assert _town(_rect(60, 52), parks.ORGANIC, False, built=True) == parks.PLAZA
+    assert _town(_rect(110, 40), parks.ORGANIC, False, built=True) == parks.CITY  # long: a city park
+
+
+def test_a_plaza_is_paved_edge_to_edge_with_trees_in_planters_benches_facing_its_centrepiece():
+    ring = _rect(60, 52, turn=0.4)
+    poly = Polygon(ring)
+    for seed in range(12):
+        park = parks.layout(ring, parks.PLAZA, seed)
+        assert park.kerb is not None and abs(park.kerb.area - poly.area) < 1.0  # all of it paved
+        assert not park.paved and not park.dirt and park.lake is None and not len(park.claros)
+        centre = [m for m in park.motifs if m[0] in ("statue", "glorieta", "fountain")]
+        assert len(centre) == 1 and np.hypot(centre[0][1] - 1000, centre[0][2] - 2000) < 1.0
+        planters = np.array([m[1:3] for m in park.motifs if m[0] == "planter"])
+        assert len(park.trees) >= 12 and np.allclose(np.sort(planters, axis=0), np.sort(park.trees, axis=0))
+        assert all(poly.buffer(-parks.PLANTER).contains(Point(p)) for p in planters)
+        to_c = np.array([1000.0, 2000.0]) - park.benches[:, :2]
+        face = np.column_stack([np.cos(park.benches[:, 2]), np.sin(park.benches[:, 2])])
+        assert len(park.benches) >= 8 and np.all((face * to_c).sum(axis=1) / np.hypot(*to_c.T) > 0.99)
+        assert len(park.lamps) >= 8 and all(poly.contains(Point(p)) for p in park.lamps[:, :2])
+        tall = shapely.union_all([Point(m[1], m[2]).buffer(m[3] + 1.0) for m in park.motifs if m[0] != "planter"])
+        assert not any(tall.contains(Point(p)) for p in park.trees)  # no tree in the centrepiece
+
+
+def test_the_same_plaza_every_time():
+    ring = _rect(55, 50)
+    a, b = parks.layout(ring, parks.PLAZA, 99), parks.layout(ring, parks.PLAZA, 99)
+    assert a.motifs == b.motifs and np.array_equal(a.trees, b.trees) and np.array_equal(a.benches, b.benches)
+    assert np.array_equal(a.lamps, b.lamps) and a.kerb.equals(b.kerb)
+
+
+def test_retown_turns_a_town_park_into_a_plaza_with_its_trees_and_motifs():
+    from contravia.builtup import BuiltUp
+
+    ring = np.array([(40, 40), (100, 40), (100, 92), (40, 92)], float)
+    city = _street_city(ring, parks.ORGANIC, (-50, -50, -40, -40))
+    city.a["park_zone"] = np.array([2], np.uint8)  # outside the city's municipios
+    old = parks.layout(ring, parks.ORGANIC, int(city.a["park_seed"][0])).trees
+    city.add_kind("trees", old.astype(np.float32), np.floor(old / 200).astype(int))
+    city.a.pop("tree_offsets"), city.a.update(tree_offsets=city.a.pop("trees_offsets"))
+    report = parks.retown(city, BuiltUp.of(np.ones((40, 40), bool), (-200.0, -200.0)))
+    assert report["parks_changed"] == 1 and report["parks_after"]["plaza"] == 1
+    assert int(city.a["park_kind"][0]) == parks.PLAZA
+    want = parks.layout(ring, parks.PLAZA, int(city.a["park_seed"][0])).trees
+    got = np.asarray(city.a["trees"], float)
+    assert report["trees_dropped"] == len(old) and len(got) == len(want)
+    assert np.allclose(np.sort(got, axis=0), np.sort(want, axis=0), atol=1e-3)
+    built = parks.add_to(city)
+    assert built["motifs"] >= len(want) + 1  # every planter and the centrepiece
+    again = parks.retown(city, BuiltUp.of(np.ones((40, 40), bool), (-200.0, -200.0)))
+    assert again["parks_changed"] == 0  # a second run changes nothing

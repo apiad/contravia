@@ -153,6 +153,7 @@ DIRT = (0.52, 0.42, 0.29)  # the organic park's beaten earth
 # the outskirts, clean slabs (8) in Vedado and Playa; kerbs stay plain.
 WALK_PATTERN = (9, 8, 9)
 PLATFORM_PATTERN = 9
+PLAZA_TONE, PLAZA_PATTERN = (0.56, 0.48, 0.41), 7  # a town plaza's warm stone tiles (manifoldx's tiles pattern)
 
 
 def walks(mb, tris: np.ndarray, paint: np.ndarray) -> None:
@@ -163,7 +164,7 @@ def walks(mb, tris: np.ndarray, paint: np.ndarray) -> None:
         return
     p = t.reshape(-1, 3)
     from contravia.rules.ground import grass
-    from contravia.walks import DIRT_TOP, PARTS, PATH_TOP, SHOULDER_CODE, SLOPE_CODE
+    from contravia.walks import DIRT_TOP, PARTS, PATH_TOP, PLAZA_CODE, SHOULDER_CODE, SLOPE_CODE
 
     code = np.repeat(np.asarray(paint, int), 3)
     zone, part = np.minimum(code // PARTS, 2), code % PARTS
@@ -171,13 +172,16 @@ def walks(mb, tris: np.ndarray, paint: np.ndarray) -> None:
     dirt = part >= DIRT_TOP
     col[dirt] = np.asarray(DIRT) * np.where(part[dirt] == DIRT_TOP, 1.0, 0.85)[:, None]
     col *= (0.9 + 0.2 * fbm(p[:, 0], p[:, 2], 3.0, seed=23))[:, None]
-    verge = code >= SHOULDER_CODE  # a verge off a street's edge: packed earth, then the ground's own grass
+    verge = (code == SHOULDER_CODE) | (code == SLOPE_CODE)  # a verge off a street's edge: packed earth, then grass
     col[code == SHOULDER_CODE] = np.multiply(DIRT, 0.8)
     slope = code == SLOPE_CODE
     col[slope] = grass(p[slope, 0], p[slope, 2], np.zeros(int(slope.sum())))
     surface = np.where((part == 0) | (part == PATH_TOP), np.asarray(WALK_PATTERN)[zone],
                        np.where(part == 2, PLATFORM_PATTERN, 0))
     surface[verge] = 0
+    plaza = code == PLAZA_CODE
+    col[plaza] = np.asarray(PLAZA_TONE) * (0.9 + 0.2 * fbm(p[plaza, 0], p[plaza, 2], 3.0, seed=23))[:, None]
+    surface[plaza] = PLAZA_PATTERN
     mb.add(p, np.repeat(_normal(t), 3, axis=0), col, np.arange(len(p)).reshape(-1, 3), surface=surface)
 
 

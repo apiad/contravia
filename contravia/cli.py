@@ -82,6 +82,12 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("walks", help="rebuild the pavements and building platforms of a prepared data file in place")
     p.add_argument("--data", default="data/cuba/la-habana.npz")
 
+    p = sub.add_parser("parks", help="give a prepared data file's parks the towns' kinds (urban, plaza, organic) and "
+                       "rebuild its walks and park motifs, written to --out")
+    p.add_argument("--data", default="data/cuba/la-habana.npz")
+    p.add_argument("--cover", default="data/cuba/cover.src", help="the WorldCover grid contravia cover wrote")
+    p.add_argument("--out", required=True, help="where to write the rebuilt data file (never the one being played)")
+
     p = sub.add_parser("play", help="drive the city")
     p.add_argument("--data", help="the built city; data/cuba in a checkout, else the one the first run builds")
     p.add_argument("--at", type=_xz, default=(0.0, 0.0), help="start point as X,Z in local metres")
@@ -218,6 +224,10 @@ def main(argv: list[str] | None = None) -> None:
         from contravia.walks import main as walks
 
         walks(args.data)
+    elif args.command == "parks":
+        from contravia.parks import main as parks
+
+        parks(args.data, args.cover, args.out)
     elif args.command == "play":
         from contravia.game import main as play
 

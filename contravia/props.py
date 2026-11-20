@@ -13,6 +13,7 @@ import shapely
 from contravia.structures import (
     BLUE,
     BRONZE,
+    GRASS,
     IRON,
     LAMPS,
     RED,
@@ -159,6 +160,26 @@ def bust(p: Props, c, heading, y):
     p.box(c, 0.7, 0.7, y + 1.6, y + 1.7, heading, WHITE, hit=False)
     p.box(c, 0.15, 0.32, y + 1.7, y + 2.0, heading, BRONZE, hit=False)
     p.box(c, 0.13, 0.12, y + 2.0, y + 2.35, heading, BRONZE, hit=False)
+
+
+def statue(p: Props, c, heading, y):
+    """A town square's monument: a stone step 2.4 m across, a white pedestal 3 m high with a cornice, and a bronze
+    figure standing 1.9 m on it, facing `heading`."""
+    p.box(c, 1.2, 1.2, y, y + 0.3, heading, STONE)
+    p.box(c, 0.8, 0.8, y + 0.3, y + 2.9, heading, WHITE, hit=False)
+    p.box(c, 0.9, 0.9, y + 2.9, y + 3.05, heading, WHITE, hit=False)
+    p.box(c, 0.3, 0.5, y + 3.05, y + 3.15, heading, BRONZE, hit=False)
+    for s in (-0.12, 0.12):  # the legs, a little apart
+        p.box(_at(c, heading, 0, s), 0.1, 0.08, y + 3.15, y + 4.0, heading, BRONZE, hit=False)
+    p.box(_at(c, heading, 0, 0), 0.14, 0.24, y + 4.0, y + 4.75, heading, BRONZE, hit=False)
+    p.box(_at(c, heading, 0.15, 0.28), 0.32, 0.06, y + 4.55, y + 4.65, heading, BRONZE, hit=False)  # an arm out
+    p.box(_at(c, heading, 0, 0), 0.1, 0.1, y + 4.75, y + 5.05, heading, BRONZE, hit=False)
+    p.wall_ring(_rect(c, 0.8, 0.8, heading), y, y + 3.0)
+
+
+def planter(p: Props, c, heading, y):
+    """A tree's square planter in a plaza: a stone kerb 1.8 m across and 0.45 m high round its earth."""
+    p.box(c, 0.9, 0.9, y, y + 0.45, heading, STONE, top=GRASS)
 
 
 def bench(p: Props, c, facing, y):

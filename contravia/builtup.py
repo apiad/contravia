@@ -26,14 +26,25 @@ BUILT = 50  # WorldCover's code for built-up
 class BuiltUp:
     """A grid of built-up squares: [r, c] covers x from origin[0] + c * STEP, z from origin[1] + r * STEP."""
 
-    def __init__(self, bits: np.ndarray, shape, origin):
+    step = STEP  # metres a side of a square; a grid pickled before it had its own step reads this one
+
+    def __init__(self, bits: np.ndarray, shape, origin, step: float = STEP):
         self.bits = np.asarray(bits, np.uint8)  # np.packbits of the (rows, cols) mask, row after row
         self.shape = (int(shape[0]), int(shape[1]))
         self.origin = (float(origin[0]), float(origin[1]))
+        self.step = float(step)
 
     @classmethod
-    def of(cls, mask: np.ndarray, origin) -> "BuiltUp":
-        return cls(np.packbits(mask, axis=None), mask.shape, origin)
+    def of(cls, mask: np.ndarray, origin, step: float = STEP) -> "BuiltUp":
+        return cls(np.packbits(mask, axis=None), mask.shape, origin, step)
+
+    @classmethod
+    def of_cover(cls, cover) -> "BuiltUp":
+        """The built-up squares of a contravia.cover grid (WorldCover at its 100 m), for a province built without
+        its own 20 m grid at hand."""
+        from contravia.cover import STEP as COVER_STEP
+
+        return cls.of(cover.codes == BUILT, cover.origin, COVER_STEP)
 
     def mask(self) -> np.ndarray:
         rows, cols = self.shape
@@ -49,12 +60,13 @@ class BuiltUp:
         out = np.zeros(len(polys))
         for k, poly in enumerate(polys):
             x0, z0, x1, z1 = poly.bounds
-            c0, c1 = max(0, int((x0 - self.origin[0]) // STEP)), min(cols, int((x1 - self.origin[0]) // STEP) + 1)
-            r0, r1 = max(0, int((z0 - self.origin[1]) // STEP)), min(rows, int((z1 - self.origin[1]) // STEP) + 1)
+            step = self.step
+            c0, c1 = max(0, int((x0 - self.origin[0]) // step)), min(cols, int((x1 - self.origin[0]) // step) + 1)
+            r0, r1 = max(0, int((z0 - self.origin[1]) // step)), min(rows, int((z1 - self.origin[1]) // step) + 1)
             if c0 >= c1 or r0 >= r1:
                 continue
-            cx = self.origin[0] + (np.arange(c0, c1) + 0.5) * STEP
-            cz = self.origin[1] + (np.arange(r0, r1) + 0.5) * STEP
+            cx = self.origin[0] + (np.arange(c0, c1) + 0.5) * step
+            cz = self.origin[1] + (np.arange(r0, r1) + 0.5) * step
             gx, gz = np.meshgrid(cx, cz)
             inside = shapely.contains_xy(poly, gx, gz)
             if inside.any():

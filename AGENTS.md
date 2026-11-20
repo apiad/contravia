@@ -88,7 +88,11 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   in an existing data file in about 5 minutes; the verges read the streets, so after `contravia streets` run it too.
 - `contravia prepare` turns blocks with few or no buildings into parks (`contravia/parks.py`, spec
   `docs/superpowers/specs/2026-11-18-parks-design.html`): city parks with paths, plaza and centrepiece, paseos, the paved
-  Prado and wild parks outside the city, some with a lake. `contravia/props.py` builds their motifs as `park_tris`, the
+  Prado and wild parks outside the city, some with a lake. Outside La Habana's eight municipios a park is urban when
+  WorldCover sees at least a quarter of the 200 m round it built (`parks.in_town`), any town on the island: a city
+  park, or a tiled plaza with laurels in planters, benches and a statue, glorieta or fountain when it is a small
+  square in a dense centre; else wild. `contravia parks --data X.npz --out Y.npz` gives a built province's stored
+  parks today's kinds from `cover.src` and rebuilds its walks and motifs into Y, without a prepare (about 9 minutes). `contravia/props.py` builds their motifs as `park_tris`, the
   car hits `park_walls`, and `contravia walks` rebuilds them with the pavements. Land OSM tags as a cemetery, industry,
   a school or a sports ground never becomes a park. A park the drawn street surface covers more than half of
   (`parks.COVERED`, such as the strip between an avenue's carriageways that `streets.py` joins) is left out before
