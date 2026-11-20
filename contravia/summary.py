@@ -15,6 +15,7 @@ them as prisms over the node's ground and its roads; a summary made before block
 import numpy as np
 from manifoldx.streaming import MeshData
 
+from contravia import regions
 from contravia.citydata import Cell
 from contravia.geo import CELL
 from contravia.mesh import MeshBuilder, signed_area
@@ -71,20 +72,17 @@ def summarize(cells: list[tuple[int, int, Cell]], L: int, a: int, b: int, origin
 
     for _i, _j, c in cells:
         attrs = c.building_attrs if c.building_attrs is not None else [None] * len(c.buildings)
-        munis = []
-        for ring, osm_id, at in zip(c.buildings, c.building_ids, attrs, strict=True):
+        at_buildings, at_fillers = regions.current().cell(c)
+        for ring, osm_id, at, params in zip(c.buildings, c.building_ids, attrs, at_buildings, strict=True):
             ring = np.asarray(ring, float)
             (sx, sz), = _square_of(ring.mean(axis=0), L, a, b, origin)
             area = abs(signed_area(ring))
-            muni = facades.municipio(at, c.muni_names)
-            munis.append(muni)
-            add(sx, sz, area, facades.plan(int(osm_id), at, muni, area), ring)
-        zone = max(set(munis), key=munis.count) if munis else None
-        for ring, seed in zip(c.fillers, c.filler_seeds, strict=True):
+            add(sx, sz, area, facades.plan(int(osm_id), at, params, area), ring)
+        for ring, seed, params in zip(c.fillers, c.filler_seeds, at_fillers, strict=True):
             ring = np.asarray(ring, float)
             (sx, sz), = _square_of(ring.mean(axis=0), L, a, b, origin)
             area = abs(signed_area(ring)) * FILLER_SHARE
-            add(sx, sz, area, facades.plan(abs(int(seed)) * 131, None, zone, 150.0), ring)
+            add(sx, sz, area, facades.plan(abs(int(seed)) * 131, None, params, 150.0), ring)
         if len(c.trees):
             sq = _square_of(c.trees, L, a, b, origin)
             np.add.at(green, (sq[:, 1], sq[:, 0]), 1.0)

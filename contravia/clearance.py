@@ -14,10 +14,11 @@ the walls the car hits both take their boxes from boxes(), so they leave out and
 import numpy as np
 import shapely
 
+from contravia import regions
 from contravia.citydata import Cell
 from contravia.mesh import signed_area
 from contravia.rules.buildings import filler_rings
-from contravia.rules.facades import Plan, municipio, plan
+from contravia.rules.facades import Plan, plan
 
 MARGIN = 0.5  # metres of a road's half-width a box may reach into, for the kerb
 SLIVER = 0.05  # m²: a box the street surface overlaps by less than this is kept as it is
@@ -164,17 +165,15 @@ def boxes(cell: Cell, roads: np.ndarray, streets: np.ndarray) -> list[tuple[np.n
     the (T, 3, 2) street triangles the cells draw (streets_around), each with the id its draws are seeded by
     (the OSM id, or the block's seed for a filler box) and its facade plan."""
     attrs = cell.building_attrs if cell.building_attrs is not None else [None] * len(cell.buildings)
-    items, munis = [], []
-    for r, i, a in zip(cell.buildings, cell.building_ids, attrs, strict=True):
+    at_buildings, at_fillers = regions.current().cell(cell)  # the Params of where each one stands
+    items = []
+    for r, i, a, params in zip(cell.buildings, cell.building_ids, attrs, at_buildings, strict=True):
         r = np.asarray(r, float)
-        muni = municipio(a, cell.muni_names)
-        munis.append(muni)
-        items.append((r, int(i), plan(int(i), a, muni, abs(signed_area(r)))))
-    zone = max(set(munis), key=munis.count) if munis else None  # filler boxes take the cell's usual municipio
-    for block, seed in zip(cell.fillers, cell.filler_seeds, strict=True):
+        items.append((r, int(i), plan(int(i), a, params, abs(signed_area(r)))))
+    for block, seed, params in zip(cell.fillers, cell.filler_seeds, at_fillers, strict=True):
         for k, r in enumerate(filler_rings(block, int(seed))):
             sid = abs(int(seed)) * 131 + k
-            items.append((r, sid, plan(sid, None, zone, abs(signed_area(r)))))
+            items.append((r, sid, plan(sid, None, params, abs(signed_area(r)))))
     items = [item for item, k in zip(items, ~crossing([r for r, *_ in items], roads), strict=True) if k]
     cut = off_streets([r for r, *_ in items], streets)
     return [(r, sid, p) for r, (_, sid, p) in zip(cut, items, strict=True) if r is not None]

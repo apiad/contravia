@@ -41,12 +41,13 @@ def landmarks() -> Landmarks:
 
 
 def warm() -> None:
-    """What a builder loads once, run when it starts while the game is still loading: the world, its landmarks and
-    the parks lookup of the focused province, which its first cell would otherwise wait for."""
-    from contravia import parks
+    """What a builder loads once, run when it starts while the game is still loading: the world, its landmarks,
+    the regions and the parks lookup of the focused province, which its first cell would otherwise wait for."""
+    from contravia import parks, regions
 
     w = city()
     landmarks()
+    regions.current()
     a = w.province(w.names.index(w.focused)).a
     if "park_kind" in a and len(a["park_kind"]):
         parks._lookup(a)
