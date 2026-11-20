@@ -193,3 +193,49 @@ def test_the_car_hits_every_yard_tree_the_cell_draws():
     for (x, z), s, k in list(zip(drawn.xz, drawn.species, drawn.scale, strict=True))[:10]:
         mids = walls.near(x, z).mean(axis=1)
         assert (np.abs(mids - (x, z)).max(axis=1) <= TRUNK_R[SPECIES[s]] * k + 1e-3).sum() == 4
+
+
+def _coast(features):
+    """A city on test_shore's coast (ground rising 0.02 m a metre east of the water at x 1100) whose cell (5, 3) is
+    all green and holds nothing else, and its Shore with features."""
+    from contravia import shore
+    from tests.test_shore import slope
+
+    terrain = slope()
+    green = _cell(green_tris=_square(1000, 600, 1200, 800))
+    city = SimpleNamespace(terrain=terrain, cell=lambda i, j: green if (i, j) == (5, 3) else _cell(),
+                           a={})
+    return city, shore.Shore(terrain, features)
+
+
+def _laid(city, s):
+    """Cell (5, 3)'s patches as Grass lays them, and the shore field under them."""
+    g = Grass.__new__(Grass)
+    g.city, g.landmarks, g.shore = city, None, s
+    lawn = g._lay((5, 3))
+    f = s.field(5, 3)
+    return lawn, f
+
+
+def test_grass_stands_on_the_beach_ground_and_never_on_its_sand():
+    from contravia.rules import shore as R
+
+    city, s = _coast({"beach": shapely.box(1000, 0, 1300, 3000)})
+    lawn, f = _laid(city, s)
+    assert len(lawn.xz) > 1000
+    d = f.sample(f.d, lawn.xz[:, 0], lawn.xz[:, 1])
+    assert (d >= R.BAND[R.BEACH][0]).all()  # none on the sand, the wet sand or in the water
+    assert np.allclose(lawn.y, f.height(lawn.xz[:, 0], lawn.xz[:, 1]) + 0.02, atol=1e-6)
+
+
+def test_grass_stands_on_a_cliff_top_and_never_on_its_face():
+    from contravia.rules import shore as R
+
+    city, s = _coast({"cliff": shapely.LineString([(1100, 0), (1100, 3000)])})
+    lawn, f = _laid(city, s)
+    d = f.sample(f.d, lawn.xz[:, 0], lawn.xz[:, 1])
+    top = (d > 10) & (d < 20)
+    assert top.sum() > 50 and (d >= R.BAND[R.CLIFF][0]).all()
+    y = f.height(lawn.xz[:, 0], lawn.xz[:, 1])
+    assert (y[top] > R.SHALLOW_Y + R.CLIFF_MIN - 0.5).all()  # the cliff top, metres over the old ground
+    assert np.allclose(lawn.y, y + 0.02, atol=1e-6)

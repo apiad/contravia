@@ -4,7 +4,9 @@ Every cell drawn in full finds, on a thread, the spots of a STEP-metre grid wher
 woods and meadows OSM maps) and the lawns of the parks contravia.parks laid out grow a lawn, and every other spot of
 bare ground grows the tufts of a bare lot. Bare ground is what is left of the land once its streets, roads,
 pavements, park motifs, bridges, cuts, buildings, filler houses and landmarks are taken out with a margin, and the
-sea. Each spot holds one patch: a STEP-metre square of blades, one geometry for every patch of a level, dense within
+sea. Near the sea (contravia/shore.py) grass grows only where the shore leaves vegetated ground, never on its
+sand, rock shelves, cliff faces, mud or water, and stands on the shore's grid, as the cells draw it and the
+car drives on it. Each spot holds one patch: a STEP-metre square of blades, one geometry for every patch of a level, dense within
 NEAR of the camera and sparse out to FAR. The blades move with the wind and part round the car in manifoldx's vertex
 shader (StandardMaterial's sway and the engine's benders), so the CPU only spawns and drops the patches whose level
 changes when the camera has moved MOVE metres. A patch's turn, height and shade come from its spot, so a cell
@@ -24,6 +26,8 @@ from contravia.geo import CELL
 from contravia.rules import trees
 from contravia.rules.buildings import filler_rings
 from contravia.rules.ground import SEA, relief
+from contravia.rules.shore import vegetated
+from contravia.shore import of as shore_of
 
 STEP = 2.0  # metres between two patches' centres, and the side of a patch
 NEAR, FAR = 20.0, 45.0  # metres from the camera: dense patches out to NEAR, sparse ones out to FAR
@@ -150,15 +154,19 @@ def open_ground(city, i: int, j: int, p, landmarks=None, clear=CLEAR, house_clea
     return keep
 
 
-def spots(city, i: int, j: int, landmarks=None) -> tuple[np.ndarray, np.ndarray]:
+def spots(city, i: int, j: int, landmarks=None, shore=None) -> tuple[np.ndarray, np.ndarray]:
     """The (N, 2) centres of cell (i, j)'s patches and whether each stands on a bare lot rather than a lawn.
 
     A lawn is the cell's green and its laid parks; every other spot of open ground (open_ground) is a bare lot,
-    which keeps only its tufts (about BARE_SHARE of it)."""
+    which keeps only its tufts (about BARE_SHARE of it). With shore (a contravia.shore.Shore), a coastal cell
+    keeps only the spots its shore leaves vegetated (rules.shore.vegetated)."""
     p = grid(i, j)
     lawn = _hit(p, lawns(city, i, j))
     tuft = 0.6 * _hash(np.floor(p / TUFT) * TUFT) + 0.4 * _hash(p)
     keep = (lawn | (tuft < BARE_SHARE)) & open_ground(city, i, j, p, landmarks)
+    f = shore.field(i, j) if shore is not None else None
+    if f is not None:
+        keep[keep] = vegetated(f, p[keep, 0], p[keep, 1])
     return p[keep], ~lawn[keep]
 
 
@@ -182,12 +190,13 @@ def yard_trees(city, i: int, j: int, landmarks=None) -> np.ndarray:
 
 
 class Lawn:
-    """One cell's patches: their spots, the ground under them, each one's level (-1 not drawn, 0 dense, 1
-    sparse) and the entity that draws it (-1 none). A bare lot's patches are shorter and drier than a lawn's."""
+    """One cell's patches: their spots, the ground under them (ground's height: a Terrain, or a Shore near the
+    sea), each one's level (-1 not drawn, 0 dense, 1 sparse) and the entity that draws it (-1 none). A bare
+    lot's patches are shorter and drier than a lawn's."""
 
-    def __init__(self, xz: np.ndarray, terrain, bare=None):
+    def __init__(self, xz: np.ndarray, ground, bare=None):
         self.xz = xz
-        self.y = terrain.height(xz[:, 0], xz[:, 1]) + 0.02 if len(xz) else np.zeros(0)
+        self.y = ground.height(xz[:, 0], xz[:, 1]) + 0.02 if len(xz) else np.zeros(0)
         h = _hash(xz) if len(xz) else np.zeros(0)
         b = np.zeros(len(xz), bool) if bare is None else np.asarray(bare, bool)
         self.turn = h * 2 * np.pi
@@ -209,6 +218,7 @@ class Grass:
         from manifoldx.resources import StandardMaterial
 
         self.engine, self.city, self.landmarks = engine, city, landmarks
+        self.shore = shore_of(city)  # near the sea the ground is the shore's (contravia/shore.py)
         self.material = StandardMaterial("#ffffff", roughness=0.95, vertex_colors=True, tinted=True,
                                          sway=0.35, sway_reach=0.6)
         self.meshes = [Mesh(patch(BLADES[0], seed=1)), Mesh(patch(BLADES[1], height=(0.3, 0.6), width=0.09, seed=2))]
@@ -243,9 +253,9 @@ class Grass:
             self.engine.benders = [(float(car[0]), float(car[1]), *BENDER)]
 
     def _lay(self, c: tuple[int, int]) -> Lawn:
-        """Cell c's lawn: its spots and the ground under them."""
-        xz, bare = spots(self.city, *c, self.landmarks)
-        return Lawn(xz, self.city.terrain, bare)
+        """Cell c's lawn: its spots and the ground under them, the shore's near the sea."""
+        xz, bare = spots(self.city, *c, self.landmarks, self.shore)
+        return Lawn(xz, self.city.terrain if self.shore is None else self.shore, bare)
 
     def place(self, lawn: Lawn, eye) -> None:
         """Give each of lawn's patches the level its distance from eye calls for, respawning those that change."""

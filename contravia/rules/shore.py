@@ -49,6 +49,7 @@ NEAR = {"beach": 60.0, "cliff": 120.0, "mangrove": 150.0}
 SHALLOWS = (30.0, 14.0, 10.0, 26.0)  # metres of lighter water off each type
 BAND = ((16.0, 26.0), (5.0, 12.0), (4.0, 9.0), (6.0, 18.0))  # metres inland where each type's colour gives way
 KEEP_NEAR, KEEP_FAR = 4.0, 12.0  # metres from anything built where the ground starts to take the shore's shape
+GREEN = 0.75  # share of the ground's own colour past which the shore leaves vegetated ground, where grass grows
 
 SAND, WET_SAND = (0.96, 0.84, 0.52), (0.74, 0.62, 0.38)
 ROCK_LIGHT, ROCK_DARK = (0.52, 0.48, 0.41), (0.33, 0.30, 0.26)
@@ -178,6 +179,18 @@ def colours(d, base, rough) -> np.ndarray:
 def shallows(w) -> np.ndarray:
     """How far out each node's band of shallows reaches, mixed by its shares w."""
     return np.asarray(w, float) @ np.asarray(SHALLOWS)
+
+
+def vegetated(f, x, z) -> np.ndarray:
+    """Whether the shore of field f leaves vegetated ground at points (x, z) of its cell: on land, where each
+    type's sand, rock, cliff rock or mud has given way (its BAND) to the ground's own colour, GREEN of it at
+    least. Never on the beach, the rock shelf, the cliff's face or in the water."""
+    x, z = np.asarray(x, float), np.asarray(z, float)
+    if not x.size:
+        return np.zeros(0, bool)
+    d, w = f.sample(f.d, x, z), f.sample(f.w, x, z)
+    a, b = np.asarray(BAND).T
+    return (d >= 0) & ((w * smooth(a, b, d[:, None])).sum(axis=1) >= GREEN)
 
 
 def keep(dist_built) -> np.ndarray:

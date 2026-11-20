@@ -91,7 +91,8 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   (flowering, autumn leaves, bare in the dry season). The car hits the trunks of the same trees (`walls.py`).
 - Grass is not stored either (`contravia/grass.py`): a cell drawn in full lays, on a thread, a patch on every 2 m
   grid spot of its green and of its laid parks' lawns, and shorter, drier tufts on about half of every other spot of
-  bare land, clear of its streets, roads, pavements, park motifs, buildings, filler houses, landmarks and the sea. The
+  bare land, clear of its streets, roads, pavements, park motifs, buildings, filler houses, landmarks and the sea. Near the sea it grows only past the shore's sand, rock, cliff and mud, on the
+shore's grid (`rules.shore.vegetated`). The
   city data holds no plazas, car parks, rail yards or inland water outside the paved blocks, so grass grows there. A
   built cell's yards and lots also grow an odd tree (`grass.yard_trees`, 3 m off every house), which `cell_trees`
   takes, so the forest draws it and the car hits it. The
