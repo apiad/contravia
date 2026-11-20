@@ -111,6 +111,8 @@ class Backdrop:
 
     def show(self, names: list[str]) -> None:
         """Go through these panels from now on, starting with the first."""
+        if name == "card" and getattr(self.game, "sound", None) is not None:
+            self.game.sound.ui("card")
         if names != self.names:
             self.names, self.k, self.t = names, 0, 0.0
             self.image.svg = ui.panel(names[0])
@@ -1269,6 +1271,10 @@ class Menu:
                 self.next_help()
             return
         if key in KEYS:
+            sound = getattr(self.game, "sound", None)
+            if sound is not None:
+                k = KEYS[key]
+                sound.ui("choose" if k == "enter" else "back" if k == "back" else "move")
             self.screens[self.current].key(KEYS[key])
 
     def next_help(self) -> None:
@@ -1279,6 +1285,8 @@ class Menu:
         self.game.apply_options(self.options)
         self.options.save()
         self.game.hud.note(f"Ayuda {row.value} · {row.text}".upper())
+        if getattr(self.game, "sound", None) is not None:
+            self.game.sound.ui("level")
 
     def update(self, query, dt: float) -> None:
         """Read this frame's keys, follow a resized window and animate the screen."""

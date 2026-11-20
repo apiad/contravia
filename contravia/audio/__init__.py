@@ -23,7 +23,7 @@ DRIVING = ("drive", "aim")  # modes in which the car and the world are heard
 MODULES = ["contravia.rules.sound", "contravia.audio.engine", "contravia.audio.car", "contravia.audio.weather",
            "contravia.audio.traffic",
            "contravia.audio.biome", "contravia.audio.ambience",
-           "contravia.audio.music.base", "contravia.audio.music", "contravia.audio"]  # re-imported in the sound process on a reload
+           "contravia.audio.music.base", "contravia.audio.music", "contravia.audio.ui", "contravia.audio"]  # re-imported in the sound process on a reload
 
 # Every control the game writes. A process started with fewer (by older code) is replaced.
 CONTROLS = (*pose_names("car"), "car.rpm", "car.throttle", "car.speed", "car.slip", "car.wet", "car.surface",
@@ -114,6 +114,9 @@ class Sound:
         for biome in BIOMES:
             a.source(f"amb.{biome}", functools.partial(ambience.bed, biome), "ambience")
         a.voice("amb", ambience.oneshot, "ambience", cap=4, placed=True)
+        from contravia.audio import ui
+
+        a.voice("ui", ui.ui, "ui", cap=3)
         self.vehicle(game)
 
     def vehicle(self, game) -> None:
@@ -318,6 +321,11 @@ class Sound:
                 r = 20.0 + 60.0 * ((self._frame * 7919) % 100) / 100
                 a.event("amb", kind=name, seed=self._frame, x=lis[0] + r * math.cos(bearing), y=1.5,
                         z=lis[1] + r * math.sin(bearing))
+
+    def ui(self, kind: str) -> None:
+        """A menu's or the camera's sound: move, choose, back, shutter, card or level."""
+        self._frame += 1
+        self.audio.event("ui", kind=kind, seed=self._frame)
 
     def _music(self, game, when) -> None:
         """The style the music process plays: the region's, else the biome's; the menu's son, softer."""

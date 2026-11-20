@@ -760,6 +760,8 @@ class Game:
         weather = {state: label.lower() for label, state in WEATHER}.get(self.weather_state, "")
         pid = a["place"].id
         self.album.add(pid, when, weather)
+        if self.sound is not None:
+            self.sound.ui("shutter")
         self._photo_pending = (self.album.photo_path(pid), self.engine.read_texture(texture))
         self.spot = None
         return texture, when, weather
