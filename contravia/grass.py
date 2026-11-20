@@ -1,8 +1,8 @@
 """The grass the game draws on the green near the camera: instanced patches of blades that sway in the shader.
 
 Every cell drawn in full finds, on a thread, the spots of a STEP-metre grid that lie in its green (the parks, woods
-and meadows it grows trees on) and clear of its streets, roads, pavements and park motifs. Each spot holds one
-patch: a STEP-metre square of blades, one geometry for every patch of a level, dense within NEAR of the camera and
+and meadows OSM maps) or on the lawns of the parks contravia.parks laid out, and clear of its streets, roads,
+pavements and park motifs. Each spot holds one patch: a STEP-metre square of blades, one geometry for every patch of a level, dense within NEAR of the camera and
 sparse out to FAR. The blades move with the wind and part round the car in manifoldx's vertex shader
 (StandardMaterial's sway and the engine's benders), so the CPU only spawns and drops the patches whose level
 changes when the camera has moved MOVE metres. A patch's turn, height and shade come from its spot, so a cell
@@ -12,8 +12,11 @@ opens with the same grass every time.
 from concurrent.futures import Future, ThreadPoolExecutor
 
 import numpy as np
+import shapely
 
+from contravia import parks
 from contravia.clearance import roads_around
+from contravia.geo import CELL
 from contravia.rules import trees
 
 STEP = 2.0  # metres between two patches' centres, and the side of a patch
@@ -82,13 +85,35 @@ def clear_of_tris(xz, tris) -> np.ndarray:
     return keep
 
 
-def spots(city, i: int, j: int) -> np.ndarray:
-    """(N, 2) the centres of cell (i, j)'s patches: grid spots in its green, off its streets, pavements and park
-    motifs, and ROAD_CLEAR metres off every road's edge."""
-    c = city.cell(i, j)
-    if c.green_tris is None or not len(c.green_tris):
+def in_parks(city, i: int, j: int) -> np.ndarray:
+    """(N, 2) the points of the STEP grid in cell (i, j) inside the parks contravia.parks laid out there, which
+    have no OSM green under them; their kerbs and paths are pavements, which spots() leaves out."""
+    x0, z0 = i * CELL, j * CELL
+    box = shapely.box(x0, z0, x0 + CELL, z0 + CELL)
+    polys = []
+    for k in city.provinces_of(i, j):
+        a = city.province(k).a
+        if "park_kind" in a and len(a["park_kind"]):
+            tree = parks._lookup(a)[0]
+            polys += list(tree.geometries.take(tree.query(box)))
+    if not polys:
         return np.zeros((0, 2))
-    p = in_tris(c.green_tris)
+    g = np.arange(0.0, CELL, STEP)
+    gx, gz = np.meshgrid(x0 + g, z0 + g)  # a cell's corner lies on the grid
+    p = np.stack([gx.ravel(), gz.ravel()], 1)
+    return p[shapely.contains_xy(shapely.union_all(polys), p[:, 0], p[:, 1])]
+
+
+def spots(city, i: int, j: int) -> np.ndarray:
+    """(N, 2) the centres of cell (i, j)'s patches: grid spots in its green or its parks' lawns, off its streets,
+    pavements and park motifs, and ROAD_CLEAR metres off every road's edge."""
+    c = city.cell(i, j)
+    p = [in_parks(city, i, j)]
+    if c.green_tris is not None and len(c.green_tris):
+        p.append(in_tris(c.green_tris))
+    p = np.unique(np.vstack(p), axis=0)
+    if not len(p):
+        return p
     for tris in (c.street_tris, c.walk_tris, c.park_tris):
         p = p[clear_of_tris(p, tris)]
     return p[trees.clear_of(p, roads_around(city, i, j), ROAD_CLEAR)]

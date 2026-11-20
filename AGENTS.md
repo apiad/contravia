@@ -80,8 +80,8 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   each tree moves between levels by its distance to the camera, and its Tint (manifoldx) carries the date's colours
   (flowering, autumn leaves, bare in the dry season). The car hits the trunks of the same trees (`walls.py`).
 - Grass is not stored either (`contravia/grass.py`): a cell drawn in full lays, on a thread, a patch on every 2 m
-  grid spot of its green clear of its streets, roads, pavements and park motifs. The patches are instances of two
-  meshes of blades (dense to 20 m, sparse to 45 m), sway and part round the car in manifoldx's vertex shader
+  grid spot of its green and of its laid parks' lawns, clear of its streets, roads, pavements and park motifs. The
+  patches are instances of two meshes of blades (dense to 20 m, sparse to 45 m), sway and part round the car in manifoldx's vertex shader
   (`StandardMaterial(sway=)`, `engine.benders`), and are respawned only when their level changes.
 - `contravia play` opens on the main menu (`contravia/menu.py`, drawn as `docs/ux/contravia-ux.html` shows): Story and the
   Cuba map are "próximamente", Free drive sets place, time, day, weather, traffic and clock speed

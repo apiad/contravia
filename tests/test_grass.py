@@ -12,18 +12,31 @@ def _square(x0, z0, x1, z1, y=None):
 
 
 class _City:
-    """A city of one cell (0, 0) holding 100 x 100 m of green, a street across it at z 50 and a park path at x 20."""
+    """A city of one cell (0, 0) holding 100 x 100 m of green, a street across it at z 50 and a park path at x 20,
+    and one province whose arrays hold a laid park from x 220 to 420 (across cells (1, 0) and (2, 0)), its kerb
+    paved along x 220 to 223."""
 
-    def __init__(self):
+    def __init__(self, parks=True):
         self.terrain = SimpleNamespace(height=lambda x, z: 0.1 * np.asarray(x, float))
         self.green = SimpleNamespace(green_tris=_square(0, 0, 100, 100), street_tris=_square(0, 46, 100, 54, 0.0),
                                      walk_tris=None, park_tris=_square(18, 0, 22, 100, 0.0),
                                      roads=np.zeros((0, 5)))
         self.empty = SimpleNamespace(green_tris=None, street_tris=None, walk_tris=None, park_tris=None,
                                      roads=np.zeros((0, 5)))
+        self.kerb = SimpleNamespace(green_tris=None, street_tris=None, walk_tris=_square(220, 20, 223, 100, 0.15),
+                                    park_tris=None, roads=np.zeros((0, 5)))
+        ring = np.array([(220, 20), (420, 20), (420, 100), (220, 100), (220, 20)], float)
+        self.a = {"park_verts": ring, "park_starts": np.array([0, len(ring)]), "park_kind": np.array([3]),
+                  "park_seed": np.array([7])} if parks else {}
 
     def cell(self, i, j):
-        return self.green if (i, j) == (0, 0) else self.empty
+        return self.green if (i, j) == (0, 0) else self.kerb if (i, j) == (1, 0) else self.empty
+
+    def provinces_of(self, i, j):
+        return [0]
+
+    def province(self, k):
+        return SimpleNamespace(a=self.a)
 
 
 def test_a_patch_is_a_square_of_blades_drawn_on_both_sides():
@@ -43,7 +56,20 @@ def test_patches_stand_on_the_green_off_the_streets_and_park_motifs():
     assert not ((p[:, 0] > 17) & (p[:, 0] < 23)).any()  # the park's path
     assert np.allclose(p % STEP, 0)
     assert np.array_equal(p, spots(city, 0, 0))  # same cell, same grass
-    assert len(spots(city, 1, 0)) == 0
+    assert len(spots(city, 0, 1)) == 0
+
+
+def test_the_lawns_of_laid_parks_grow_grass_too():
+    """A park contravia.parks lays out has no OSM green under it: its lawn is the park less its kerb and paths."""
+    city = _City()
+    p = spots(city, 1, 0)
+    assert len(p) > 1000
+    assert ((p[:, 0] >= 220) & (p[:, 0] < 400) & (p[:, 1] >= 20) & (p[:, 1] <= 100)).all()  # in the park, in the cell
+    assert not ((p[:, 0] > 219) & (p[:, 0] < 224)).any()  # off the kerb, and a metre round it
+    q = spots(city, 2, 0)
+    assert len(q) and ((q[:, 0] >= 400) & (q[:, 0] <= 420)).all()  # the rest of the park, in the next cell
+    assert np.array_equal(p, spots(city, 1, 0))
+    assert len(spots(_City(parks=False), 1, 0)) == 0
 
 
 def test_grass_is_instances_that_change_level_as_the_camera_moves():
