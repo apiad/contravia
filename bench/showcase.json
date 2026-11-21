@@ -1,0 +1,12 @@
+{
+  "note": "contravia bench --showcase: each scene's camera moves along `path` over `seconds` (30 by default). A path point is [dx, up, dz, tx, ty, tz]: the eye and the target in metres from `at` (lat, lon), heights over its ground; x east, z south.",
+  "malecon": {"name": "Malecón at sunset: the sea, the low sun, long shadows", "at": [23.1439, -82.3640],
+              "when": "18:40", "weather": "clear",
+              "path": [[0, 12, 0, -200, 0, -250], [-120, 12, 0, -320, 0, -250]]},
+  "obispo": {"name": "Obispo at noon: a narrow street, balconies, detail near the camera", "at": [23.1385, -82.3530],
+             "when": "12:00", "weather": "clear",
+             "path": [[0, 1.7, 0, 60, 1.7, 0], [80, 1.7, 0, 140, 1.7, 0]]},
+  "loma": {"name": "120 m over the Castillo del Príncipe: distance, fog, far summaries", "at": [23.1330, -82.3895],
+           "when": "10:00", "weather": "clear",
+           "path": [[0, 120, 0, 1000, 60, 0], [0, 120, 0, 707, 60, -707]]}
+}

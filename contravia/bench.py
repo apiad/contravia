@@ -159,7 +159,18 @@ def _machine(engine) -> dict:
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], check=False, capture_output=True,
                             text=True).stdout.strip()
     return {"commit": commit, "host": platform.node(), "gpu": info.get("device"), "size": [engine.w, engine.h],
-            "gpu_memory_mb": None}  # manifoldx does not report GPU memory yet
+            "gpu_memory_mb": _gpu_memory_mb()}
+
+
+def _gpu_memory_mb() -> int | None:
+    """The GPU memory in use, from nvidia-smi where it exists (manifoldx cannot report it); else None."""
+    import shutil
+
+    if not shutil.which("nvidia-smi"):
+        return None
+    out = subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"], check=False,
+                         capture_output=True, text=True).stdout.split()
+    return int(out[0]) if out and out[0].isdigit() else None
 
 
 def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: str = "Tue 08:00") -> dict:

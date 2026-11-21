@@ -4,6 +4,21 @@ import argparse
 import os
 
 
+def _size(text: str) -> tuple[int, int]:
+    """A frame size written as 1920x1080."""
+    w, h = text.lower().split("x")
+    return int(w), int(h)
+
+
+def _knob(text: str) -> tuple[str, object]:
+    """A knob written as name=value: a number, numbers separated by commas, or true or false."""
+    name, _, value = text.partition("=")
+    if value.lower() in ("true", "false"):
+        return name, value.lower() == "true"
+    parts = [float(v) for v in value.split(",")]
+    return name, parts if len(parts) > 1 else parts[0]
+
+
 def _xz(text: str) -> tuple[float, float]:
     x, z = text.split(",")
     return float(x), float(z)
@@ -125,6 +140,15 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("bench", help="drive the fixed route and record frame times")
     p.add_argument("--data", default="data/cuba")
     p.add_argument("--time", default="Tue 08:00", help='traffic time for the run, as "Tue 08:00"')
+    p.add_argument("--showcase", action="store_true",
+                   help="instead of the route, time the three scenes of bench/showcase.json at a graphics preset")
+    p.add_argument("--preset", default="alto", choices=["bajo", "medio", "alto", "ultra", "cine"],
+                   help="with --showcase: the graphics preset (contravia/quality.py)")
+    p.add_argument("--knob", action="append", default=[], metavar="K=V",
+                   help="with --showcase: change one knob of the preset, as far=7000 or tau=24,72; repeatable")
+    p.add_argument("--size", type=_size, default=(1920, 1080), help="with --showcase: the frame, as 1920x1080")
+    p.add_argument("--compare", action="store_true",
+                   help="write bench/out/showcase.html with every showcase run of the history, side by side")
 
     p = sub.add_parser("flowmap", help="draw the flow layer over the province at a time, as a PNG")
     p.add_argument("out")
@@ -297,6 +321,14 @@ def main(argv: list[str] | None = None) -> None:
 
         box = tuple(float(v) for v in args.box.split(",")) if args.box else None
         flowmap(args.data, args.out, args.time, traffic=args.traffic, size=args.size, box=box)
+    elif args.command == "bench" and args.compare:
+        from contravia import showcase
+
+        print(showcase.compare())
+    elif args.command == "bench" and args.showcase:
+        from contravia import showcase
+
+        showcase.main(args.data, preset=args.preset, knobs=dict(_knob(k) for k in args.knob) or None, size=args.size)
     else:
         from contravia.bench import main as bench
 
