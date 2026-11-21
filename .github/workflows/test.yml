@@ -1,5 +1,5 @@
-# The test suite. On main (and by hand) it runs whole; on a pull request it runs only the tests testmap picks from
-# the diff, using the map testmap.yml recorded on main. lavapipe (mesa-vulkan-drivers) gives the runner a software
+# The checks and the test suite, run by fastci: on main the whole fast suite, on a pull request only the tests the
+# change can break, using the map map.yml records on main. `fastci plan` says what runs and why. lavapipe (mesa-vulkan-drivers) gives the runner a software
 # Vulkan adapter, so the render tests run here instead of skipping.
 name: test
 
@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  TESTMAP: "testmap @ git+https://github.com/syalia-srl/testmap@v0.1.0"
+  FASTCI: "git+https://github.com/syalia-srl/fastci@v0.2.1"
 
 jobs:
   test:
@@ -34,13 +34,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --locked --group dev
-      - name: The whole suite
-        if: github.event_name != 'pull_request'
-        run: uv run pytest -n auto -m "not slow" -rs
-      - name: The tests the change can break
-        if: github.event_name == 'pull_request'
+      - name: fastci
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          uv run --with "$TESTMAP" testmap fetch
-          uv run --with "$TESTMAP" testmap run --base "origin/${{ github.base_ref }}" -- -n auto -m "not slow" -rs
+        run: uvx --from "$FASTCI" fastci

@@ -9,6 +9,8 @@ so with no turn the camera stands south of its point and looks north.
 import math
 from dataclasses import dataclass, replace
 
+import numpy as np
+
 PITCH_DEG = 55.0
 MIN_H = 150.0  # metres: the buildings of one street
 MAX_H = 1_200_000.0  # metres: the whole island
@@ -74,3 +76,60 @@ def exaggeration(h: float) -> float:
     (h0, k0), (h1, k1) = EXAGGERATE
     t = min(max(math.log(max(h, 1.0) / h0) / math.log(h1 / h0), 0.0), 1.0)
     return k0 + (k1 - k0) * t
+
+
+FOLLOW_S = 0.12  # seconds: the drawn camera closes 63 % of its gap to the target in this time, never overshooting
+GLIDE_S = 0.35  # seconds: a released drag keeps its speed, decaying by e in this time
+WHEEL_LOG = 0.0018  # the target's log height per unit of wheel: about 0.18 a notch of 100
+
+
+def ground_at(cam: MapCam, px: float, py: float, w: float, h: float) -> tuple[float, float] | None:
+    """The ground point (x, z) at height 0 under the pixel (px, py) of a w x h view, or None above the horizon."""
+    eye, target = (np.asarray(v, float) for v in pose(cam))
+    f = target - eye
+    f /= np.linalg.norm(f)
+    r = np.cross(f, (0.0, 1.0, 0.0))
+    r /= np.linalg.norm(r)
+    u = np.cross(r, f)
+    t = math.tan(math.radians(FOV_DEG) / 2)
+    d = f + r * (2 * px / max(w, 1.0) - 1) * t * w / max(h, 1.0) + u * (1 - 2 * py / max(h, 1.0)) * t
+    if d[1] >= -1e-6:
+        return None
+    k = -eye[1] / d[1]
+    return float(eye[0] + d[0] * k), float(eye[2] + d[2] * k)
+
+
+def zoom_at(cam: MapCam, factor: float, px: float, py: float, w: float, h: float, seen: MapCam | None = None) -> MapCam:
+    """The camera `factor` times higher (within MIN_H and MAX_H) with the ground under pixel (px, py) still
+    under it: the view is the same picture scaled about that point, so the point moves as the target does.
+    `seen` is the camera the pixel was seen through when it is not cam (the drawn one, behind its target)."""
+    out = zoom(cam, factor)
+    p = ground_at(seen or cam, px, py, w, h)
+    if p is None:
+        return out
+    k = out.h / cam.h
+    return replace(out, x=p[0] + (cam.x - p[0]) * k, z=p[1] + (cam.z - p[1]) * k)
+
+
+def drag(cam: MapCam, before: tuple[float, float], after: tuple[float, float], w: float, h: float) -> MapCam:
+    """The camera after the pointer dragged the ground from pixel `before` to `after`: the ground point that was
+    under the pointer is under it again. Off the ground (above the horizon) it pans as `pan` does."""
+    a, b = ground_at(cam, *before, w, h), ground_at(cam, *after, w, h)
+    if a is None or b is None:
+        return pan(cam, after[0] - before[0], after[1] - before[1], h)
+    return replace(cam, x=cam.x + a[0] - b[0], z=cam.z + a[1] - b[1])
+
+
+def follow(cam: MapCam, target: MapCam, dt: float, tau: float = FOLLOW_S) -> MapCam:
+    """The drawn camera a frame of dt seconds closer to the target: x, z, the log of the height and the turn
+    each close 1 - exp(-dt / tau) of their gap, so the motion eases out at any frame rate and never overshoots;
+    within a hair of the target it lands on it."""
+    k = 1.0 - math.exp(-max(dt, 0.0) / tau)
+    turn = (target.yaw - cam.yaw + math.pi) % (2 * math.pi) - math.pi
+    lh = math.log(cam.h) + (math.log(target.h) - math.log(cam.h)) * k
+    out = MapCam(cam.x + (target.x - cam.x) * k, cam.z + (target.z - cam.z) * k, math.exp(lh), cam.yaw + turn * k)
+    near = target.h * 1e-4
+    if abs(out.x - target.x) < near and abs(out.z - target.z) < near and abs(out.h / target.h - 1) < 1e-4 \
+            and abs(turn * (1 - k)) < 1e-4:
+        return target
+    return out

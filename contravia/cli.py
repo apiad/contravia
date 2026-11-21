@@ -61,10 +61,20 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("pbf")
     p.add_argument("--out", default="data/cuba", help="the folder holding coast.src; shore.src is written beside it")
 
+    p = sub.add_parser("causeways", help="find the roads over the sea (pedraplenes) and write them as land into a "
+                       "built island or the sources, beside coast.src")
+    p.add_argument("pbf")
+    p.add_argument("--out", default="data/cuba", help="the folder holding coast.src and the provinces, whose relief "
+                   "it reads; causeways.src is written beside it")
+
     p = sub.add_parser("regions", help="write the OSM polygons contravia/regions.toml names (by tag or OSM id, every "
                        "landuse=cemetery too) into a built island or the sources, beside coast.src")
     p.add_argument("pbf")
     p.add_argument("--out", default="data/cuba", help="the built island or data/cuba-src; regions.src is written there")
+
+    p = sub.add_parser("towns", help="write OSM's named cities and towns (place=city|town, with population) into "
+                       "contravia/towns.json, for the map's emblems")
+    p.add_argument("pbf")
 
     p = sub.add_parser("cover", help="write what covers the land (ESA WorldCover 2021) over the coast into a built island or the sources")
     p.add_argument("--out", default="data/cuba", help="the folder holding coast.src; cover.src is written beside it")
@@ -81,6 +91,12 @@ def main(argv: list[str] | None = None) -> None:
 
     p = sub.add_parser("walks", help="rebuild the pavements and building platforms of a prepared data file in place")
     p.add_argument("--data", default="data/cuba/la-habana.npz")
+
+    p = sub.add_parser("parks", help="give a prepared data file's parks the towns' kinds (urban, plaza, organic) and "
+                       "rebuild its walks and park motifs, written to --out")
+    p.add_argument("--data", default="data/cuba/la-habana.npz")
+    p.add_argument("--cover", default="data/cuba/cover.src", help="the WorldCover grid contravia cover wrote")
+    p.add_argument("--out", required=True, help="where to write the rebuilt data file (never the one being played)")
 
     p = sub.add_parser("play", help="drive the city")
     p.add_argument("--data", help="the built city; data/cuba in a checkout, else the one the first run builds")
@@ -180,6 +196,12 @@ def main(argv: list[str] | None = None) -> None:
         features, report = shore.read(args.pbf, coast.load(Path(args.out) / coast.NAME))
         report["bytes"] = shore.save(features, Path(args.out) / shore.NAME)
         print(json.dumps(report))
+    elif args.command == "causeways":
+        import json
+
+        from contravia import causeway
+
+        print(json.dumps(causeway.write(args.pbf, args.out), ensure_ascii=False))
     elif args.command == "regions":
         import json
         from pathlib import Path
@@ -189,6 +211,11 @@ def main(argv: list[str] | None = None) -> None:
         shapes, report = regions.read(args.pbf, regions.named())
         report["bytes"] = regions.save(shapes, Path(args.out) / regions.NAME)
         print(json.dumps(report))
+    elif args.command == "towns":
+        from contravia import towns
+
+        rows = towns.read(args.pbf)
+        print(f"{len(rows)} towns, {towns.save(rows)} bytes in {towns.PATH}")
     elif args.command == "cover":
         import json
         from pathlib import Path
@@ -220,6 +247,10 @@ def main(argv: list[str] | None = None) -> None:
         from contravia.walks import main as walks
 
         walks(args.data)
+    elif args.command == "parks":
+        from contravia.parks import main as parks
+
+        parks(args.data, args.cover, args.out)
     elif args.command == "play":
         from contravia.game import main as play
 

@@ -20,8 +20,8 @@ from contravia.citydata import Cell
 from contravia.geo import CELL
 from contravia.mesh import MeshBuilder, signed_area
 from contravia.rules import facades
+from contravia.rules.cover import TONES, exaggeration, mapped, shade, tint
 from contravia.rules.cover import colours as cover_colours
-from contravia.rules.cover import exaggeration, mapped, shade, tint
 from contravia.rules.ground import GROUND, SEA, WATER_Y, relief
 from contravia.rules.roads import ROAD
 from contravia.rules.trees import TREE_EVERY, today
@@ -36,6 +36,10 @@ LIFT = 0.2  # metres: with relief, a summary's land never stands lower than this
 RELIEF_STEP = 50.0  # metres: the ground's squares are cut down toward this, so the relief reads from the air
 RELIEF_SUB = 4  # at most this many pieces a side per square
 ROAD_LIFT = 0.15  # metres a summary's road stands over its own ground: still under a cell's ground (BELOW)
+ROAD_LEVELS = 5  # the highest level whose mesh draws its roads: above it a road a pixel wide would be metres wide,
+# and the map draws the roads as lines instead (contravia/maproads.py)
+ROOF_MIX = 0.6  # far roofs lean this share toward the built-up tone, the same at every level: each piece of a
+# merged mass averages its buildings' roofs, and side by side those pastels read from the air as a checkerboard
 
 
 def min_width(L: int) -> float:
@@ -412,7 +416,7 @@ def summary_mesh(s: dict, L: int, a: int, b: int, origin, terrain=None, pantheon
         _blocks_mesh(mb, s, L, a, b, origin, terrain, sea)
     else:
         _boxes(mb, s, x0, z0, sq, terrain, (L, a, b))
-    roads = np.asarray(s["roads"], float)
+    roads = np.asarray(s["roads"], float) if L <= ROAD_LEVELS else np.zeros((0, 5))
     if len(roads):
         length = np.hypot(roads[:, 2] - roads[:, 0], roads[:, 3] - roads[:, 1])
         _roads(mb, roads[np.lexsort((-length, -roads[:, 4]))][:ROAD_CAP], ground, land, x0, z0, side, sea)
@@ -651,7 +655,8 @@ def _blocks_mesh(mb, s: dict, L: int, a: int, b: int, origin, terrain, sea: bool
     t = shapely.get_coordinates(shapely.get_parts(tris)).reshape(-1, 4, 2)[:, :3].reshape(-1, 2)
     owner = np.repeat(np.repeat(np.arange(len(polys)), count), 3)
     pos = np.c_[t[:, 0], _heights(t, terrain, sea) + at["height"][owner], t[:, 1]]
-    mb.add(pos, np.tile((0.0, 1.0, 0.0), (len(t), 1)), at["roof"][owner], np.arange(len(t)).reshape(-1, 3))
+    roof = np.asarray(at["roof"], float) * (1 - ROOF_MIX) + np.asarray(TONES[50]) * ROOF_MIX
+    mb.add(pos, np.tile((0.0, 1.0, 0.0), (len(t), 1)), roof[owner], np.arange(len(t)).reshape(-1, 3))
 
 
 def _roof(poly):

@@ -2,7 +2,9 @@
 
 classify() decides which blocks are parks and of which kind, from what contravia.prepare knows of each block: its
 area and shape, its buildings, how much of it OSM calls green, whether it is in the city's municipios, and whether
-it lies between a boulevard's carriageways. layout() then draws one park from its block, kind and seed alone, so
+it lies between a boulevard's carriageways. in_town() then makes a park outside those municipios urban when the
+satellite sees the land round it built (any town on the island): a CITY park, or a PLAZA when it is a small square
+in a dense centre. layout() then draws one park from its block, kind and seed alone, so
 the same block always gives the same park and later stages (contravia.walks for the paving, add_to for the motifs)
 draw it again from the few numbers prepare stores.
 
@@ -14,7 +16,9 @@ origin at its centre. The kinds, after docs/superpowers/specs/2026-11-18-parks-d
   benches, domino tables, a playground and a lake with its ring path, footbridge, pier and boats.
 - PASEO: a long block between two carriageways: a paved walk down the middle, rows of trees, lamps and benches.
 - PRADO: the Paseo del Prado: paved from edge to edge, with rows of trees, benches and lamps.
-- ORGANIC: outside the city: clumps of trees, curved dirt paths to a ranchón with picnic tables, sometimes a lake.
+- ORGANIC: outside the towns: clumps of trees, curved dirt paths to a ranchón with picnic tables, sometimes a lake.
+- PLAZA: a town's central square: tiled from edge to edge, shade trees in planters, benches facing its centre,
+  lamps and a statue, glorieta or fountain in the middle.
 
 Every park also keeps its claros, the open lawn left for people, for the on-foot milestone.
 """
@@ -25,8 +29,8 @@ import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon, box
 
-NONE, PASEO, PRADO, CITY, ORGANIC = range(5)
-KINDS = ("none", "paseo", "prado", "city", "organic")
+NONE, PASEO, PRADO, CITY, ORGANIC, PLAZA = range(6)
+KINDS = ("none", "paseo", "prado", "city", "organic", "plaza")
 
 MIN_AREA = 1_500.0  # m²: a smaller block is never a park
 MIN_WIDE = 15.0  # metres: nor one narrower than this
@@ -37,6 +41,9 @@ SEEN_BUILT = 0.5  # a block the satellite sees at least this share built over is
 OUT_MIN = 10_000.0  # m²: outside the city an empty block is a park only from this size (else OSM just lacks houses)
 PARK_MAX = 200_000.0  # m²: larger faces of the road network are not parks
 PASEO_RATIO, PASEO_WIDE = 4.0, 45.0  # a block at least 4 times as long as wide and at most 45 m wide is a paseo
+URBAN_RING = 200.0  # metres round a park in which in_town() measures the built-up land
+URBAN_BUILT = 0.25  # the share of that ring the satellite sees built that puts a park in a town
+PLAZA_MAX, PLAZA_RATIO, PLAZA_BUILT = 6_000.0, 2.0, 0.9  # m², length over width and ring share of a town's plaza
 
 KERB_W = 3.0  # the pavement round a city park
 PATH_W, DIAG_W = 3.0, 2.5  # the crossing paths and the diagonals
@@ -58,6 +65,8 @@ DIRT_W = 2.0  # the organic park's curved paths
 CLUMP_DENSITY = 40.0  # m² per tree inside a clump
 COVERED = 0.5  # a park whose block the drawn street surface covers more than this share of is not laid out
 ON_STREET = 0.05  # m²: a motif whose footprint the street surface overlaps by more than this is left out
+PLANTER = 0.9  # half the side of a plaza tree's planter
+PLAZA_EDGE, PLAZA_TREES = 4.0, 9.0  # metres from a plaza's edge to its row of planters, and between planters
 CLARO, CLARO_TREES, CLARO_CLEAR = 7.0, 6.0, 4.0  # claro grid step, and how far it stays from trees and from the rest
 
 
@@ -130,6 +139,37 @@ def classify(blocks, built, buildings, green, city, boulevard, prado, seen=None)
             out[k] = PASEO
         else:
             out[k] = CITY if city[k] else ORGANIC
+    return out
+
+
+def surroundings(polys, built_up) -> np.ndarray:
+    """The share of the land within URBAN_RING of each polygon, outside it, that the grid built_up
+    (contravia.builtup.BuiltUp) sees built over. The sea counts as not built, so a park on a town's seafront is
+    measured against half a ring of houses."""
+    rings = [poly.buffer(URBAN_RING, 8).difference(poly) for poly in polys]
+    return built_up.share(rings) if rings else np.zeros(0)
+
+
+def town_kind(poly, around: float) -> int:
+    """The kind of an urban park (outside the city's municipios) whose ring is `around` built: a PLAZA when it is
+    small, about square and in a dense centre, else a CITY park."""
+    _, _, _, L, W = frame(poly)
+    if poly.area <= PLAZA_MAX and L <= PLAZA_RATIO * W and around >= PLAZA_BUILT:
+        return PLAZA
+    return CITY
+
+
+def in_town(kinds, polys, city, built_up) -> np.ndarray:
+    """The kinds again, with the towns: a CITY, ORGANIC or PLAZA park outside the city's municipios (city False)
+    is urban when its surroundings() are at least URBAN_BUILT built (town_kind), and ORGANIC otherwise. The
+    municipios' own parks keep their kind, and so do paseos and the Prado. Without a grid, nothing changes."""
+    out = np.asarray(kinds).copy()
+    if built_up is None:
+        return out
+    todo = np.flatnonzero(np.isin(out, (CITY, ORGANIC, PLAZA)) & ~np.asarray(city, bool))
+    around = surroundings([polys[k] for k in todo], built_up)
+    for k, share in zip(todo, around, strict=True):
+        out[k] = town_kind(polys[k], share) if share >= URBAN_BUILT else ORGANIC
     return out
 
 
@@ -523,6 +563,50 @@ def _organic(rng, poly, area, rich, park: Park):
     park.claros = _claros(g, park.trees, park.lake)
 
 
+def _plaza(rng, poly, area, rich, park: Park):
+    """A town's plaza, in its frame: see the module's docstring. It is all pavement (its kerb is the whole block),
+    so its trees stand in planters: a row PLAZA_EDGE in from the edge and another PLAZA_TREES further in, clear
+    of the centrepiece."""
+    park.kerb = poly
+    x0, y0, x1, y1 = poly.bounds
+    short = min(x1 - x0, y1 - y0)
+    centre = np.array([0.0, 0.0]) if poly.contains(Point(0, 0)) else np.asarray(poly.representative_point().coords[0])
+    name = _pick(rng, (("statue", 45), ("glorieta", 30), ("fountain", 25)) if short >= 30 else
+                 (("statue", 60), ("fountain", 40)))
+    size = {"statue": 1.4, "glorieta": 4.0, "fountain": float(np.clip(0.08 * short, 2.5, 4.0))}[name]
+    park.motifs.append((name, centre[0], centre[1], size, float(rng.integers(4)) * np.pi / 2))
+    clear = size + 2.5  # the paving left open round the centrepiece
+    spots, between = [], []
+    for row, inset in enumerate((PLAZA_EDGE, PLAZA_EDGE + PLAZA_TREES)):
+        inner = poly.buffer(-inset, join_style="mitre")
+        for edge in shapely.get_parts(inner.boundary) if not inner.is_empty else ():
+            n = max(1, int(edge.length // PLAZA_TREES))
+            spots += [edge.interpolate(t).coords[0] for t in (np.arange(n) + 0.5) * edge.length / n]
+            if row == 0:  # benches between the outer row's planters
+                between += [edge.interpolate(t).coords[0] for t in np.arange(n) * edge.length / n]
+    spots, between = np.array(spots).reshape(-1, 2), np.array(between).reshape(-1, 2)
+    spots = spots[np.hypot(*(spots - centre).T) >= clear + PLANTER + 1.5]
+    park.trees = spots
+    park.motifs += [("planter", x, z, PLANTER, 0.0) for x, z in spots]
+    between = between[np.hypot(*(between - centre).T) >= clear + 2.0]
+    if rich < 0.6:
+        between = between[::2]
+    nb = 8 if clear >= 5 else 4
+    a = (np.arange(nb) + 0.5) * 2 * np.pi / nb
+    ring = np.column_stack([centre[0] + np.cos(a) * (clear + 1.2), centre[1] + np.sin(a) * (clear + 1.2)])
+    seats = np.vstack([between, ring])
+    toward = centre - seats
+    park.benches = np.column_stack([seats, np.arctan2(toward[:, 1], toward[:, 0])])
+    a = np.arange(4) * np.pi / 2
+    lamps = [np.column_stack([centre[0] + np.cos(a) * (clear + 1.2), centre[1] + np.sin(a) * (clear + 1.2)])]
+    for edge in shapely.get_parts(poly.buffer(-1.5).boundary):
+        d = np.arange(0, edge.length, LAMP_EVERY)
+        lamps.append(np.array([edge.interpolate(t).coords[0] for t in d]).reshape(-1, 2))
+    lamps = np.vstack(lamps)
+    park.lamps = np.column_stack([lamps, np.zeros(len(lamps))])
+    park.claros = np.zeros((0, 2))
+
+
 def _pick(rng, table):
     names, weights = zip(*table)
     w = np.asarray(weights, float)
@@ -564,6 +648,8 @@ def layout(ring, kind: int, seed: int) -> Park:
         _city(rng, local, area, rich, park)
     elif kind in (PASEO, PRADO):
         _paseo(rng, local, area, rich, park, kind == PRADO)
+    elif kind == PLAZA:
+        _plaza(rng, local, area, rich, park)
     else:
         _organic(rng, local, area, rich, park)
     return _to_world(park, c, u, v)
@@ -727,7 +813,8 @@ def add_to(city) -> dict:
             return True
 
         for name, x, z, size, head in park.motifs:
-            y = float(top([x, z], PATH_LIFT)[0] if name in on_plaza else ground([x, z])[0])
+            y = float(top([x, z], KERB)[0] if park.kind == PLAZA else
+                      top([x, z], PATH_LIFT)[0] if name in on_plaza else ground([x, z])[0])
             if name == "glorieta":
                 c["motifs"] += put(props.glorieta, (x, z), size, head, y)
             elif name == "fountain":
@@ -738,12 +825,12 @@ def add_to(city) -> dict:
                 c["motifs"] += put(getattr(props, name), (x, z), head, y)
         if len(park.benches):
             ys = ground(park.benches[:, :2]) if park.kind in (CITY, ORGANIC) else top(park.benches[:, :2], PATH_LIFT)
-            if park.kind == PRADO:
+            if park.kind in (PRADO, PLAZA):
                 ys = top(park.benches[:, :2], KERB)
             for (x, z, face), y in zip(park.benches, ys, strict=True):
                 c["benches"] += put(props.bench, (x, z), face, float(y))
         if len(park.lamps):
-            lift = KERB if park.kind in (CITY, PASEO, PRADO) else 0.0
+            lift = KERB if park.kind in (CITY, PASEO, PRADO, PLAZA) else 0.0
             for (x, z, _), y in zip(park.lamps, top(park.lamps[:, :2], lift), strict=True):
                 put(props.lamp, (x, z), float(y))
         lk = park.lake
@@ -783,6 +870,66 @@ def add_to(city) -> dict:
     city.add_kind("park_paint", paint, keys)
     city.add_kind("park_walls", walls, wkeys)
     return {"parks_built": len(parks_), "park_layout_errors": len(FAILED), "park_triangles": len(tris), "park_walls": len(walls), **count}
+
+
+def retown(city, built_up) -> dict:
+    """Give the parks stored in a built city the kinds in_town() gives them today, and their trees: the step that
+    brings a province built before the towns' parks up to date without a full contravia prepare. The city's
+    municipios are the parks' zones 0 and 1 (contravia.walks.zone_of). Run the walks and the motifs after it
+    (main does). Returns the counts of each kind before and after."""
+    from contravia.geo import cell_of
+    from contravia.prepare import on_road
+
+    a = city.a
+    if "park_kind" not in a or not len(a["park_kind"]):
+        return {}
+    verts, starts = np.asarray(a["park_verts"], float), np.asarray(a["park_starts"])
+    rings = [verts[starts[k]:starts[k + 1]] for k in range(len(starts) - 1)]
+    polys = [shapely.make_valid(Polygon(r)) for r in rings]
+    old = np.asarray(a["park_kind"])
+    new = in_town(old, polys, np.asarray(a["park_zone"]) < 2, built_up)
+    changed = np.flatnonzero(new != old)
+    count = lambda k: {KINDS[n]: int(np.sum(k == n)) for n in range(1, len(KINDS))}
+    report = {"parks_before": count(old), "parks_after": count(new), "parks_changed": len(changed)}
+    if not len(changed):
+        return report
+    trees = np.asarray(a["trees"], float).reshape(-1, 2)  # a built city's stored trees are its parks' trees
+    gone = shapely.STRtree(shapely.points(trees)).query([polys[k].buffer(0.5) for k in changed],
+                                                        predicate="contains")[1] if len(trees) else []
+    keep = np.setdiff1d(np.arange(len(trees)), gone)
+    grown = [_safe_layout(rings[k], int(new[k]), int(a["park_seed"][k])).trees for k in changed]
+    grown = np.vstack([t for t in grown if len(t)] or [np.zeros((0, 2))])
+    grown = grown[~on_road(grown, np.asarray(a["roads"], float))]
+    report.update(trees_dropped=len(trees) - len(keep), trees_grown=len(grown))
+    trees = np.vstack([trees[keep], grown]).astype(np.float32)
+    a.pop("trees"), a.pop("tree_offsets")
+    city.add_kind("trees", trees, cell_of(trees))
+    a["tree_offsets"] = a.pop("trees_offsets")
+    a["park_kind"] = new.astype(np.asarray(old).dtype)
+    return report
+
+
+def main(path, cover, out) -> dict:
+    """Bring the parks of a prepared data file at path up to the towns' rule with the WorldCover grid at cover
+    (contravia.cover's cover.src), rebuild its walks and park motifs as `contravia walks` does, write it to out
+    and print the counts."""
+    import json
+    import time
+
+    from contravia import builtup, cover as cover_
+    from contravia.citydata import CityData
+    from contravia.walks import add_to as walks_add_to
+
+    t0 = time.perf_counter()
+    city = CityData.load(path)
+    report = retown(city, builtup.BuiltUp.of_cover(cover_.load(cover)))
+    report.update(drop_covered(city))
+    report.update(walks_add_to(city))
+    report.update(add_to(city))
+    city.save(out)
+    report["seconds"] = round(time.perf_counter() - t0, 1)
+    print(json.dumps(report, indent=2))
+    return report
 
 
 CEIBA_FROM, CEIBA_CHANCE = 10_000.0, 0.3  # m² and probability: a city park this big may have a ceiba in its plaza

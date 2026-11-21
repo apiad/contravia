@@ -306,6 +306,7 @@ def find_parks(raw: Raw, faces, rings, cents, graph, roads) -> tuple[list, list,
     seen = raw.built_up.share(faces) if raw.built_up is not None else None
     kinds = parks.classify(lands, built, count, green, city, boulevard(graph, faces), prado, seen)
     kinds[blocked & ~prado] = parks.NONE
+    kinds = parks.in_town(kinds, lands, city, raw.built_up)  # the other towns' parks are urban, by the satellite
     keep = np.flatnonzero(kinds != parks.NONE)
     return ([np.asarray(lands[k].exterior.coords)[:-1] for k in keep], [int(kinds[k]) for k in keep],
             [zone_of(names[k]) for k in keep], [_block_seed(faces[k].centroid) for k in keep])
@@ -637,12 +638,17 @@ def main(pbf, out, dem=None, provinces=None, resume: bool = False, jobs: int = 1
         for name, slug in todo:
             reports[name] = _province(pbf, out, dem, name, slug, boxes[name], worldcover)
             print(name, json.dumps(reports[name]), flush=True)
-        return reports
-    with ProcessPoolExecutor(jobs, mp_context=multiprocessing.get_context("spawn")) as pool:
-        running = {pool.submit(_province, pbf, out, dem, name, slug, boxes[name], worldcover): name
-                   for name, slug in todo}
-        for done in as_completed(running):
-            name = running[done]
-            reports[name] = done.result()
-            print(name, json.dumps(reports[name]), flush=True)
+    else:
+        with ProcessPoolExecutor(jobs, mp_context=multiprocessing.get_context("spawn")) as pool:
+            running = {pool.submit(_province, pbf, out, dem, name, slug, boxes[name], worldcover): name
+                       for name, slug in todo}
+            for done in as_completed(running):
+                name = running[done]
+                reports[name] = done.result()
+                print(name, json.dumps(reports[name]), flush=True)
+    if not provinces and (Path(out) / coast.NAME).exists():  # the causeways, on the provinces' relief
+        from contravia import causeway
+
+        reports["causeways"] = causeway.write(pbf, out)
+        print("causeways", json.dumps(reports["causeways"], ensure_ascii=False), flush=True)
     return reports

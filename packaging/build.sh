@@ -33,7 +33,11 @@ for name, slug in PROVINCES:
         source.load(path)
     except (OSError, ValueError) as e:
         bad.append(f"  {name}: {e}")
-from contravia import coast, cover, regions, shore
+from contravia import causeway, coast, cover, regions, shore
+try:
+    causeway.load(Path(sys.argv[1]) / causeway.NAME)
+except (OSError, ValueError) as e:
+    bad.append(f"  the causeways: {e}; write them with: contravia causeways <cuba-latest.osm.pbf> --out {sys.argv[1]}")
 try:
     coast.load(Path(sys.argv[1]) / coast.NAME)
 except (OSError, ValueError) as e:

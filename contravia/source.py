@@ -27,7 +27,7 @@ def pack(pbf, dem, out, provinces=None, worldcover=None) -> dict:
     from contravia.prepare import TERRAIN_STRIDE, province_boxes
     from contravia.terrain import read_terrain
 
-    boxes, sizes = province_boxes(pbf), {}
+    boxes, sizes, terrains = province_boxes(pbf), {}, []
     if not provinces:  # the whole island: its coast too, which every province's map shares
         land, report = coast.read(pbf)
         sizes["coast"] = {"bytes": coast.save(land, Path(out) / coast.NAME), **report}
@@ -42,6 +42,7 @@ def pack(pbf, dem, out, provinces=None, worldcover=None) -> dict:
         if provinces and name not in provinces and slug not in provinces:
             continue
         terrain = read_terrain(dem, boxes[name], stride=TERRAIN_STRIDE.get(name, 3))
+        terrains.append(terrain)
         raw = read_osm(pbf, boundary=name, box=boxes[name])
         if worldcover:
             from contravia import builtup
@@ -49,6 +50,11 @@ def pack(pbf, dem, out, provinces=None, worldcover=None) -> dict:
             raw.built_up = builtup.read(worldcover, boxes[name])
         sizes[name] = write(raw, terrain, Path(out) / f"{slug}.src")
         print(f"{name}: {sizes[name]['bytes'] / 1e6:.1f} MB", flush=True)
+    if not provinces:  # the causeways over the sea, on the relief just packed
+        from contravia import causeway
+
+        sizes["causeways"] = causeway.write(pbf, out, causeway.island(terrains))
+        print(f"causeways: {json.dumps(sizes['causeways'], ensure_ascii=False)}", flush=True)
     return sizes
 
 

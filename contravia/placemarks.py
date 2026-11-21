@@ -76,24 +76,39 @@ def on_minimap(places, x: float, z: float, yaw: float, metres: float, radius_px:
     return out
 
 
+_GROUPS: dict = {}  # (id of the places, joined) -> (groups, their middles as an (N, 3) array), made once
+
+
+def _groups(places, joined: bool):
+    """The places one mark each, or joined by municipio, with their middles: made once per list of places,
+    since a map frame cannot spend milliseconds on it (750 places took 20 to 60 ms a frame)."""
+    key = (id(places), joined)
+    if key not in _GROUPS:
+        every = list(places)
+        if joined:
+            by = {}
+            for p in every:
+                by.setdefault((p.province, p.municipio), []).append(p)
+            groups = list(by.values())
+        else:
+            groups = [[p] for p in every]
+        at = np.array([[sum(p.x for p in g) / len(g), 0.0, sum(p.z for p in g) / len(g)] for g in groups])
+        _GROUPS[key] = (groups, at.reshape(-1, 3))
+    return _GROUPS[key]
+
+
 def on_map(places, has, cam: mapview.MapCam, w: float, h: float) -> list[Mark]:
     """The map's marks inside a w x h frame for the camera cam; has(id) says whether a place is photographed.
     From CITY_H up a municipio's places become one mark at their middle."""
     eye, target = mapview.pose(cam)
-    every = list(places)
-    if cam.h < CITY_H:
-        groups = [[p] for p in every]
-    else:
-        by = {}
-        for p in every:
-            by.setdefault((p.province, p.municipio), []).append(p)
-        groups = list(by.values())
-    at = np.array([[np.mean([p.x for p in g]), 0.0, np.mean([p.z for p in g])] for g in groups])
+    groups, at = _groups(places, cam.h >= CITY_H)
+    if not len(at):
+        return []
     ndc = collect.project(eye, target, at, 1.0, w / h)
+    seen = np.flatnonzero((ndc[:, 2] > 0) & (np.abs(ndc[:, 0]) <= 1.05) & (np.abs(ndc[:, 1]) <= 1.05))
     marks = []
-    for g, (nx, ny, depth), (ax, _, az) in zip(groups, ndc, at, strict=True):
-        if not depth > 0 or abs(nx) > 1.05 or abs(ny) > 1.05:
-            continue
+    for k in seen:
+        g, (nx, ny, _), (ax, _, az) = groups[k], ndc[k], at[k]
         kinds = [p.type for p in g]
         got = sum(has(p.id) for p in g)
         if len(g) == 1:

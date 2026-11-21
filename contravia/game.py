@@ -12,7 +12,8 @@ the camera alone, then the streamer, the traffic and the sky run together as one
 Traffic runs in two layers: the flow layer counts vehicles on every street
 in a thread, on the machine's clock, and the car layer drives the cars within 400 m. engine.state shows what
 an agent needs to check the game without a person at the keyboard; the "teleport" event moves the car (x, z or
-lat, lon), "traffic_config" changes the demand settings and "close" closes a street.
+lat, lon), "traffic_config" changes the demand settings, "close" closes a street and "map" opens the map with its
+camera over (x, z or lat, lon) at height h, turned yaw degrees (contravia/menu.py).
 """
 
 import math
@@ -59,6 +60,8 @@ WATER = (0.10, 0.24, 0.32)
 FLAT_BASE_Y = -1.0  # with flat data: below every streamed ground, which always wins over it
 SHADOW = (5.0, 2.3)  # metres: the dark ellipse under the car, along and across it
 SHADOW_LIFT = 0.05  # metres above the bare ground, so it shows over the ground drawn there
+UNVEILED_BYTES = 64 << 20  # bytes a streamer may upload in a frame under the loading curtain
+NEAR_NODES = 500.0  # metres round the car within which the curtain waits for every node the view selects
 
 
 GARAGE_SHIFT = 0.2  # how far left of the vehicle the Garaje looks, as a share of the camera's distance
@@ -167,6 +170,9 @@ class Game:
         self.address = ("", "", "")
         self.weather_state = None
         self.tau_range, self.rain_on = TAU, True
+        # The loading curtain over a mode started from the main menu (contravia/curtain.py), while it is up: its
+        # state, what waits round the start as the stream system last counted it, and the streamers' budgets.
+        self.curtain, self.waiting_now, self._curtain_panel, self._budgets = None, None, None, None
 
         self._start_traffic(traffic, with_traffic)
         self.sky_ms, self._sky_state_at = 0.0, 0.0
@@ -809,6 +815,31 @@ class Game:
         if self.layer:
             self.runner.stop()
 
+    def _map_roads(self) -> None:
+        """The map's roads as lines over the relief (contravia/maproads.py), made on the map's first frame and
+        hidden everywhere else."""
+        on = self.mode == "map" and self.map is not None and self.flight is None
+        if getattr(self, "maproads", None) is None:
+            if not on:
+                if not getattr(self, "_lines_cleared", False):  # a reload under dev keeps the engine and its lines
+                    from contravia.maproads import KEYS
+
+                    for k in KEYS:
+                        self.engine.lines.remove(k)
+                    self._lines_cleared = True
+                return
+            from contravia.maproads import MapRoads
+
+            self.maproads = MapRoads(self.engine, self.city, (self.streamer.levels, 0, 0))
+        self.maproads.update(on, self.map.h if on else 0.0, self.streamer.drawn() if on else ())
+        t = time.perf_counter()
+        if on and t - getattr(self, "_map_state_at", 0.0) > 0.5:  # what an agent checks: the camera, the lines
+            self._map_state_at = t
+            m = self.map
+            self._publish("map", {"x": round(m.x), "z": round(m.z), "h": round(m.h), "yaw": round(math.degrees(m.yaw), 1),
+                                  "lines": {k: len(v) for k, v in self.engine.lines.layers.items()},
+                                  "streets_busy": self.maproads.busy})
+
     def _recentre(self) -> np.ndarray:
         """Move the engine's origin to the camera (behind the car while driving) when it has gone RECENTRE
         metres; returns the origin as (x, 0, z)."""
@@ -822,14 +853,77 @@ class Game:
     def waiting(self, at: tuple[float, float] | None = None) -> int:
         """Cells within one cell of the car (or of the point `at`) that hold something and are not drawn yet, in
         the city's streamer or in the detail ring."""
+        return sum(self._waiting_cells(at))
+
+    def _waiting_cells(self, at: tuple[float, float] | None = None) -> tuple[int, int]:
+        """waiting's two parts: the level-0 cells not drawn by the city's streamer, and those not in the detail ring."""
         o = self.city.tree.origin
         x, z = at if at is not None else (self.car.x, self.car.z)
         ci, cj = math.floor(x / CELL), math.floor(z / CELL)
         drawn, ring, r = self.streamer.drawn(), self.detail.drawn(), self.detail.radius
         cells = [(ci + a, cj + b) for a in (-1, 0, 1) for b in (-1, 0, 1)]
         full = [(i, j) for i, j in cells if self.city.exists(0, i - o[0], j - o[1])]
-        return (sum(1 for i, j in full if (0, i - o[0], j - o[1]) not in drawn)
-                + sum(1 for i, j in full if max(abs(i - ci), abs(j - cj)) <= r and (i, j) not in ring))
+        return (sum(1 for i, j in full if (0, i - o[0], j - o[1]) not in drawn),
+                sum(1 for i, j in full if max(abs(i - ci), abs(j - cj)) <= r and (i, j) not in ring))
+
+    def waiting_round(self):
+        """What still waits to be drawn round where the camera is, as contravia/curtain.py counts it. In the map,
+        every quadtree node its view needs. Driving, the nodes the view needs within NEAR_NODES of the car (a
+        farther one not built yet shows as its coarser parent, and the whole island's take longer than the
+        curtain's cap), the cells and the detail ring round the car, the trees, grass and plots of the cells
+        drawn in full, and the first traffic."""
+        from contravia.curtain import Waiting
+
+        sm = self.streamer
+        if self.mode == "map":
+            return Waiting(nodes=0 if sm.settled else max(1, len(sm._selected - sm.drawn())))
+        x, z = self.car.x, self.car.z
+        nodes = sum(1 for n in sm._selected - sm.drawn() if sm._distance(n, x, z, 0.0) <= NEAR_NODES)
+        cells, detail = self._waiting_cells()
+        return Waiting(nodes, cells, detail, trees=self.forest.waiting(), grass=self.grass.waiting(),
+                       tombs=self.graveyard.waiting(),
+                       traffic=self.layer.unplaced() if self.layer and self.mode == "drive" else 0)
+
+    def raise_curtain(self, then=None) -> None:
+        """Hide the game behind the loading curtain until the world round the camera is drawn
+        (contravia/curtain.py); `then`, the mode's start, runs under it on its next frame. While it is up the
+        streamers spend no frame-time budget: tau stays, the quadtree refines and both streamers upload all
+        they have each frame."""
+        from contravia import curtain
+
+        self.curtain, self.waiting_now = curtain.Curtain(time.perf_counter(), then), None
+        self._curtain_panel = self._curtain_panel or curtain.Panel(self.engine)
+        self._curtain_panel.show(1.0)
+        if self._budgets is None:
+            sm, d = self.streamer, self.detail
+            self._budgets = (sm.refine_ms, sm.upload_bytes_per_frame, d.uploads_per_frame, d.upload_bytes_per_frame)
+            sm.refine_ms, sm.upload_bytes_per_frame = None, UNVEILED_BYTES
+            d.uploads_per_frame, d.upload_bytes_per_frame = 9, UNVEILED_BYTES
+        self._publish("curtain", {"up": True, "held": None, "why": ""})
+
+    def drop_curtain(self) -> None:
+        """Take the curtain off at once, its start not run if it had not yet (Escape under it)."""
+        self.curtain = None
+        self._lowered()
+
+    def _step_curtain(self, now: float) -> None:
+        """One frame of the curtain: start the mode under it, lift it once what waits is drawn, fade it out."""
+        c = self.curtain
+        alpha = c.step(now, self.waiting_now)
+        self._curtain_panel.show(alpha)
+        if not c.up:
+            self.curtain = None
+            self._lowered()
+            self._publish("curtain", {"up": False, "held": round(c.held, 2), "why": c.why})
+
+    def _lowered(self) -> None:
+        """The curtain is off: its panel goes and the streamers get their frame-time budgets back."""
+        if self._curtain_panel is not None:
+            self._curtain_panel.show(0.0)
+        if self._budgets is not None:
+            sm, d = self.streamer, self.detail
+            sm.refine_ms, sm.upload_bytes_per_frame, d.uploads_per_frame, d.upload_bytes_per_frame = self._budgets
+            self._budgets = None
 
     def _publish(self, key: str, value) -> None:
         """Write one engine.state key: the parallel systems share that dict, so they take turns."""
@@ -849,15 +943,19 @@ class Game:
         self._dt = min(dt, 0.05)
         inp = self.engine.input
         self._before = self.car
+        veiled = self.curtain is not None  # under the curtain the player's input is ignored, Escape aside (menu.py)
         if self.mode == "drive":
-            if inp.just_pressed("r"):
+            if inp.just_pressed("r") and not veiled:
                 self.teleport(self.car.x, self.car.z, y=self.car.y)
-            if inp.just_pressed("F1"):
+            if inp.just_pressed("F1") and not veiled:
                 self.hud.toggle_stats()
-            if inp.just_pressed("t"):
+            if inp.just_pressed("t") and not veiled:
                 x, z, _ = self.walls.random_road(self._rng)
                 self.teleport(x, z)
-            c = self.autopilot(self.car) if self.autopilot else self.road_help(self.controls(self._dt))
+            if veiled:  # the car stands on its brakes till the curtain lifts
+                c = Controls(0.0, 1.0, 0.0, True)
+            else:
+                c = self.autopilot(self.car) if self.autopilot else self.road_help(self.controls(self._dt))
             if getattr(self, "sinking", None) is not None:  # under water the engine is cut and the wheels held
                 c = Controls(0.0, 1.0, 0.0, True)
             walls = self.walls.near(self.car.x, self.car.z, self.car.y)
@@ -915,7 +1013,7 @@ class Game:
             seen = self.driven.seen()
             if self.eye is not self._chased:  # another camera moved the eye: the chase starts from there
                 self.rig, self.mouse_orbit = seen_from(self.eye, seen), Orbit()
-            if inp.pointer_captured:
+            if inp.pointer_captured and not veiled:
                 self.mouse_orbit = orbit(self.mouse_orbit, *inp.mouse_delta, seen.speed, self._dt)
             self.rig, self.eye, target = chase(self.rig, seen, self._dt, self.surface, self.mouse_orbit)
             if getattr(self, "sinking", None) is not None:  # the camera stays over the water the car sinks in
@@ -931,6 +1029,7 @@ class Game:
             self.shelf.transform.pos = (0.0, self._shelf_y(), 0.0)
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
         self.engine.camera.vertical_scale = self._exaggeration()
+        self._map_roads()
         self._save_photo()
         self.engine.camera.fov = collect.fov_for(self.aim["zoom"]) if self.mode == "aim" and self.aim else collect.FOV_DEG
         self.hud.show(self.mode == "drive")
@@ -958,6 +1057,8 @@ class Game:
         st.frame_ms = round(self.frame_ms, 2)
         if self.sound is not None:
             self.sound.frame(self)
+        if self.curtain is not None:  # last, so it goes on over the HUD this frame put up
+            self._step_curtain(now)
 
     def _fly(self) -> tuple[np.ndarray, np.ndarray]:
         """This frame's (eye, target) on the camera's flight. Going up it ends on the map's pose as it is now;
@@ -986,7 +1087,7 @@ class Game:
     def _tune(self) -> None:
         """Every TUNE_EVERY frames, trade the streamer's detail for frame time: a median frame over TARGET_MS
         raises tau (fewer, coarser nodes), one well under it lowers tau back, within TAU."""
-        if not self.tune:
+        if not self.tune or self.curtain is not None:  # under the curtain the streamers run at full speed
             return
         self._tune_ms = getattr(self, "_tune_ms", [])
         self._tune_ms.append(self.frame_ms)
@@ -1019,6 +1120,8 @@ class Game:
             st.cells_built = tiles["built"]
             st.cells_waiting = self.waiting()
             st.car_node = self._car_node()
+        if self.curtain is not None:
+            self.waiting_now = self.waiting_round()
 
     def _stats_lines(self) -> list[str]:
         """The F1 panel's lines, from this frame's time and what the systems last published."""
@@ -1146,7 +1249,7 @@ def roofs_near(city, landmarks, x: float, z: float, reach: float) -> tuple[list,
     """The footprints of the buildings and filler boxes of the cells within reach metres of (x, z), as the cells
     draw them (clearance.boxes), and the heights of their roofs, parapets included, for flight.clearance."""
     from contravia.clearance import boxes, roads_around, streets_around
-    from contravia.terrain import seat
+    from contravia.terrain import footing
 
     rings, tops = [], []
     for i in range(int(np.floor((x - reach) / CELL)), int(np.floor((x + reach) / CELL)) + 1):
@@ -1154,7 +1257,7 @@ def roofs_near(city, landmarks, x: float, z: float, reach: float) -> tuple[list,
             c = landmarks.keep(i, j, city.cell(i, j))
             for ring, _, p in boxes(c, roads_around(city, i, j), streets_around(city, i, j)):
                 rings.append(ring)
-                tops.append(seat(ring, city.terrain) + p.roof + p.parapet)
+                tops.append(footing(ring, city.terrain)[0] + p.roof + p.parapet)
     return rings, tops
 
 

@@ -11,9 +11,10 @@ import numpy as np
 
 from contravia.mesh import signed_area, triangulate
 from contravia.rules import facades
-from contravia.terrain import seat
+from contravia.terrain import footing
 
 GROUND_SHADE = 0.82  # the shade of a wall's inner face, under the parapet
+PLINTH_SHADE = 0.55  # the shade of the masonry plinth a house on a slope stands on
 SETBACK = 3.0  # metres between a block's edge and its filler boxes
 FRONT = (8.0, 15.0)
 DEPTH = (10.0, 15.0)
@@ -80,11 +81,24 @@ def _walls(mb, p0, p1, out, bays, bands, top, color, low, kind, seed) -> None:
            np.broadcast_to(col, pos.shape).reshape(shape), tris, fac.reshape(shape))
 
 
+def _plinth(mb, p0, p1, out, foot, base, color) -> None:
+    """A plain masonry wall from foot up to base under edges p0 to p1 (E, 2) facing out, in one
+    MeshBuilder.add: no facade, so it carries no window or door."""
+    e = len(p0)
+    pos = np.stack([np.c_[p0[:, 0], np.full(e, foot), p0[:, 1]], np.c_[p1[:, 0], np.full(e, foot), p1[:, 1]],
+                    np.c_[p1[:, 0], np.full(e, base), p1[:, 1]], np.c_[p0[:, 0], np.full(e, base), p0[:, 1]]], 1)
+    n = np.repeat(np.c_[out[:, 0], np.zeros(e), out[:, 1]], 4, axis=0)
+    tris = (np.arange(e)[:, None, None] * 4 + np.array([[0, 1, 2], [0, 2, 3]])).reshape(-1, 3)
+    mb.add(pos.reshape(-1, 3), n, color, tris)
+
+
 def box(mb, ring: np.ndarray, osm_id: int, base: float = 0.0, plan: facades.Plan | None = None,
-        portals=None) -> bool:
+        portals=None, foot: float | None = None) -> bool:
     """Add a footprint's massing from base up: walls to the parapet, the parapet's inner face and a flat
     roof. plan is the building's facade plan (by default one from its id alone); portals marks the edges
-    whose ground floor is a portal (facades.portal_walls). Returns False when the roof could not be cut."""
+    whose ground floor is a portal (facades.portal_walls). A foot under base adds a plinth from foot up to
+    base on every wall, in a darker tone (terrain.footing gives both on a slope). Returns False when the roof
+    could not be cut."""
     ring = np.asarray(ring, float)
     p = plan or facades.plan(osm_id, area=abs(signed_area(ring)))
     color, low = p.color, tuple(c * GROUND_SHADE for c in p.color)
@@ -98,6 +112,8 @@ def box(mb, ring: np.ndarray, osm_id: int, base: float = 0.0, plan: facades.Plan
     if signed_area(ring) <= 0:
         out = -out
     bays = np.maximum(1, np.round(length[edges] / p.bay))  # whole bays, so windows sit centred on the wall
+    if foot is not None and foot < base:
+        _plinth(mb, ring[edges], ends[edges], out, foot, base, tuple(c * PLINTH_SHADE for c in p.color))
     portal = np.zeros(len(edges), bool)
     if portals is not None and p.portal and roof > ground:
         portal = np.asarray(portals, bool)[edges]
@@ -187,4 +203,5 @@ def filler_rings(block: np.ndarray, seed: int) -> list[np.ndarray]:
 def filler(mb, block: np.ndarray, seed: int, terrain=None) -> None:
     """Add the filler boxes of a block as buildings, each seeded from the block's seed and on the terrain."""
     for k, ring in enumerate(filler_rings(block, seed)):
-        box(mb, ring, osm_id=abs(int(seed)) * 131 + k, base=seat(ring, terrain) if terrain else 0.0)
+        base, foot = footing(ring, terrain) if terrain else (0.0, 0.0)
+        box(mb, ring, osm_id=abs(int(seed)) * 131 + k, base=base, foot=foot)

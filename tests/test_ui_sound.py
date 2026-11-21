@@ -22,7 +22,7 @@ def test_the_menu_asks_for_a_sound_on_each_key():
     m = Menu.__new__(Menu)
     m.current = "main"
     m.screens = {"main": SimpleNamespace(key=lambda k: None)}
-    m.game = SimpleNamespace(sound=SimpleNamespace(ui=asked.append), mode="menu")
+    m.game = SimpleNamespace(sound=SimpleNamespace(ui=asked.append), mode="menu", curtain=None)
     for key in ("ArrowDown", "Enter", "Escape"):
         m.press(key)
     assert asked == ["move", "choose", "back"]

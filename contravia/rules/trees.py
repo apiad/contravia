@@ -218,7 +218,7 @@ class Trees:
 def grow(xz, terrain, zone: int, arrays=()) -> Trees:
     """Species, size, turn and shift for trees at (N, 2) xz in a cell of `zone`, with the parks of the city arrays
     of each province holding the cell:
-    the Prado is laurel, a paseo one species from its seed, a city park the PARK mix and its plaza's ceiba, an
+    the Prado and a town's plaza are laurel, a paseo one species from its seed, a city park the PARK mix and its plaza's ceiba, an
     organic park the OUT mix; near the sea, the coastal mix, except on the Prado and the paseos."""
     from contravia import parks
     from contravia.rules.species import SPECIES
@@ -231,7 +231,7 @@ def grow(xz, terrain, zone: int, arrays=()) -> Trees:
         kind, pseed = parks.of_points(a, xz)
         zones[kind == parks.KINDS.index("city")] = PARK
         zones[kind == parks.KINDS.index("organic")] = OUT
-        fixed[kind == parks.KINDS.index("prado")] = SPECIES.index("laurel")
+        fixed[(kind == parks.KINDS.index("prado")) | (kind == parks.KINDS.index("plaza"))] = SPECIES.index("laurel")
         paseo = kind == parks.KINDS.index("paseo")
         fixed[paseo] = pick(np.full(paseo.sum(), PARK), _mix64(pseed[paseo].view(np.uint64)))
         fixed[parks.is_ceiba(a, xz)] = SPECIES.index("ceiba")

@@ -54,6 +54,15 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
 - A car driven into the sea sinks and comes back on the shore (`contravia/sea.py`): over the sea the wheels stand
   on a floor that goes down past the shallows (`Shore.floor`), under 0.7 m of water the car sinks for 2 s and at
   2.6 s stands, stopped, on the nearest dry road within 300 m or else the nearest dry land, facing inland.
+- Causeways are land (`contravia/causeway.py`): every drivable road but a bridge or tunnel, near the coast, where it
+  lies outside the coast's land, on a strip with sea within 30 m both sides, or where the relief is sea, is a
+  causeway (the pedraplenes to the cays, about 143 km island-wide; OSM's `embankment` is not trusted). Its bank is
+  the road plus 2.5 m of earth either side with its crown 1.7 m over the water, ramping down to the land at 5 %,
+  and riprap sloping 1:1.5 into the sea: the shore makes it land with a fifth type, riprap (big grey seeded rocks,
+  grass on the shoulders), and `World.cell` raises the streets, kerbs, paint and pavements onto the crown. It is
+  kept in `causeways.src` beside `coast.src` (100 KB): `contravia causeways <pbf> --out data/cuba` (about 45 s,
+  on the island's relief) writes it without rebuilding; `prepare` and `source` write it, the first run copies it,
+  and the index adds the banks to the map's land when it is next written.
 - What changes by place is in `contravia/regions.toml` (`contravia/regions.py`, spec
   `docs/superpowers/specs/2026-11-20-regions-design.html`), applied when a cell opens: the municipio rules of
   buildings, Guanabacoa's two storeys, and cemeteries (`landuse=cemetery`) with no filler houses and no laid parks.
@@ -68,6 +77,14 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
 - In the map the camera stretches heights (`mapview.exaggeration`: 1 up to 10 km of height, 20 at 1 000 km, through
   manifoldx's `Camera.vertical_scale`), the summaries mix in height tints from the city stage up and shade the
   slope as stretched at their level (`rules/cover.py`): a stylised relief atlas, not a photo.
+- The map's v2 (spec `docs/superpowers/specs/2026-11-20-map-v2-design.html`): the camera follows a target
+  (`mapview.follow`; the wheel zooms toward the pointer, a drag glides on), cities and towns from OSM
+  (`contravia/towns.json`, written by `contravia towns <pbf>`) show as medallions and named dots
+  (`emblems.py` lays them out, `emblemlayer.py` draws them as GUI panels attached only while used), and the roads
+  are manifoldx's `engine.lines` over the relief (`maproads.py`: the root summary's main roads and the drawn far
+  views' streets; far meshes keep their roads only to `summary.ROAD_LEVELS`). `manifoldx emit map
+  '{"x":..,"z":..,"h":..}'` opens the map there and `engine.state.map` reports its camera and line counts;
+  `bench/map_flight.py` flies a fixed path offscreen and prints wall and main-thread CPU per frame.
 - `contravia prepare` also builds the road graph traffic drives on (g_* arrays); data from before layer 2 plays with no traffic.
 - `contravia prepare` then builds the street surface from that graph (`contravia/streets.py`): avenues' two carriageways
   joined, junctions merged and rounded, each junction on the plane that fits the ground under it and each street
@@ -88,7 +105,11 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   in an existing data file in about 5 minutes; the verges read the streets, so after `contravia streets` run it too.
 - `contravia prepare` turns blocks with few or no buildings into parks (`contravia/parks.py`, spec
   `docs/superpowers/specs/2026-11-18-parks-design.html`): city parks with paths, plaza and centrepiece, paseos, the paved
-  Prado and wild parks outside the city, some with a lake. `contravia/props.py` builds their motifs as `park_tris`, the
+  Prado and wild parks outside the city, some with a lake. Outside La Habana's eight municipios a park is urban when
+  WorldCover sees at least a quarter of the 200 m round it built (`parks.in_town`), any town on the island: a city
+  park, or a tiled plaza with laurels in planters, benches and a statue, glorieta or fountain when it is a small
+  square in a dense centre; else wild. `contravia parks --data X.npz --out Y.npz` gives a built province's stored
+  parks today's kinds from `cover.src` and rebuilds its walks and motifs into Y, without a prepare (about 9 minutes). `contravia/props.py` builds their motifs as `park_tris`, the
   car hits `park_walls`, and `contravia walks` rebuilds them with the pavements. Land OSM tags as a cemetery, industry,
   a school or a sports ground never becomes a park. A park the drawn street surface covers more than half of
   (`parks.COVERED`, such as the strip between an avenue's carriageways that `streets.py` joins) is left out before
@@ -198,5 +219,5 @@ shore's grid (`rules.shore.vegetated`). The
   15 minutes a run) runs only before a release. To make something faster, measure only the part being optimised,
   with a profile of a few minutes at most, before and after each change; never wait on the full bench to learn
   what a profile already shows, and never run it on every iteration.
-- Checks: `rift check` (tests and lint). Run the tests in parallel, `uv run pytest -n auto -m "not slow"`. CI
-  (`.github/workflows/test.yml`) runs them whole on main and, in a PR, only those testmap picks from the diff.
+- Checks: `rift check` (tests and lint). Before you push, run `fastci` (install it once with `uv tool install git+https://github.com/syalia-srl/fastci@v0.2.1`): the tests your change can break, about 3x faster than `uv run pytest -n auto -m "not slow"`. CI
+  (`.github/workflows/test.yml`) runs `fastci`: whole on main and, in a PR, only the tests the diff can break.

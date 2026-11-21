@@ -8,7 +8,9 @@ instead on a grid four times finer, and each node of it gets:
   land node at sea (negative), smoothed so the waterline curves between the nodes;
 - a share of each shore TYPE, from what lies there: a beach where OSM maps beach or sand, a cliff where OSM
   maps one or the ground rises CLIFF_RISE metres within CLIFF_W of the water, mangrove where OSM maps a
-  wetland or WorldCover sees mangrove or wetland, rocky shore (the limestone "diente de perro") elsewhere.
+  wetland or WorldCover sees mangrove or wetland, riprap along a causeway (contravia/causeway.py), rocky shore
+  (the limestone "diente de perro") elsewhere. A causeway's bank is land: its crown and shoulders over the
+  water, its riprap sloping down into the sea.
   The shares are blurred over about BLUR metres, so one kind of shore turns into the next;
 - its height: each type's profile (a beach sloping gently under the water, a low rough rock shelf, a cliff
   standing up to the height inland and dropping straight into the sea, a muddy flat), mixed by the shares and
@@ -34,8 +36,8 @@ STEP = 2.5  # metres between the nodes of a shore grid
 NODES = round(CELL / STEP) + 1  # nodes per side of a cell
 REACH = 40.0  # metres: a cell draws a shore when the sea comes this close; distances are capped here
 MARGIN = int(REACH / STEP) + 4  # nodes measured round a cell, so its edges see all the sea within REACH
-BEACH, ROCK, CLIFF, MANGROVE = range(4)
-TYPES = ("beach", "rock", "cliff", "mangrove")
+BEACH, ROCK, CLIFF, MANGROVE, RIPRAP = range(5)
+TYPES = ("beach", "rock", "cliff", "mangrove", "riprap")
 BLUR = 25.0  # metres over which one type of shore turns into the next
 CLIFF_W = 30.0  # metres inland of the water where a cliff's top is measured
 CLIFF_RISE = 4.0  # metres the ground must rise within CLIFF_W of the water to make a cliff
@@ -46,8 +48,9 @@ BEACH_SLOPE = 0.05  # rise over run of the sand from the water's edge
 # metres from an OSM feature that still take its type: OSM draws them on its own coast, which can lie some way
 # off the relief's, most of all along mangroves, whose tops the relief measures
 NEAR = {"beach": 60.0, "cliff": 120.0, "mangrove": 150.0}
-SHALLOWS = (30.0, 14.0, 10.0, 26.0)  # metres of lighter water off each type
-BAND = ((16.0, 26.0), (5.0, 12.0), (4.0, 9.0), (6.0, 18.0))  # metres inland where each type's colour gives way
+SHALLOWS = (30.0, 14.0, 10.0, 26.0, 10.0)  # metres of lighter water off each type
+# metres inland where each type's colour gives way; riprap's at the top of its slope, where the shoulder's grass is
+BAND = ((16.0, 26.0), (5.0, 12.0), (4.0, 9.0), (6.0, 18.0), (1.2, 1.8))
 KEEP_NEAR, KEEP_FAR = 4.0, 12.0  # metres from anything built where the ground starts to take the shore's shape
 GREEN = 0.75  # share of the ground's own colour past which the shore leaves vegetated ground, where grass grows
 
@@ -55,8 +58,9 @@ SAND, WET_SAND = (0.96, 0.84, 0.52), (0.74, 0.62, 0.38)
 ROCK_LIGHT, ROCK_DARK = (0.52, 0.48, 0.41), (0.33, 0.30, 0.26)
 CLIFF_ROCK = (0.62, 0.58, 0.50)
 MUD = (0.27, 0.24, 0.18)
+RIPRAP_ROCK = (0.50, 0.50, 0.48)  # the grey of the causeways' quarried rock
 SEA_COLOUR = (0.10, 0.24, 0.32)  # the water plane's colour (game.WATER): the shallows fade into it
-SHALLOW = ((0.40, 0.70, 0.68), (0.18, 0.40, 0.44), (0.14, 0.34, 0.40), (0.22, 0.30, 0.22))
+SHALLOW = ((0.40, 0.70, 0.68), (0.18, 0.40, 0.44), (0.14, 0.34, 0.40), (0.22, 0.30, 0.22), (0.20, 0.36, 0.40))
 FOAM = (0.80, 0.86, 0.86)
 
 
@@ -116,13 +120,16 @@ def signed(sea: np.ndarray) -> np.ndarray:
     return np.clip(blur(d, 1), -REACH, REACH)
 
 
-def kind(cliff_osm, beach_osm, mangrove, steep) -> np.ndarray:
-    """The type of each node, by priority: a mapped cliff, a mapped beach, mangrove, a steep rise, else rock."""
+def kind(cliff_osm, beach_osm, mangrove, steep, riprap=None) -> np.ndarray:
+    """The type of each node, by priority: a causeway's riprap, a mapped cliff, a mapped beach, mangrove, a steep
+    rise, else rock."""
     out = np.full(np.shape(steep), ROCK, np.int8)
     out[steep] = CLIFF
     out[mangrove] = MANGROVE
     out[beach_osm] = BEACH
     out[cliff_osm] = CLIFF
+    if riprap is not None:
+        out[riprap] = RIPRAP
     return out
 
 
@@ -134,8 +141,9 @@ def shares(types: np.ndarray) -> np.ndarray:
 
 
 def profiles(d, h, top, rough) -> np.ndarray:
-    """(..., 4) heights each type gives nodes at signed distance d over the relief's drawn height h, with top
-    the cliff's top inland and rough a noise in [0, 1). Each returns to h by the inner end of its band."""
+    """(..., 5) heights each type gives nodes at signed distance d over the relief's drawn height h (a causeway's
+    bank where one stands), with top the cliff's top inland and rough a noise in [0, 1). Each returns to h by the
+    inner end of its band; riprap is the bank itself, which h already holds."""
     d, h = np.asarray(d, float), np.asarray(h, float)
     land = d >= 0
     beach = SHALLOW_Y + BEACH_SLOPE * np.maximum(d, 0)
@@ -146,12 +154,13 @@ def profiles(d, h, top, rough) -> np.ndarray:
                     np.where(land, rock + (h - rock) * smooth(6.0, 12.0, d), SHALLOW_Y),
                     np.where(land, cliff + (h - cliff) * smooth(CLIFF_W - 10.0, CLIFF_W, d),
                              np.where(d > -1.2 * STEP, CLIFF_FOOT, SHALLOW_Y)),
-                    np.where(land, mud + (h - mud) * smooth(8.0, 20.0, d), SHALLOW_Y)], axis=-1)
+                    np.where(land, mud + (h - mud) * smooth(8.0, 20.0, d), SHALLOW_Y),
+                    np.where(land, np.maximum(h, SHALLOW_Y), SHALLOW_Y)], axis=-1)
     return out
 
 
 def colours(d, base, rough) -> np.ndarray:
-    """(..., 4, 3) colours each type gives nodes at signed distance d over the ground's own colour base, with
+    """(..., 5, 3) colours each type gives nodes at signed distance d over the ground's own colour base, with
     rough a noise in [0, 1). At sea, the type's shallows fading into the sea's colour, foam at the edge."""
     d, base, rough = np.asarray(d, float), np.asarray(base, float), np.asarray(rough, float)[..., None]
     sea = (d < 0)[..., None]
@@ -159,7 +168,8 @@ def colours(d, base, rough) -> np.ndarray:
                      np.multiply(SAND, smooth(1.0, 4.0, d)[..., None])),
               np.add(np.multiply(ROCK_DARK, 1 - rough), np.multiply(ROCK_LIGHT, rough)),
               np.add(np.multiply(CLIFF_ROCK, 0.8 + 0.3 * rough), 0.0),
-              np.add(np.multiply(MUD, 0.9 + 0.2 * rough), 0.0)]
+              np.add(np.multiply(MUD, 0.9 + 0.2 * rough), 0.0),
+              np.add(np.multiply(RIPRAP_ROCK, 0.75 + 0.4 * rough), 0.0)]
     out = []
     for t in range(len(TYPES)):
         a, b = BAND[t]
@@ -167,7 +177,7 @@ def colours(d, base, rough) -> np.ndarray:
         land = land_c[t] * (1 - g) + base * g
         w = smooth(0.0, SHALLOWS[t], -d)[..., None]
         water = np.multiply(SHALLOW[t], 1 - w) + np.multiply(SEA_COLOUR, w)
-        if t in (BEACH, ROCK):
+        if t in (BEACH, ROCK, RIPRAP):
             foam = (1 - smooth(0.0, 1.5 if t == BEACH else 1.0, -d))[..., None] * 0.6
             water = water * (1 - foam) + np.multiply(FOAM, foam)
         if t == CLIFF:  # the face and its foot are rock down into the water
@@ -228,7 +238,7 @@ def on_coarse(values, i: int, j: int, x, z) -> np.ndarray:
 @dataclass
 class Field:
     """A coastal cell's shore grid, NODES x NODES from its corner (x0, z0): per node its signed distance d, its
-    type shares w (4), how much shore shape it takes (keep), its height y, normal n and colour rgb, and whether
+    type shares w (5), how much shore shape it takes (keep), its height y, normal n and colour rgb, and whether
     the ground is left out there (out: past the shallows)."""
 
     x0: float
@@ -275,9 +285,10 @@ def field(shore, i: int, j: int) -> Field:
     m = MARGIN
     t = (np.arange(-m, NODES + m)) * STEP
     x, z = np.meshgrid(i * CELL + t, j * CELL + t)
-    sea = terrain.height(x, z) < SEA
+    bank = shore.causeways.top(x, z) if getattr(shore, "causeways", None) is not None else np.full(x.shape, -np.inf)
+    sea = np.maximum(terrain.height(x, z), bank) < SEA
     d = signed(sea)
-    h = drawn(terrain, x, z)
+    h = np.maximum(drawn(terrain, x, z), bank)
     gz, gx = np.gradient(d, STEP)
     g = np.hypot(gx, gz)
     ux, uz = np.where(g > 1e-6, gx / np.maximum(g, 1e-6), 0.0), np.where(g > 1e-6, gz / np.maximum(g, 1e-6), 0.0)
@@ -300,7 +311,9 @@ def field(shore, i: int, j: int) -> Field:
     if shore.cover is not None:
         codes = shore.cover.sample(x, z)
         marks["mangrove"] |= near & np.isin(codes, (90, 95))
-    types = kind(marks["cliff"], marks["beach"], marks["mangrove"], steep)
+    # riprap a blur's width past the bank, so the blurred shares leave the bank wholly riprap
+    riprap = blur(np.isfinite(bank).astype(float), round(BLUR / STEP / 2)) > 0
+    types = kind(marks["cliff"], marks["beach"], marks["mangrove"], steep, riprap)
     w = shares(types)
     top = np.where(marks["cliff"], np.maximum(top, SHALLOW_Y + CLIFF_MIN), top)
     rough = fbm(x.ravel(), z.ravel(), 3.0, seed=11).reshape(x.shape)
@@ -363,6 +376,9 @@ def built_near(world, i: int, j: int):
 
 ROCK_EVERY = 3.0  # metres between candidate rock spots, before jitter
 ROCK_SHARE = 0.4  # share of candidate spots on the rock band that hold a rock
+RIPRAP_EVERY = 1.8  # metres between candidate riprap spots, before jitter: the slope is laid with rock
+RIPRAP_SHARE = 0.8
+RIPRAP_SIZE = (0.6, 0.8)  # metres: the least size of a riprap rock and how much more it may be
 MANGROVE_EVERY = 5.0  # metres between candidate mangrove spots, before jitter
 MANGROVE_SHARE = 0.75
 
@@ -395,6 +411,18 @@ def rocks(f: Field) -> tuple[np.ndarray, np.ndarray]:
     return xz[keep_], seeds[keep_]
 
 
+def riprap(f: Field) -> tuple[np.ndarray, np.ndarray]:
+    """(xz, seeds) of the big rocks of a causeway's riprap on cell f: over its slope, from a little under the water
+    to the shoulder's edge, where the grass starts."""
+    from contravia.rules.trees import unit
+
+    xz, seeds = spots(f, RIPRAP_EVERY, 17)
+    d = f.sample(f.d, xz[:, 0], xz[:, 1])
+    w = f.sample(f.w, xz[:, 0], xz[:, 1])
+    on = (w[:, RIPRAP] > 0.5) & (d > -2.5) & (d < BAND[RIPRAP][0] - 0.2) & (unit(seeds, 25) < RIPRAP_SHARE)
+    return xz[on], seeds[on]
+
+
 def mangroves(f: Field) -> tuple[np.ndarray, np.ndarray]:
     """(xz, y): where mangroves stand on cell f, in the shallows and the mud behind them, and the height their
     trunks stand at: the water's on the water, the ground's on land."""
@@ -412,19 +440,23 @@ def mangroves(f: Field) -> tuple[np.ndarray, np.ndarray]:
 
 
 def dress(mb, f: Field) -> None:
-    """Add what the cell's mesh draws on its shore f: its rocks."""
+    """Add what the cell's mesh draws on its shore f: its rocks, and the riprap along a causeway."""
     xz, seeds = rocks(f)
     rock_mesh(mb, xz, seeds, f.height(xz[:, 0], xz[:, 1]) if len(xz) else np.zeros(0))
+    xz, seeds = riprap(f)
+    rock_mesh(mb, xz, seeds, f.height(xz[:, 0], xz[:, 1]) if len(xz) else np.zeros(0), size=RIPRAP_SIZE,
+              colour=RIPRAP_ROCK)
 
 
-def rock_mesh(mb, xz, seeds, y) -> None:
-    """Add a lumpy low rock at each spot xz, standing on heights y, its size, turn and lumps from its seed."""
+def rock_mesh(mb, xz, seeds, y, size=(0.35, 0.9), colour=ROCK_LIGHT) -> None:
+    """Add a lumpy low rock at each spot xz, standing on heights y, its size (at least size[0] metres and up to
+    size[1] more), turn and lumps from its seed, in colour."""
     from contravia.rules.trees import unit
 
     if not len(xz):
         return
     v, faces = _ico()
-    size = 0.35 + 0.9 * unit(seeds, 31) ** 2
+    size = size[0] + size[1] * unit(seeds, 31) ** 2
     flat = 0.45 + 0.3 * unit(seeds, 32)
     yaw = 2 * np.pi * unit(seeds, 33)
     tone = 0.75 + 0.35 * unit(seeds, 34)
@@ -442,7 +474,7 @@ def rock_mesh(mb, xz, seeds, y) -> None:
         pos.append(q)
         nrm.append(np.repeat(fn, 3, axis=0))
         shade = np.repeat(0.85 + 0.15 * fn[:, 1], 3)[:, None]
-        col.append(np.clip(np.multiply(ROCK_LIGHT, tone[k]) * shade, 0, 1))
+        col.append(np.clip(np.multiply(colour, tone[k]) * shade, 0, 1))
         tri.append(base + np.arange(len(q)).reshape(-1, 3))
         base += len(q)
     mb.add(np.vstack(pos), np.vstack(nrm), np.vstack(col), np.vstack(tri))

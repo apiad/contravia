@@ -21,8 +21,8 @@ metres further, so a car leaving the street rolls down a slope instead of droppi
 as triangles, like the pavements, and never digs below it. Every raised edge is bevelled: its top runs BEVEL
 times its height outward down to the street or the ground, so a wheel rolls up a kerb instead of hitting it.
 
-A park's block (contravia.parks) is paved by its layout instead: its kerb round the edge (or the whole Prado) as
-a pavement, its paths and plazas PATH_LIFT over the lawn and its dirt paths DIRT_LIFT.
+A park's block (contravia.parks) is paved by its layout instead: its kerb round the edge (or the whole Prado, or
+a town plaza in its tiles) as a pavement, its paths and plazas PATH_LIFT over the lawn and its dirt paths DIRT_LIFT.
 
 Everything is stored as walk_tris, with walk_paint telling each triangle's zone and part (paint()), so the cells
 draw it and the wheels stand on it (contravia/surface.py). `contravia walks <data.npz>` rebuilds it in place
@@ -61,6 +61,7 @@ PATH_LIFT, DIRT_LIFT = 0.05, 0.03  # metres a park's paths and its dirt paths st
 TOP, KERB_FACE, APRON_TOP, APRON_EDGE, PATH_TOP, PATH_EDGE, DIRT_TOP, DIRT_EDGE = range(8)  # the parts of walk_paint
 PARTS = 8  # each top is followed by its edge
 SHOULDER_CODE, SLOPE_CODE = 3 * PARTS, 3 * PARTS + 1  # walk_paint of a verge's shoulder and slope, past every zone
+PLAZA_CODE = 3 * PARTS + 2  # walk_paint of a town plaza's tiles (contravia.parks.PLAZA), in every zone
 BEVEL = 1.5  # metres outward per metre of height of a raised edge's bevel
 VERGE_MIN = 0.1  # metres a street's edge stands over the ground for a verge to lead off it
 SHOULDER = 0.5  # metres of a verge's shoulder, level with the street's edge
@@ -394,7 +395,8 @@ def build(a, terrain) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
                                         (shapely.union_all(park.dirt) if park.dirt else None, DIRT_TOP, DIRT_LIFT, 0.2)):
                 if g is not None and not g.is_empty:
                     geoms.append(shapely.make_valid(g))
-                    codes.append(paint(zone, part)), lifts.append(lift), drops.append(drop)
+                    code = PLAZA_CODE if park.kind == parks.PLAZA and part == TOP else paint(zone, part)
+                    codes.append(code), lifts.append(lift), drops.append(drop)
         if geoms:
             parts, gi, ci = _pieces(np.array(geoms, dtype=object), land, boxes)
             t, p, k = _mesh(parts, ci, np.array(codes)[gi], np.array(lifts)[gi], np.array(drops)[gi], SAMPLE, heights,
