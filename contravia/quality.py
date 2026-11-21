@@ -6,8 +6,10 @@ them. PRESETS gives five: Bajo for a laptop, Medio, Alto, Ultra for a high-end c
 capture tool uses and which ignores the frame time. A player who turns one knob alone plays "Personalizado":
 a preset with some knobs changed, each to a value some preset uses (its ladder).
 
-The effects manifoldx does not have yet (cascaded shadows, ambient occlusion, bloom, a reflecting sea and the
-rest, spec docs/superpowers/specs/2026-11-21-graphics-quality-design.html) become fields here as they land.
+The screen-space effects (manifoldx.post: ambient occlusion, bloom, light shafts, a colour grade and FXAA) are
+knobs too; Alto turns on all but the shafts. The effects manifoldx does not have yet (cascaded shadows, a
+reflecting sea and the rest, spec docs/superpowers/specs/2026-11-21-graphics-quality-design.html) become fields
+here as they land.
 """
 
 from __future__ import annotations
@@ -34,6 +36,11 @@ class Quality:
     minimap: tuple[int, int] = (256, 4)  # the minimap's texture side in pixels, fewest frames between two renders
     target_ms: float = 20.0  # the frame time the streamer's tau is tuned toward
     tune: bool = True  # whether tau follows the frame time within its range
+    fxaa: bool = True  # smooth the edges of the finished frame
+    ssao: float = 3.0  # the reach of the darkening in corners and at the foot of walls, metres; 0 turns it off
+    bloom: float = 0.5  # how much what is brightest glows past its edge; 0 turns it off
+    shafts: float = 0.0  # how strong the rays from the sun are when it is in the frame; 0 turns them off
+    grade: tuple[float, float, float] = (1.15, 1.1, 0.3)  # saturation, contrast, vignette of the finished frame
 
     def changed(self, **knobs) -> Quality:
         """This quality with some knobs turned, each to a value of its ladder; anything else is a ValueError."""
@@ -58,16 +65,17 @@ PRESETS = {
     "bajo": Quality(tau=(24.0, 72.0), far=7000.0, fog_clear=(1500.0, 6000.0), detail_radius=0, detail_noise=False,
                     tree_lod=(35.0, 90.0), foliage_near=0.0, grass=(0.0, 25.0, 60, 10), grave_lod=(30.0, 90.0),
                     traffic_radius=200.0, shadow=(80.0, 1024, 0), rain_pool=1000, minimap=(192, 8),
-                    target_ms=33.3),
+                    target_ms=33.3, fxaa=False, ssao=0.0, bloom=0.0, grade=(1.0, 1.0, 0.0)),
     "medio": Quality(tau=(16.0, 64.0), far=11000.0, fog_clear=(2000.0, 9000.0), tree_lod=(45.0, 120.0),
                      foliage_near=15.0, grass=(12.0, 30.0, 40, 12), grave_lod=(40.0, 120.0), traffic_radius=300.0,
-                     rain_pool=2000, target_ms=25.0),
+                     rain_pool=2000, target_ms=25.0, ssao=0.0, bloom=0.3, grade=(1.08, 1.05, 0.2)),
     "alto": Quality(),
     "ultra": Quality(tau=(8.0, 32.0), detail_radius=2, tree_lod=(90.0, 240.0), foliage_near=40.0,
                      grass=(30.0, 70.0, 90, 24), grave_lod=(70.0, 200.0), rain_pool=6000, minimap=(384, 2),
-                     target_ms=16.7),
+                     target_ms=16.7, ssao=4.0, bloom=0.6, shafts=0.6),
     "cine": Quality(tau=(5.0, 5.0), detail_radius=2, tree_lod=(120.0, 320.0), foliage_near=60.0,
-                    grass=(40.0, 90.0, 120, 32), grave_lod=(90.0, 260.0), rain_pool=10000, tune=False),
+                    grass=(40.0, 90.0, 120, 32), grave_lod=(90.0, 260.0), rain_pool=10000, tune=False, ssao=4.0,
+                    bloom=0.6, shafts=0.8),
 }
 NAMES = {"bajo": "Bajo", "medio": "Medio", "alto": "Alto", "ultra": "Ultra", "cine": "Cine"}
 PLAYER = ("bajo", "medio", "alto", "ultra")  # the presets the options offer; Cine is for the capture tool
@@ -87,6 +95,11 @@ KNOBS = {
     "shadow": "Sombras",
     "rain_pool": "Gotas de lluvia",
     "minimap": "Minimapa",
+    "fxaa": "Suavizado de bordes",
+    "ssao": "Sombras en las esquinas",
+    "bloom": "Brillo",
+    "shafts": "Rayos de sol",
+    "grade": "Color",
 }
 
 
@@ -135,5 +148,18 @@ def apply(game, q: Quality, name: str, pinned: bool = False) -> None:
                                                   detail=q.detail_noise)
     for part in (game.forest, game.graveyard, game.grass, game.rain, game.atmosphere):
         part.configure(q)
+    set_post(game.engine, q)
     game.hud.configure_quality(q)
     game.engine.state.quality = {"preset": name, **asdict(q), "error": None, "pinned": pinned}
+
+
+def set_post(engine, q: Quality) -> None:
+    """The screen-space effects of a quality, on a manifoldx with them (manifoldx.post); a no-op on one without."""
+    if not hasattr(engine, "set_post"):
+        return
+    from manifoldx.post import SSAO, Bloom, Grade, LightShafts
+
+    engine.set_post(fxaa=q.fxaa, ssao=SSAO(radius=q.ssao) if q.ssao else None,
+                    bloom=Bloom(intensity=q.bloom) if q.bloom else None,
+                    shafts=LightShafts(intensity=q.shafts) if q.shafts else None,
+                    grade=Grade(*q.grade) if q.grade != (1.0, 1.0, 0.0) else None)

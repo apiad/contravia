@@ -72,3 +72,20 @@ def test_apply_builds_the_detail_ring_one_past_the_drawn_one():
     assert game.detail_radius == 2 and game.detail.ready_radius == 3
     apply(game, PRESETS["bajo"], "bajo")
     assert game.detail.ready_radius == 2
+
+
+def test_the_presets_set_the_screen_effects():
+    from types import SimpleNamespace as NS
+
+    from contravia.quality import PRESETS, set_post
+
+    calls = []
+    engine = NS(set_post=lambda **k: calls.append(k))
+    set_post(engine, PRESETS["bajo"])
+    set_post(engine, PRESETS["alto"])
+    set_post(engine, PRESETS["ultra"])
+    bajo, alto, ultra = calls
+    assert not bajo["fxaa"] and bajo["ssao"] is bajo["bloom"] is bajo["shafts"] is bajo["grade"] is None
+    assert alto["fxaa"] and alto["ssao"].radius == 3.0 and alto["bloom"].intensity == 0.5 and alto["shafts"] is None
+    assert ultra["shafts"].intensity == 0.6 and ultra["ssao"].radius == 4.0
+    set_post(NS(), PRESETS["alto"])  # a manifoldx without set_post: nothing to do
