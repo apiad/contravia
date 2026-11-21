@@ -59,6 +59,8 @@ MARK_LIFT = 0.02  # metres above the asphalt
 GRADE = 0.08  # the steepest a ramp onto a bridge or down into a tunnel climbs, 8 %
 CARRY = 0.3  # metres: a ramp still this far from a street's own height at its far end goes on through the junction
 ACROSS = 0.7  # the least cosine between a street and the one a ramp goes straight on to through a junction
+APART = 3.0  # metres: two levels' ribbons that overlap closer than this in height are no crossing, and are cut apart
+SIDE = 0.16  # the grade of a ramp on a street that turns off at a junction the ramp passes: twice as steep
 BRIDGE_CLEAR = 6.0  # metres from a street up to the bridge crossing it: 5 m of headroom and the deck
 BRIDGE_STEP = 2.0  # metres between the samples of a bridge's profile, so no street under it is missed
 TUNNEL_DEPTH = 8.0  # metres of a tunnel under the ground: its headroom, roof and cover
@@ -430,7 +432,7 @@ def network(J, edges, forced, cache, stops=frozenset()):
                     pts.append(q[1:])
                     b_end = nxt
                 else:
-                    pts.insert(0, q[::-1][1:][::-1])
+                    pts.insert(0, q[::-1][:-1])
                     a_end = nxt
                 node = nxt
         chains.append(Edge(a_end, b_end, np.vstack(pts), e0.w, e0.cls, e0.oneway, e0.paired))
@@ -718,6 +720,7 @@ def build(a, widths, walls=()):
     J, edges = load(a, widths)
     if walls:
         J, edges = _cut_at_walls(J, edges, walls)
+    _flatten_layers(edges)
     levels = defaultdict(list)
     for e in edges:
         levels[e.layer].append(e)
@@ -728,8 +731,10 @@ def build(a, widths, walls=()):
     for layer in sorted(levels, key=lambda x: (x != 0, abs(x), x)):
         Jl = J if layer == 0 else _onto_ground(J, levels[layer], ground_nodes, ends)
         ribbons, owner, axes, rings, rnode, chains = _level_pieces(Jl, levels[layer], portals)
-        if layer < 0 and ground is not None:
+        if layer and ground is not None:
             ribbons, owner, axes = _off_ground(ribbons, owner, axes, ground)
+            rings = _reach_ground(rings, axes, [Jl[n] for n in {n for e in levels[layer] for n in (e.f, e.t)}
+                                                & ground_nodes], ground)
         for c in chains:
             c.layer = layer
         if layer == 0 and chains:
@@ -744,6 +749,23 @@ def build(a, widths, walls=()):
         out[5] += chains
     out[0] = _split_twins(out[0], out[2], [k for k, o in enumerate(out[1]) if out[5][o].layer < 0])
     return tuple(out)
+
+
+def _flatten_layers(edges):
+    """OSM's layer orders what crosses at one spot; it is not a depth. A bridge or tunnel on a layer beyond 1 (the
+    Bay tunnel's bores, -1 and -3) that crosses no bridge or tunnel of another layer goes to layer 1 (or -1), so
+    it is built and settled with the rest of its structure."""
+    odd = [e for e in edges if abs(e.layer) > 1]
+    if not odd:
+        return
+    lifted = [e for e in edges if e.layer]
+    lines = [LineString(e.p) for e in lifted]
+    tree = STRtree(lines)
+    for e in odd:
+        line = LineString(e.p)
+        hits = [lifted[i] for i in tree.query(line, predicate="crosses")]
+        if not any(o.layer != e.layer and o.layer * e.layer > 0 for o in hits):
+            e.layer = 1 if e.layer > 0 else -1
 
 
 def _split_twins(ribbons, axes, tubes):
@@ -766,6 +788,85 @@ def _split_twins(ribbons, axes, tubes):
     return ribbons
 
 
+def _apart(ribbons, axes, layers, prof, moved=()):
+    """The ribbons with every bridge or tunnel cut apart from a ribbon of another level it overlaps without
+    passing APART over or under it, halfway between their centrelines; and so every ground ribbon a ramp took
+    off the ground (moved) from a ground ribbon it overlaps at another height.
+
+    A bridge crosses a street BRIDGE_CLEAR above it. A ramp that leaves a junction beside a bridge's end, the
+    open approach of one carriageway beside the other's tunnel, or two approaches side by side at different
+    heights lie partly on the same plan a little higher or lower: a wheel there would jump from one to the
+    other. Each keeps its side only when that leaves both in one piece."""
+    out = list(ribbons)
+    lifted = [k for k, L in enumerate(layers) if L] + sorted(moved)
+    if not lifted:
+        return out
+    moved = set(moved)
+    tree, lines = built_tree(ribbons), {}
+
+    def y(k, pts):
+        if k not in lines:
+            lines[k] = LineString(axes[k])
+        return np.interp(shapely.line_locate_point(lines[k], pts), *prof[k])
+
+    for k in lifted:
+        for j in tree.query(ribbons[k], predicate="intersects"):
+            j = int(j)
+            if j == k or (layers[j] == layers[k] and (layers[k] or (j in moved and j < k))):
+                continue
+            if layers[j] and (layers[k] == 0 or j < k):  # each pair once, from its bridge or tunnel
+                continue
+            both = out[k].intersection(out[j])
+            if both.area < 1.0:
+                continue
+            pts = shapely.points(shapely.get_coordinates(both.segmentize(4.0)))
+            gap = np.abs(y(k, pts) - y(j, pts))
+            if gap.min() >= APART or (layers[k] == layers[j] and gap.max() < 0.15):
+                continue
+            a = densify(axes[k], 2.0)
+            cells = shapely.voronoi_polygons(shapely.multipoints(np.vstack([a, densify(axes[j], 2.0)])),
+                                             extend_to=out[k].union(out[j]).envelope).geoms
+            mine = shapely.points(a)
+            side = shapely.union_all([c for c in cells if shapely.intersects(c, mine).any()])
+            cut = [out[k].difference(out[j].difference(side)), out[j].difference(out[k].intersection(side))]
+            kept = [largest(c) for c in cut]
+            # two ribbons along the same line (a ford beside its bridge) do not part into two sides: left as they are
+            if all(p is not None and p.area > c.area - 1.0 for p, c in zip(kept, cut)):
+                out[k], out[j] = kept
+    return out
+
+
+def _reach_ground(rings, axes, portals, ground):
+    """A bridge's or tunnel's junctions with a strip added from each ground street that starts at one of them.
+
+    A bridge whose last metres are too short to stand apart is merged into the junction of its own level beside
+    it. No ribbon of the level then ends at the ground street that goes on from there (at one of the points
+    portals), and the junction's piece stops short of it: a gap with no street. The junction gets the street's
+    width from the street's end straight on until it is inside the junction. ground is as in _off_ground."""
+    _, _, gribs, gaxes = ground
+    if not len(rings) or not gaxes or not portals:
+        return rings
+    rings = list(rings)
+    ends = np.array([q[i] for q in axes for i in (0, -1)]).reshape(-1, 2)
+    starts = built_tree(shapely.points(np.array([q[i] for q in gaxes for i in (0, -1)])))
+    tree = built_tree(rings)
+    for p in portals:
+        if len(ends) and np.hypot(*(ends - p).T).min() < 2.0:  # a ribbon of the level ends here
+            continue
+        P = shapely.Point(p)
+        i = tree.query_nearest(P, max_distance=20.0)
+        if not len(i):
+            continue
+        i = int(i[0])
+        for g in starts.query(P, predicate="dwithin", distance=0.05):
+            q, rib = gaxes[int(g) // 2], gribs[int(g) // 2]
+            u = unit(q[0] - q[1] if int(g) % 2 == 0 else q[-1] - q[-2])  # on past the street's end
+            half = rib.area / max(float(arclen(q)[-1]), 1e-9) / 2
+            strip = LineString([p, p + u * (rings[i].distance(P) + half)]).buffer(half, cap_style="flat")
+            rings[i] = largest(shapely.union_all([rings[i], strip.difference(rib)])) or rings[i]
+    return rings
+
+
 def _onto_ground(J, edges, ground_nodes, ends):
     """J with each node where these edges meet the ground moved onto the nearest end of a ground street
     within 20 m, where the ground's own clusters put it."""
@@ -784,15 +885,16 @@ def _onto_ground(J, edges, ground_nodes, ends):
 
 
 def _off_ground(ribbons, owner, axes, ground):
-    """A tunnel's pieces fitted to the ground pieces they start from.
+    """A tunnel's or a bridge's pieces fitted to the ground pieces they start from.
 
     _onto_ground puts each end at the end of a ground street, which is the centre of the junction when one is
-    there: left as it is, the tunnel would run on into that junction, two surfaces at different heights in one
-    place, with the walls of one across the other. Each end in a junction is cut back along its centreline to
-    the junction's edge, and the ribbon loses what still lies in it. An end where a ground street starts gets
-    the sliver between the two squared ends, which meet at a slight angle: through that crack a wheel would see
-    only a street crossing above. ground is (an STRtree of the ground junctions, the junctions, the ground
-    ribbons and their centrelines)."""
+    there: left as it is, the tunnel or bridge would run on into that junction, two surfaces at different
+    heights in one place (a junction is flat or a plane, a bridge climbs from its first metre), with the walls
+    of one across the other. Each end in a junction is cut back along its centreline to the junction's edge,
+    and the ribbon loses what still lies in it. An end where a ground street starts gets the sliver between
+    the two squared ends, which meet at a slight angle: through that crack a wheel would fall to the ground
+    under a bridge, or see only a street crossing above a tunnel. ground is (an STRtree of the ground
+    junctions, the junctions, the ground ribbons and their centrelines)."""
     tree, rings, gribs, gaxes = ground
     starts = built_tree(shapely.points(np.array([q[i] for q in gaxes for i in (0, -1)]))) if gaxes else None
     out_r, out_a = [], []
@@ -936,7 +1038,7 @@ class _Drawn:
         return drawn(self.terrain, x, z)
 
 
-def heights(ribbons, owner, axes, rings, rnode, chains, terrain):
+def heights(ribbons, owner, axes, rings, rnode, chains, terrain, moved=None):
     """A plane per ground junction, a height per bridge or tunnel junction, and a height profile and a cross
     slope per ribbon.
 
@@ -950,7 +1052,8 @@ def heights(ribbons, owner, axes, rings, rnode, chains, terrain):
     streets they leave from ramp up or down to meet them (_ramp_to), level across too.
     Returns (junction heights: the plane's height at its fitted centre, or the flat height, [(arclengths,
     heights)] along each centreline, [cross slopes at those arclengths], {junction: Plane}). A point of ribbon
-    k at arclength s and distance u to the left of its centreline stands at heights + u * cross slope."""
+    k at arclength s and distance u to the left of its centreline stands at heights + u * cross slope. A set
+    `moved` gets the ground ribbons a ramp took off the ground."""
     layer = [chains[owner[k]].layer for k in range(len(axes))]
     ground_rings = [(r, n) for r, n in zip(rings, rnode) if not isinstance(n, tuple)]
     seen = _Drawn(terrain)
@@ -987,9 +1090,11 @@ def heights(ribbons, owner, axes, rings, rnode, chains, terrain):
     gring = [i for i, n in enumerate(rnode) if not isinstance(n, tuple)]
     near = _Ends(ground, axes, [rings[i] for i in gring],
                  [rnode[i] for i in gring], [(chains[owner[k]].f, chains[owner[k]].t) for k in ground])
+    near.portals = built_tree(shapely.points(np.array([axes[k][i] for k in range(len(axes)) if layer[k]
+                                                       for i in (0, -1)])))
     for L in sorted({x for x in layer if x}, key=lambda x: (abs(x), x)):
         # what this level passes over or under: the ground and the levels nearer to it, already final
-        below = [k for k in range(len(axes)) if (layer[k] < L if L > 0 else layer[k] > L) and layer[k] * L >= 0]
+        below = [k for k in range(len(axes)) if (layer[k] < L if L > 0 else 0 >= layer[k] > L)]
         lower = [ribbons[k] for k in below] + [rings[i] for i in gring]
         tree = built_tree(lower) if lower else None
 
@@ -1010,32 +1115,68 @@ def heights(ribbons, owner, axes, rings, rnode, chains, terrain):
                 y[p_] = v if np.isnan(y[p_]) else max(y[p_], v)
             return y
 
-        for k in [k for k in range(len(axes)) if layer[k] == L]:
-            out[k] = structure_profile(axes[k], chains[owner[k]].w, L, terrain, y_lower)
+        ks = [k for k in range(len(axes)) if layer[k] == L]
+        for k in ks:
+            room = (np.inf, np.inf) if L > 0 else (near.free(axes[k][0]), near.free(axes[k][-1]))
+            out[k] = structure_profile(axes[k], chains[owner[k]].w, L, terrain, y_lower, room)
             tilts[k] = np.zeros(len(out[k][0]))
         if L < 0:
-            _share_twins([k for k in range(len(axes)) if layer[k] == L], axes, out)
-        for i, n in enumerate(rnode):  # a junction on a bridge or in a tunnel: at its streets' mean end height
-            if isinstance(n, tuple) and n[0] == L:
-                ys = [out[k][1][0 if chains[owner[k]].f == n[1] else -1] for k in range(len(axes))
-                      if layer[k] == L and n[1] in (chains[owner[k]].f, chains[owner[k]].t)]
-                if ys:
-                    hj[n] = float(np.mean(ys))
-        for k in [k for k in range(len(axes)) if layer[k] == L]:
-            h = out[k][1]
-            for end, y in ((axes[k][0], h[0]), (axes[k][-1], h[-1])):
-                _ramp_to(end, float(y), L > 0, near, hj, out, tilts, planes)
+            _share_twins(ks, axes, out)
+
+        def ground_at(point, up=L > 0):
+            """The height of the ground street or junction a bridge's or tunnel's end at point leaves from, and
+            that junction: (None, None) off the ground."""
+            nodes, streets = near.at(point)
+            ys = [float(planes[n](point)[0]) if n in planes else hj[n] for n in nodes]
+            ys += [float(out[k][1][0 if at_start else -1]) for k, at_start in streets  # those ending at the point
+                   if not nodes or np.hypot(*(near.axis[k][0 if at_start else -1] - point)) <= AT_END]
+            return ((max if up else min)(ys) if ys else None), (nodes[0] if nodes else None)
+
+        leaving = {}  # a junction of this level -> the ends of the ground streets that start at its edge
+        for i, n in enumerate(rnode):
+            if isinstance(n, tuple) and n[0] == L and near.ends is not None:
+                for g in near.ends.query(rings[i], predicate="dwithin", distance=0.3):
+                    k2, at_start = near.k[int(g) // 2], int(g) % 2 == 0
+                    if near.node_of.get((k2, at_start)) not in ring_of:  # no junction of its own there
+                        leaving.setdefault(n[1], []).append((k2, at_start))
+        was = None
+        for _ in range(4):  # a ramp can lift the junction another end leaves from: agree again until none moves
+            ends = _agree(ks, L > 0, [(chains[owner[k]].f, chains[owner[k]].t) for k in ks], axes, out, ground_at,
+                          {n: [float(out[k2][1][0 if st else -1]) for k2, st in v] for n, v in leaving.items()})
+            now = np.array([out[k][1][i] for k in ks for i in (0, -1)])
+            if was is not None and np.abs(now - was).max() < 0.01:
+                break
+            was = now
+            for k in ks:
+                h = out[k][1]
+                for end, y in ((axes[k][0], h[0]), (axes[k][-1], h[-1])):
+                    _ramp_to(end, float(y), L > 0, near, hj, out, tilts, planes)
+            for n, v in leaving.items():
+                for k2, at_start in v:
+                    if n in ends:
+                        _ramp_to(near.axis[k2][0 if at_start else -1], ends[n], L > 0, near, hj, out, tilts, planes)
+        for n in rnode:  # a junction on a bridge or in a tunnel: at the height its streets end at
+            if isinstance(n, tuple) and n[0] == L and n[1] in ends:
+                hj[n] = ends[n[1]]
+    if moved is not None:
+        moved.update(k for k in ground if np.abs(out[k][1] - done[k][1]).max() > 0.05)
     return hj, out, tilts, planes
 
 
-def structure_profile(axis, width, layer, terrain, y_lower):
+def structure_profile(axis, width, layer, terrain, y_lower, room=(np.inf, np.inf)):
     """(arclengths, heights) of a bridge (layer > 0) or a tunnel (layer < 0) along its centreline.
 
     A bridge never dips below the straight line between its ends nor below the ground, and stands
-    BRIDGE_CLEAR above every street it crosses, climbing to it at GRADE. A tunnel never rises above the
+    BRIDGE_CLEAR above every street it crosses, climbing to it at GRADE; between two places it has to stand
+    high over, its deck runs straight instead of coming down and up again (_arch). A tunnel never rises above the
     straight line between its ends, and runs TUNNEL_DEPTH under the ground or SEA_DEPTH under the sea,
     going down to it at GRADE; its ends sit as deep as the ground there allows, and the streets it leaves
-    from go down to them."""
+    from go down to them.
+
+    room is how many metres of street each end of a tunnel has to ramp down on before a junction (_Ends.free):
+    a mouth sits no deeper than that street can reach at GRADE, and the tunnel goes on down inside, so the
+    ramp does not sink a junction and the streets round it. What a tunnel has to pass under still decides:
+    BRIDGE_CLEAR under a street crossing over it, SEA_DEPTH under the sea."""
     from contravia.rules.ground import SEA
 
     q = densify(axis, BRIDGE_STEP if layer > 0 else SAMPLE)
@@ -1049,10 +1190,29 @@ def structure_profile(axis, width, layer, terrain, y_lower):
         h = np.maximum(lin, g)
         if hit.any():
             h = np.maximum(h, (under[hit][None, :] + BRIDGE_CLEAR - GRADE * d[:, hit]).max(axis=1))
-        return s, h
+        return s, _arch(s, h)
     raw = terrain.height(q[:, 0], q[:, 1])
     need = np.where(raw < SEA, -SEA_DEPTH, raw - TUNNEL_DEPTH)
-    return s, np.minimum(lin, (need[None, :] + GRADE * d).min(axis=1))
+    h = (need[None, :] + GRADE * d).min(axis=1)
+    if np.isfinite(room).any():
+        over = y_lower(q)
+        must = np.where(raw < SEA, -SEA_DEPTH, np.inf)
+        hit = ~np.isnan(over) & (s > END_FREE) & (s < s[-1] - END_FREE)  # not the street it leaves from
+        must[hit] = np.minimum(must[hit], over[hit] - BRIDGE_CLEAR)
+        reach = np.maximum(g[0] - GRADE * (room[0] + s), g[-1] - GRADE * (room[1] + s[-1] - s))
+        h = np.minimum(np.maximum(h, reach), (must[None, :] + GRADE * d).min(axis=1))
+    return s, np.minimum(lin, h)
+
+
+def _arch(s, h):
+    """Heights h at arclengths s raised to their upper hull: straight between any two points, never below."""
+    hull = []
+    for i in range(len(s)):
+        while len(hull) >= 2 and ((s[hull[-1]] - s[hull[-2]]) * (h[i] - h[hull[-2]])
+                                  - (h[hull[-1]] - h[hull[-2]]) * (s[i] - s[hull[-2]])) >= 0:
+            hull.pop()
+        hull.append(i)
+    return np.interp(s, s[hull], h[hull])
 
 
 def _share_twins(tubes, axes, out):
@@ -1099,6 +1259,7 @@ class _Ends:
                 self.node_of[k, at_start] = node
                 self.meeting.setdefault(node, []).append((k, at_start))
         self.axis = dict(zip(ground, self.axes))
+        self.portals = None  # an STRtree of the ends of every bridge and tunnel, set by heights
 
     def at(self, point):
         """The ground junctions at point, and (ribbon, whether its start is the end there) for every ground
@@ -1117,6 +1278,32 @@ class _Ends:
                 out.append((self.k[n], at_start))
         return [self.nodes[i] for i in rings], out
 
+    def free(self, point):
+        """How many metres of ground street lead away from point before a junction where another street joins:
+        the room a ramp from a tunnel's mouth there has. inf when nothing on the ground starts at point."""
+        nodes, streets = self.at(point)
+        if nodes:
+            return 0.0 if any(len(self.meeting.get(n, ())) > 1 for n in nodes) else np.inf
+        if not streets:
+            return np.inf
+        best = 0.0
+        for k, at_start in streets:
+            got, seen = 0.0, set()
+            while k not in seen:
+                seen.add(k)
+                got += float(arclen(self.axis[k])[-1])
+                node = self.node_of.get((k, not at_start))
+                on = [x for x in self.meeting.get(node, ()) if x[0] != k]
+                far = shapely.Point(self.axis[k][-1 if at_start else 0])
+                if not on and self.portals is not None and far.distance(shapely.Point(point)) > AT_END and len(
+                        self.portals.query(far, predicate="dwithin", distance=AT_END)):
+                    return np.inf  # it leads into another tunnel or onto a bridge: no junction to spare
+                if len(on) != 1 or got > TUNNEL_DEPTH / GRADE:
+                    break
+                k, at_start = on[0]
+            best = max(best, got)
+        return best
+
     def straight_on(self, k, into_end, node):
         """The street that goes on most straight from ribbon k through the junction node at k's end into_end
         (its start when True), with whether its start is there; None when none turns less than ACROSS."""
@@ -1133,52 +1320,110 @@ class _Ends:
         return out
 
 
+def _agree(ks, up, nodes, axes, out, ground_at, also=None):
+    """The ribbons ks of one level brought to one height at each junction they share and to the ground's where an
+    end leaves it: {node: height}.
+
+    Each profile is solved on its own, so two bridges meeting at a junction on a viaduct arrive at different
+    heights, and a bridge's end can come out under the junction it leaves from. A junction takes the highest of
+    its ends (the lowest in a tunnel) and of the ground there (ground_at(point), None off the ground); every
+    ribbon then climbs to its two junctions no steeper than GRADE, which can lift its other end, until nothing
+    moves. Ground lower than an end is left to _ramp_to. also is {node: heights of ground streets that start at
+    that junction's own edge}, which count as its ground."""
+    pick, sign = (max, 1.0) if up else (min, -1.0)
+    at, same = {}, {}  # same: a node of this level -> the ground junction its end leaves from, shared by others
+    grounds = [[ground_at(axes[k][i]) for i in (0, -1)] for k in ks]
+    for (f, t), g in zip(nodes, grounds):
+        for node, (_, junction) in zip((f, t), g):
+            if junction is not None:
+                same[node] = ("ground", junction)
+    nodes = [(same.get(f, f), same.get(t, t)) for f, t in nodes]
+    for k, (f, t), g in zip(ks, nodes, grounds):
+        for node, i, (y, _) in ((f, 0, g[0]), (t, -1, g[1])):
+            ys = [float(out[k][1][i])] + ([at[node]] if node in at else [])
+            at[node] = pick(ys if y is None else ys + [y])
+    for node, ys in (also or {}).items():
+        node = same.get(node, node)
+        if node in at and ys:
+            at[node] = pick(ys + [at[node]])
+    for _ in range(4 * len(ks) + 4):
+        moved = False
+        for k, (f, t) in zip(ks, nodes):
+            s, h = out[k]
+            reach = np.stack([at[f] - sign * GRADE * s, at[t] - sign * GRADE * (s[-1] - s)])
+            new = np.maximum(h, reach.max(axis=0)) if up else np.minimum(h, reach.min(axis=0))
+            out[k] = (s, new)
+            for node, i in ((f, 0), (t, -1)):
+                if sign * (new[i] - at[node]) > 1e-6:
+                    at[node], moved = float(new[i]), True
+        if not moved:
+            break
+    return {**at, **{node: at[g] for node, g in same.items()}}
+
+
 def _ramp_to(point, y, up, near, hj, out, tilts, planes):
     """The ground streets that end at a bridge's or tunnel's end `point` climb (up) or go down to its height y
-    at GRADE, easing back to their own profile before their far end; a ground junction there takes y.
+    at GRADE, easing back to their own profile before their far end; a ground junction there lower than y (higher,
+    for a tunnel) takes y.
 
     A street too short to get back to its own height carries the ramp through the junction at its far end:
     that junction takes the height the ramp reaches there, the street going most straight on from it carries
-    the ramp on in turn, and the other streets meeting it ease to its new height. Every junction it sets is
+    the ramp on at GRADE and the streets that turn off there at SIDE, each through its own far junction in turn
+    when it is too short as well. A junction keeps the highest ramp that reaches it (the lowest, down to a
+    tunnel), and a street whose end stands past a junction's new height eases to it. A street too short that
+    ends at another bridge or tunnel keeps the ramp's height there, and that structure's end comes to it. Every junction it sets is
     flat, and a street it changes comes level across where it changed it (tilts), as the bridge or tunnel is."""
-    nodes, streets = near.at(point)
-    for node in nodes:
+    sign = 1.0 if up else -1.0
+    todo = []
+
+    def lift(node, y, at, came=None):
+        """Junction node, standing at height `at` where the ramp reaches it, takes y if that is past it."""
+        if sign * (y - at) < 0.02:
+            return
         hj[node] = y
         planes.pop(node, None)
-    todo, seen = [(k, at_start, y) for k, at_start in streets], set()
+        on = None if came is None else near.straight_on(came[0], came[1], node)
+        for k2, start2 in near.meeting.get(node, ()):
+            if came is None or k2 != came[0]:
+                todo.append((k2, start2, node, came is None or (on is not None and k2 == on[0])))
+
+    nodes, streets = near.at(point)
+    for node in nodes:
+        lift(node, y, float(planes[node](point)[0]) if node in planes else hj[node])
+    todo += [(k, at_start, None, True) for k, at_start in streets  # those ending at the point itself
+             if not nodes or np.hypot(*(near.axis[k][0 if at_start else -1] - point)) <= AT_END]
     while todo:
-        k, at_start, y0 = todo.pop()
-        if k in seen:
-            continue
-        seen.add(k)
+        k, at_start, node, straight = todo.pop()
+        y0 = y if node is None else hj[node]  # the junction's height now: a later ramp may have lifted it further
         s, h = out[k]
         dist = s if at_start else s[-1] - s
-        want = y0 - GRADE * dist if up else y0 + GRADE * dist
+        span = min(EASE, s[-1] / 2) or 1.0
+        off = y0 - float(h[0] if at_start else h[-1])
+        if sign * off < 0:  # the junction came to rest short of this street's end
+            w = _ease(dist / span)
+            out[k] = (s, h + off * w)
+            tilts[k] = tilts[k] * (1 - w)
+            continue
+        want = y0 - sign * (GRADE if straight else SIDE) * dist
         gap = np.maximum(want - h, 0) if up else np.minimum(want - h, 0)
         far = near.node_of.get((k, not at_start))
         left = float(gap[-1] if at_start else gap[0])
+        if abs(left) >= CARRY and far not in hj and near.portals is not None:
+            end = shapely.Point(near.axis[k][-1 if at_start else 0])
+            if end.distance(shapely.Point(point)) > AT_END and len(near.portals.query(end, predicate="dwithin",
+                                                                                      distance=AT_END)):
+                out[k] = (s, h + gap)  # it ends at another bridge or tunnel, whose end takes this height (heights)
+                tilts[k] = np.zeros_like(tilts[k])
+                continue
         if abs(left) < CARRY or far not in hj:
-            fade = np.clip((s[-1] - dist) / min(EASE, s[-1] / 2 or 1.0), 0, 1)
+            fade = np.clip((s[-1] - dist) / span, 0, 1)
             out[k] = (s, h + gap * fade)
-            tilts[k] = tilts[k] * (1 - _ease(dist / (min(EASE, s[-1] / 2) or 1.0)))
+            tilts[k] = tilts[k] * (1 - _ease(dist / span))
             continue
         out[k] = (s, h + gap)
         tilts[k] = np.zeros_like(tilts[k])
-        y1 = float(want[-1] if at_start else want[0])
-        hj[far] = y1
-        planes.pop(far, None)
-        on = near.straight_on(k, not at_start, far)
-        for k2, start2 in near.meeting.get(far, ()):
-            if k2 == k or k2 in seen:
-                continue
-            if on is not None and k2 == on[0]:
-                todo.append((k2, start2, y1))
-                continue
-            s2, h2 = out[k2]
-            d2 = s2 if start2 else s2[-1] - s2
-            w2 = _ease(d2 / (min(EASE, s2[-1] / 2) or 1.0))
-            out[k2] = (s2, h2 + (y1 - float(h2[0] if start2 else h2[-1])) * w2)
-            tilts[k2] = tilts[k2] * (1 - w2)
+        lift(far, float(want[-1] if at_start else want[0]),
+             float(h[-1] if at_start else h[0]) if far in planes else hj[far], (k, not at_start))
 
 
 def _on(tris, xz, fallback):
@@ -1261,10 +1506,12 @@ def mesh(ribbons, owner, axes, rings, rnode, chains, terrain, keep=None):
     of a piece's boundary no other piece touches, where the road stands more than CLEAR above the ground, and
     not on a bridge or in a tunnel, which contravia.structures dresses instead. A dict `keep` gets the junction
     heights, the ribbons' profiles, the junctions' planes and the ribbons' cross slopes as "hj", "prof", "planes"
-    and "tilts"."""
-    hj, prof, tilts, planes = heights(ribbons, owner, axes, rings, rnode, chains, terrain)
+    and "tilts", and as "ribbons" the ribbons as meshed: cut apart where two levels nearly touched (_apart)."""
+    moved = set()
+    hj, prof, tilts, planes = heights(ribbons, owner, axes, rings, rnode, chains, terrain, moved)
+    ribbons = _apart(ribbons, axes, [chains[o].layer for o in owner], prof, moved)
     if keep is not None:
-        keep["hj"], keep["prof"], keep["planes"], keep["tilts"] = hj, prof, planes, tilts
+        keep["hj"], keep["prof"], keep["planes"], keep["tilts"], keep["ribbons"] = hj, prof, planes, tilts, ribbons
     pieces_ = list(ribbons) + list(rings)
     nr = len(ribbons)
     lines = [LineString(q) for q in axes]
@@ -1292,6 +1539,8 @@ def mesh(ribbons, owner, axes, rings, rnode, chains, terrain, keep=None):
                 for g in getattr(part, "geoms", [part]):
                     if not isinstance(g, Polygon) or g.area < 1e-4:
                         continue
+                    if k < nr:  # a ribbon cut along its length by a cell's edge keeps its profile on that edge
+                        g = g.segmentize(SAMPLE)
                     t = shapely.get_coordinates(shapely.constrained_delaunay_triangles(g)).reshape(-1, 4, 2)[:, :3]
                     tris.append(t)
                     keys.append(np.tile((i, j), (len(t), 1)))
@@ -1348,6 +1597,7 @@ def add_to(city, widths) -> dict:
     city.add_kind("street_tris", tris, tkeys)
     city.add_kind("street_edges", edges, ekeys)
     city.add_kind("street_marks", lines, mkeys)
+    ribbons = keep["ribbons"]  # cut apart where two levels nearly touched (_apart)
     ground = [r for k, r in enumerate(ribbons) if not chains[owner[k]].layer]
     ground += [r for r, n in zip(rings, rnode) if not isinstance(n, tuple)]
     st, paint, skeys, walls, wkeys, cuts, ckeys, roofs, rkeys, holes = structures.build(
