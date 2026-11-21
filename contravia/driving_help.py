@@ -150,6 +150,8 @@ TURN_AT = 40.0  # metres before a corner where a tap of the wheel picks the pilo
 STRAIGHT = np.radians(30)  # an exit within this of straight on is straight on
 TURN_LATERAL, TURN_RADIUS = 3.0, 8.0  # m/s² and metres the pilot takes a turn with
 GAS, BRAKING = 2.5, 8.0  # m/s² of the pilot's wanted acceleration that full throttle and full brake stand for
+TURN_LANE = 80.0  # metres before a turn of the GPS route where the pilot moves to the lane it turns from
+KERB = 30.0  # metres before the GPS destination where the pilot eases toward the kerb
 
 
 def road_assists(level: int, locked=()) -> set[str]:
@@ -173,6 +175,9 @@ class DrivingHelp:
         self.off = 0.0  # metres right of the centreline it aims at, easing toward its lane's
         self.held, self.held_lane, self.side = 0.0, 0, 0.0  # a long tap of the wheel: how long, from which lane
         self.lit = {name: False for name in ROAD_ASSISTS}
+        self.route_next = None  # the GPS route: edge -> the edge it takes next, or None
+        self.stop_at = None  # (edge, s): where the GPS route ends, a stop line for the pilot
+        self.arrived = False  # stopped at stop_at; it holds the car until the accelerator
 
     def apply(self, c, car, dt: float, level: int, locked=(), steer_strength: float = 1.0, obstacles=None,
               signal=None, place=None):
@@ -189,6 +194,8 @@ class DrivingHelp:
         self.yaw = car.yaw
         p = (place or self.road.locate(car.x, car.z, car.yaw)) if on & {"lane", "pilot"} else None
         pilot = "pilot" in on and p is not None and not self._handed_back(c)
+        if self.arrived and c.throttle > 0:  # the driver drives on from the destination
+            self.arrived, self.stop_at = False, None
         if not pilot:
             self.wanted, self.exit = None, None
         steer = c
@@ -260,11 +267,19 @@ class DrivingHelp:
             gap, lead = float(path[0][k]), float(path[1][k])
         if signal is not None and not signal(e, to_end, car.speed) and to_end - 1.0 < gap:
             gap, lead = max(to_end - 1.0, 0.0), 0.0  # a red light: a stopped car at the stop line
+        if self.stop_at is not None and self.stop_at[0] == e and self.stop_at[1] - p.s < gap:
+            gap, lead = max(self.stop_at[1] - p.s, 0.0), 0.0  # the GPS destination: a stop line
+            if car.speed < 0.3 and self.stop_at[1] - p.s < 15.0:
+                self.arrived = True
+        if self.arrived:
+            v0 = 0.0
         if v0 <= 0.1:
             acc = -BRAKING
         else:
             acc = float(_idm(np.array([max(car.speed, 0.0)]), np.array([v0]), np.array([gap]), np.array([lead]))[0])
         self.lit["pilot"] = True
+        if self.arrived:  # held at the destination: the brake pedal at rest would back the car up
+            return replace(out, throttle=0.0, brake=0.0, handbrake=True)
         throttle, brake = float(np.clip(acc / GAS, 0, 1)), float(np.clip(-acc / BRAKING, 0, 1))
         return replace(out, throttle=throttle, brake=max(brake, c.brake))
 
@@ -283,8 +298,11 @@ class DrivingHelp:
         if not len(exits):
             return None
         side = turn * self.turn > STRAIGHT if self.turn and e == self.turn_edge else np.zeros(len(exits), bool)
+        on_route = self.route_next(e) if self.route_next else None
         if side.any():  # the first exit on the picked side
             k = np.flatnonzero(side)[np.argmin(np.abs(turn[side]))]
+        elif on_route is not None and on_route in exits:  # the GPS route's
+            k = int(np.flatnonzero(exits == on_route)[0])
         elif np.abs(turn).min() < STRAIGHT:
             k = int(np.argmin(np.abs(turn)))
         else:
@@ -330,8 +348,16 @@ class DrivingHelp:
             self.lane = int(np.clip(self.held_lane - self.side, 0, self.road.lanes[p.edge] - 1))
         self.held = 0.0
         e = p.edge
+        to_end = float(self.road.graph.a["g_len"][e]) - p.s
+        if self.route_next and to_end < TURN_LANE:  # the GPS route turns: the lane it turns from
+            nxt = self._exit(e)
+            if nxt is not None and abs(nxt[1]) > STRAIGHT:
+                self.lane = 0 if nxt[1] > 0 else int(self.road.lanes[e]) - 1
         target = lane_offsets(int(self.road.lanes[e]), float(self.road.lane_w[e]), bool(self.road.twoway[e]))
-        self.off += float(np.clip(target[min(self.lane, len(target) - 1)] - self.off, -LANE_SPEED * dt, LANE_SPEED * dt))
+        aim = target[min(self.lane, len(target) - 1)]
+        if self.stop_at is not None and self.stop_at[0] == e and 0 < self.stop_at[1] - p.s < KERB:
+            aim = target[0] + float(self.road.lane_w[e]) / 2  # half a lane toward the kerb
+        self.off += float(np.clip(aim - self.off, -LANE_SPEED * dt, LANE_SPEED * dt))
         look = max(LOOK_MIN, LOOK_TIME * car.speed)
         tx, tz = self._ahead(e, p.s + look, self.off)
         alpha = (np.arctan2(tz - car.z, tx - car.x) - car.yaw + np.pi) % (2 * np.pi) - np.pi

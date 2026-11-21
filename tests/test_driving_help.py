@@ -3,7 +3,7 @@ import math
 
 import numpy as np
 import pytest
-from graphs import four_way, make_graph, straight
+from graphs import four_way, grid, make_graph, straight
 
 from contravia.driving_help import ROAD_ASSISTS as ROAD
 from contravia.driving_help import Road, chassis_strengths, level_from_realism, next_level
@@ -238,7 +238,8 @@ def test_the_emergency_brake_lets_a_swerve_a_slower_leader_and_a_bend_away_pass(
     assert help.apply(go, car, 1 / 60, 1, obstacles=ahead).brake == 0
 
 
-def pilot_run(graph, x, z, yaw, seconds, steer=lambda t: 0.0, ahead=None, signal=None, throttle=lambda t: 0.0):
+def pilot_run(graph, x, z, yaw, seconds, steer=lambda t: 0.0, ahead=None, signal=None, throttle=lambda t: 0.0,
+              route_next=None, stop_at=None):
     """The moderno at level 0 from rest, the pilot driving; ahead(t) gives the obstacles at time t. The car's
     state and place each frame."""
     from manifoldx.vehicles import FlatGround
@@ -253,6 +254,7 @@ def pilot_run(graph, x, z, yaw, seconds, steer=lambda t: 0.0, ahead=None, signal
     d.run(Controls(0, 0, 0, False), 0.5, walls, k)
     length, _, width = d.spec.size
     help, car, dt, out = DrivingHelp(road, *d.steering(), length, width), d.state, 1 / 60, []
+    help.route_next, help.stop_at = route_next, stop_at
     for i in range(int(seconds / dt)):
         t = i * dt
         c = Controls(throttle=throttle(t), brake=0, steer=steer(t), handbrake=False)
@@ -293,6 +295,50 @@ def test_at_a_corner_the_pilot_goes_straight_or_where_the_wheel_tapped(tap, edge
     places = [p for _, _, p in run if p is not None]
     assert places[-1].edge == edge
     assert run[-1][1].speed > 3.0
+
+
+def route_on(g, start, to):
+    """The GPS route on graph g from start (edge, s) to the street nearest `to`: route_next(edge) and its end."""
+    from contravia.gps import RouteGraph, route
+
+    rg = RouteGraph.from_graphs([g])
+    r = route(rg, start, rg.ends_at(*to))
+    after = dict(zip(r.edges[:-1].tolist(), r.edges[1:].tolist()))
+    return after.get, (int(r.edges[-1]), r.s1)
+
+
+def test_the_pilot_drives_a_route_and_stops_at_its_end():
+    g = grid(3)
+    nxt, end = route_on(g, (0, 10.0), (100.0, 200.0))  # alone it would go straight on at x = 100
+    run, help = pilot_run(g, 10.0, 1.5, 0.0, 60.0, route_next=nxt, stop_at=end)
+    t, car, _ = run[-1]
+    assert help.arrived and car.speed < 0.3
+    assert np.hypot(car.x - 100.0, car.z - 200.0) < 15.0
+
+
+def test_without_the_route_the_pilot_goes_straight_on():
+    g = grid(3)
+    run, _ = pilot_run(g, 10.0, 1.5, 0.0, 30.0)
+    assert max(car.x for _, car, _ in run) > 150.0  # through the junction at x = 100, straight on
+    assert max(abs(car.z) for _, car, _ in run if car.x < 170.0) < 5.0
+
+
+def test_a_tap_still_wins_over_the_route():
+    g = four_way()
+    run, _ = pilot_run(g, 55.0, -1.5, math.pi, 30.0, steer=lambda t: 0.8 if 5.0 < t < 5.3 else 0.0,
+                       route_next=lambda e: 3 if e == 0 else None)  # the route says left; the tap says right
+    assert [p for _, _, p in run if p][-1].edge == 7
+
+
+def test_before_a_turn_the_pilot_moves_to_the_turn_s_lane():
+    g = grid(3, lanes=2)
+    twoway, lane_w = lane_geometry(g.a)
+    left_lane = lane_offsets(2, float(lane_w[0]), True)[1]
+    e12 = int(np.flatnonzero((g.a["g_from"] == 1) & (g.a["g_to"] == 2))[0])
+    nxt, _ = route_on(g, (e12, 5.0), (200.0, 100.0))  # a right at x = 200
+    run, _ = pilot_run(g, 105.0, left_lane, 0.0, 12.0, route_next=nxt)
+    lanes = [p.lane for _, car, p in run if p and p.edge == e12 and 175.0 < car.x < 190.0]
+    assert lanes and lanes[-1] == 0
 
 
 def test_the_help_uses_the_place_the_game_found_this_frame():

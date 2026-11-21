@@ -420,3 +420,18 @@ def test_the_band_s_faces_wind_as_the_shadow_s():
     p, i = m.positions.astype(float), m.indices.reshape(-1, 3)
     geo = np.cross(p[i[:, 1]] - p[i[:, 0]], p[i[:, 2]] - p[i[:, 0]])
     assert np.all((geo * m.normals[i[:, 0]]).sum(1) > 0)
+
+
+def test_across_a_border_the_next_edge_is_the_other_province_s():
+    from contravia.gps import Route
+
+    west = make_graph([(0, 0), (100, 0)], [(0, 1), (1, 0)])
+    east = make_graph([(100, 0), (200, 0)], [(0, 1), (1, 0)])
+    east.a["g_junction_node"] = np.array([1, 7])
+    rg = RouteGraph.from_graphs([west, east], join_m=0.0)
+    gd = Guide(Router(lambda: rg))
+    gd.router.rg = rg
+    gd.to, gd.route = (150.0, 0.0), route(rg, (rg.island(0, 0), 10.0), [(rg.island(1, 0), 50.0)])
+    assert isinstance(gd.route, Route)
+    nxt = gd.next_edge(rg.island(0, 0))
+    assert rg.local(nxt) == (1, 0)
