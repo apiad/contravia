@@ -322,6 +322,10 @@ class Forest:
                 fade[ents] = 1.0
         self._fading = keep
 
+    def waiting(self) -> int:
+        """Cells whose trees are still growing, and groups of trees still fading in."""
+        return len(self._pending) + sum(1 for _, _, out in self._fading if not out)
+
     def counts(self) -> dict:
         """Trees held and drawn per level of detail, for the stats panel and probes."""
         lod = np.concatenate([s.lod for s in self.stands.values()]) if self.stands else np.zeros(0, int)

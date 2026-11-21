@@ -300,6 +300,10 @@ class Grass:
         lawn.level[idx] = -1
         lawn.drawn = int((lawn.level >= 0).sum())
 
+    def waiting(self) -> int:
+        """Cells whose lawns are still being laid."""
+        return len(self._pending)
+
     def counts(self) -> dict:
         """Patches held and drawn per level, for probes."""
         level = np.concatenate([lawn.level for lawn in self.lawns.values()]) if self.lawns else np.zeros(0, int)

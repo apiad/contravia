@@ -10,14 +10,18 @@ docs/superpowers/specs/2026-11-18-garaje-design.html proposes, over the vehicle 
 The game behind runs in one of these modes (game.mode): "menu" while a menu screen covers it (the car stands,
 the clock stops, the streamer keeps loading the start's cells), "drive", "paused", "photo", "map" and "garage". The menu tells
 the game what to do through Game.start, Game.pause, Game.resume and Game.to_menu.
+A mode chosen in the main menu (the free drive, the map) starts under the loading curtain (contravia/curtain.py,
+Game.raise_curtain), which lifts once the world round its start is drawn; under it only Escape works, back to the
+main menu. A later move within the game (the pause, the map's flights) never shows it.
 While driving, Escape pauses, F aims a camera at a place and L turns the driving help to its next level.
 """
 
+import functools
 import math
 import textwrap
 from typing import ClassVar
 
-from contravia import album, collect, garage, mapview, nearby, placemarks, ui, whereis
+from contravia import album, collect, emblemlayer, garage, mapview, nearby, placemarks, towns, ui, whereis
 from contravia.driving_help import next_level
 from contravia.hud import DAY_NAMES
 from contravia.rules import designs, fleet
@@ -244,7 +248,7 @@ class MainScreen(ListScreen):
         m = self.menu
         return [("Historia", "Cuentos del almendrón · próximamente", None),
                 ("Modo libre", "Maneja donde quieras, cuando quieras", lambda: m.show("free")),
-                ("Mapa de Cuba", "Explora la isla desde el aire", lambda: m.show("map")),
+                ("Mapa de Cuba", "Explora la isla desde el aire", m.open_map),
                 ("Garaje", "Todos los vehículos de Cuba, a tu gusto", lambda: m.show("garage")),
                 ("Álbum", "Tus fotos de los lugares de Cuba", lambda: m.show("album")),
                 ("Opciones", "", lambda: m.show("options")),
@@ -592,6 +596,9 @@ class MapScreen(Screen):
             self.back_to = "pause" if self.menu.current_before == "pause" else "main"
         self.marks, self.under, self.choice, self.picked, self.marks_for = [], None, None, 0, None
         self.target, self.drawn, self.glide = None, None, (0.0, 0.0)  # the camera the input moves; _move
+        g = self.menu.game
+        self.emblems = emblemlayer.EmblemLayer(_towns(), g.places, self._attach, self._detach)
+        self.city = None  # the medallion under the crosshair
         for _ in range(MAP_MARKS):
             image = Image(placemarks.icon("lugar", False, MARK_PX), style_overrides={"width": MARK_PX})
             count = _text("", ui.BOLD, 13, ui.PAPER)
@@ -604,12 +611,35 @@ class MapScreen(Screen):
         self.choice_panel = Panel(self.options, anchor="center", offset=(0, 90),
                                   style_overrides={"gap": 4, "padding": "10 18", "bg": ui.alpha(ui.INK, 0.92)})
         self._build_here()
-        self.panels = [*(m for m, _, _ in self.marks), cross, self.here_panel,
-                       Panel([self.note], anchor="top-left", offset=(44, 40), style_overrides=CLEAR),
-                       _hints(width, [("RUEDA", "Zoom"), ("ARRASTRAR", "Mover"), ("Q E", "Girar"),
-                                      ("ENTER", "Elegir"), ("ESC", "Volver")])]
+        self.top = [cross, self.here_panel, Panel([self.note], anchor="top-left", offset=(44, 40), style_overrides=CLEAR),
+                    _hints(width, [("RUEDA", "Zoom"), ("ARRASTRAR", "Mover"), ("Q E", "Girar"),
+                                   ("ENTER", "Elegir"), ("ESC", "Volver")])]
+        self.panels = [*(m for m, _, _ in self.marks), *self.top]
         self.width = width
         self.menu.game.open_map()
+
+    def _attach(self, panel) -> None:
+        """Put an emblem's panel in the GUI and in this screen's panels, so leaving the screen takes it out."""
+        self.menu.engine.gui.append(panel)
+        self.panels.append(panel)
+
+    def _detach(self, panel) -> None:
+        self.menu.engine.gui.remove(panel)
+        self.panels.remove(panel)
+
+    def _clear_of(self) -> tuple:
+        """The screen's boxes the emblems keep clear of: the panel on the right and the hints at the bottom."""
+        so = self.here_panel.style_overrides
+        w, h = so.get("width") or 0, so.get("height") or 0
+        right, top = self.here_panel.offset
+        return ((self.width - right - w, top, self.width - right, top + h), (0, ui.DESIGN_H - 46, self.width, ui.DESIGN_H))
+
+    def _on_top(self) -> None:
+        """Put the crosshair, the panel, the note and the hints back over the emblems."""
+        gui = self.menu.engine.gui
+        for p in self.top:
+            gui.remove(p)
+            gui.append(p)
 
     def _build_here(self) -> None:
         """The panel of what lies under and near the crosshair: a title, a line, a header and a row per place."""
@@ -689,6 +719,10 @@ class MapScreen(Screen):
                 else:
                     self.menu.show(None)
             return
+        if k == "enter" and self.under is None and self.city is not None:  # a city: come down over it
+            x, z = self.city.at
+            self.target = mapview.MapCam(x, z, placemarks.CITY_H / 2, g.map.yaw)
+            return
         if k == "enter" and self.under is not None:
             if len(self.under.ids) > 1:  # a group: come down over it, below the city stage
                 x, z = self.under.at
@@ -715,6 +749,8 @@ class MapScreen(Screen):
             return
         if self.choice is None:
             self._move(dt)
+        if self.emblems.update(g.map, self.width, ui.DESIGN_H, dt, self._clear_of()):
+            self._on_top()
         self._place_marks()
         self._here()
 
@@ -724,7 +760,9 @@ class MapScreen(Screen):
         if getattr(self, "marks_for", None) == (g.map, self.width):
             return  # the camera did not move: the marks stand
         self.marks_for = (g.map, self.width)
-        marks = placemarks.on_map(g.places, g.album.has, g.map, self.width, ui.DESIGN_H)
+        # From the city stage up the emblems stand for the places (their chips); below, each place has its mark.
+        marks = [] if g.map.h >= placemarks.CITY_H else placemarks.on_map(g.places, g.album.has, g.map, self.width,
+                                                                        ui.DESIGN_H)
         for k, (panel, image, count) in enumerate(self.marks):
             if k >= len(marks):
                 panel.offset = OFF
@@ -737,9 +775,13 @@ class MapScreen(Screen):
             if count.text != number:
                 count.text = number
             panel.offset = (round(m.x - MARK_PX / 2), round(m.y - MARK_PX / 2))
-        was, self.under = self.under, placemarks.under_cross(marks, self.width, ui.DESIGN_H)
+        was = self.under or self.city
+        self.under = placemarks.under_cross(marks, self.width, ui.DESIGN_H)
+        self.city = None if self.under else self.emblems.under(self.width, ui.DESIGN_H)
         if self.under is not None:
             self.note.text = self.under.label
+        elif self.city is not None:
+            self.note.text = self.emblems.label(self.city)
         elif was is not None:
             self.note.text = ""
 
@@ -785,6 +827,12 @@ class MapScreen(Screen):
             t = mapview.MapCam(t.x, t.z, t.h, t.yaw + turn * self.TURN * dt)
         self.target = t
         g.map = self.drawn = mapview.follow(cam, t, dt)
+
+
+@functools.cache
+def _towns():
+    """The map's cities and towns (contravia/towns.py), read once."""
+    return towns.load()
 
 
 TILE_W, TILE_H, TILE_GAP = 205, 92, 12  # a province's tile in the album
@@ -1255,7 +1303,28 @@ class Menu:
         if screen:
             game.to_menu()
         engine.on("startup")(self._startup)
+        engine.on("map")(self._map_event)
         engine.system(self.update)
+
+    def _map_event(self, p: dict) -> None:
+        """Open the map (over the pause when driving) with its camera over (x, z) or (lat, lon), h metres up
+        (as it was by default), turned yaw degrees from north (0 by default): for an agent checking the map."""
+        g = self.game
+        if self.current != "map":
+            if self.current is None:
+                self.pause()
+            self.show("map")
+        if g.map is None:
+            return
+        if "lat" in p:
+            from contravia.geo import to_local
+
+            x, z = to_local(float(p["lat"]), float(p["lon"]))
+        else:
+            x, z = float(p.get("x", g.map.x)), float(p.get("z", g.map.z))
+        h = min(mapview.MAX_H, max(mapview.MIN_H, float(p.get("h", g.map.h))))
+        g.flight = None  # no flight from the car: the camera is put there
+        g.map = mapview.MapCam(float(x), float(z), h, math.radians(float(p.get("yaw", 0.0))))
 
     def _startup(self, _=None) -> None:
         if self._first:
@@ -1267,6 +1336,8 @@ class Menu:
 
     def show(self, name: str | None) -> None:
         """Take the current screen off and put `name` on; None leaves no menu."""
+        if name == "card" and getattr(self.game, "sound", None) is not None:
+            self.game.sound.ui("card")
         g = self.engine.gui
         if self.current is not None:
             for p in self.screens[self.current].panels:
@@ -1290,6 +1361,14 @@ class Menu:
 
     def press(self, key: str) -> None:
         """One key, by its engine name ("ArrowUp", "Enter", "Escape"...), as if it were just pressed."""
+        if self.game.curtain is not None:  # a mode starting under the curtain: Escape goes back to the main menu
+            if key == "Escape":
+                self.game.drop_curtain()
+                if self.current == "map":
+                    self.screens["map"].key("back")
+                else:
+                    self.to_menu()
+            return
         if self.current is None:
             if key == "Escape" and self.game.mode == "drive":
                 self.pause()
@@ -1299,6 +1378,10 @@ class Menu:
                 self.next_help()
             return
         if key in KEYS:
+            sound = getattr(self.game, "sound", None)
+            if sound is not None:
+                k = KEYS[key]
+                sound.ui("choose" if k == "enter" else "back" if k == "back" else "move")
             self.screens[self.current].key(KEYS[key])
 
     def next_help(self) -> None:
@@ -1309,10 +1392,16 @@ class Menu:
         self.game.apply_options(self.options)
         self.options.save()
         self.game.hud.note(f"Ayuda {row.value} · {row.text}".upper())
+        if getattr(self.game, "sound", None) is not None:
+            self.game.sound.ui("level")
 
     def update(self, query, dt: float) -> None:
         """Read this frame's keys, follow a resized window and animate the screen."""
         inp = self.engine.input
+        if self.game.curtain is not None:  # a mode starting under the curtain: only Escape counts (press)
+            if inp.just_pressed("Escape"):
+                self.press("Escape")
+            return
         for k in KEY_NAMES:
             if inp.just_pressed(k):
                 if self.current in ("photo", "map", "aim") and k in ("w", "s", "a", "d", "ArrowUp", "ArrowDown",
@@ -1329,11 +1418,20 @@ class Menu:
         self.screens[self.current].tick(min(dt, 0.1))
 
     def start_free(self) -> None:
-        """Drive with the free drive's rows."""
+        """Drive with the free drive's rows, started under the loading curtain."""
         self.show(None)
-        self.chosen = self.free["vehicle"].value
-        self._put(self.chosen)
-        self.game.start(**self.free.start())
+
+        def start():
+            self.chosen = self.free["vehicle"].value
+            self._put(self.chosen)
+            self.game.start(**self.free.start())
+
+        self.game.raise_curtain(start)
+
+    def open_map(self) -> None:
+        """The map from the main menu, under the loading curtain till its first view is drawn."""
+        self.show("map")
+        self.game.raise_curtain()
 
     # The Garaje
 

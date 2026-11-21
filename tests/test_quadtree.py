@@ -34,3 +34,14 @@ def test_negative_cells_and_existence():
     if L > 0:
         assert tree.exists(0, *(np.array([7, 2]) - tree.origin))  # the weighted cell inside the leaf
         assert not tree.exists(0, *(np.array([7, 3]) - tree.origin))  # an empty cell inside it does not
+
+
+def test_level_keys_are_each_levels_distinct_nodes_sorted():
+    from contravia.quadtree import LEVELS, _keys
+
+    rng = np.random.default_rng(3)
+    cells = np.unique(rng.integers(-3000, 3000, (20000, 2)), axis=0)
+    tree = Tree.build({(int(i), int(j)): 1.0 for i, j in cells})
+    rel = cells - np.array(tree.origin)
+    for L in range(LEVELS + 1):
+        assert np.array_equal(tree._levels[L], np.unique(_keys(rel, L)))

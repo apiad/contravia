@@ -156,12 +156,13 @@ def test_a_polygon_in_lat_lon_lands_in_the_islands_metres():
     assert r.assign(np.array([outside]), [None])[0].storeys is None
 
 
-def test_the_shipped_file_loads_and_names_only_municipios_of_la_habana():
+def test_the_shipped_file_loads_and_names_only_municipios_of_the_island():
     from contravia.regions import current
 
     current().check({"Arroyo Naranjo", "Boyeros", "Centro Habana", "Cerro", "Cotorro", "Diez de Octubre",
                      "Guanabacoa", "Habana del Este", "La Habana Vieja", "La Lisa", "Marianao", "Playa",
-                     "Plaza de la Revolución", "Regla", "San Miguel del Padrón"})
+                     "Plaza de la Revolución", "Regla", "San Miguel del Padrón",
+                     "Guantánamo"})  # the cradle of changüí: its music (data/cuba/guantanamo.npz names it)
 
 
 CEMETERY = """
