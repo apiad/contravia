@@ -1120,7 +1120,7 @@ def heights(ribbons, owner, axes, rings, rnode, chains, terrain, moved=None):
         for k in ks:
             room = (np.inf, np.inf) if L > 0 else (near.free(axes[k][0]), near.free(axes[k][-1]))
             w = chains[owner[k]].w
-            held = _hold_ends(axes[k], w, terrain, near, out, tilts) if L > 0 else (None, None)
+            held = _hold_ends(axes[k], w, terrain, near, hj, out, tilts, planes) if L > 0 else (None, None)
             out[k] = structure_profile(axes[k], w, L, terrain, y_lower, room, held)
             tilts[k] = np.zeros(len(out[k][0]))
         if L < 0:
@@ -1166,7 +1166,7 @@ def heights(ribbons, owner, axes, rings, rnode, chains, terrain, moved=None):
     return hj, out, tilts, planes
 
 
-def _hold_ends(axis, width, terrain, near, out, tilts):
+def _hold_ends(axis, width, terrain, near, hj, out, tilts, planes):
     """The heights a bridge over a valley holds its two ends at: (None, None) for a bridge whose ground never
     drops VALLEY under the line between its ends, and None for an end nothing on the ground leaves from.
 
@@ -1175,27 +1175,43 @@ def _hold_ends(axis, width, terrain, near, out, tilts):
     from its far end, and the street takes that slope where the ground falls faster: a fill, level across
     where it left the ground (out, tilts). Where the end leaves from a junction on the ground, every street
     of that junction comes down so and the end stands at the highest of them; heights then lays the junction
-    flat there and brings its other streets to it (_ramp_to)."""
+    flat there and brings its other streets to it (_ramp_to). A street shorter than MERGE_SHORT has no room
+    to come down in: the junction at its far end is held up that way instead, and the street runs level
+    from it to the bridge."""
     q = densify(axis, BRIDGE_STEP)
     s = arclen(q)
     g = _level(terrain, q, np.full(len(q), width / 2))
     if (g[0] + (g[-1] - g[0]) * s / max(s[-1], 1e-9) - g).max() < VALLEY:
         return None, None
+
+    def come_down(k, at_start):
+        """Street k comes down to its end (its start, at_start) no steeper than GRADE: that end's height."""
+        sk, h = out[k]
+        f = h.copy()
+        for i in range(len(sk) - 2, -1, -1) if at_start else range(1, len(sk)):
+            j = i + 1 if at_start else i - 1  # the sample farther from the bridge
+            f[i] = max(h[i], f[j] - GRADE * abs(sk[j] - sk[i]))
+        out[k] = (sk, f)
+        tilts[k] = tilts[k] * (1 - np.clip((f - h) / 0.3, 0, 1))
+        return float(f[0 if at_start else -1])
+
     held = []
     for point in (axis[0], axis[-1]):
         nodes, streets = near.at(point)
-        y = None
+        tops = []
         for k, at_start in [x for n in nodes for x in near.meeting.get(n, ())] if nodes else streets:
-            sk, h = out[k]
-            f = h.copy()
-            for i in range(len(sk) - 2, -1, -1) if at_start else range(1, len(sk)):
-                j = i + 1 if at_start else i - 1  # the sample farther from the bridge
-                f[i] = max(h[i], f[j] - GRADE * abs(sk[j] - sk[i]))
-            out[k] = (sk, f)
-            tilts[k] = tilts[k] * (1 - np.clip((f - h) / 0.3, 0, 1))
-            end = float(f[0 if at_start else -1])
-            y = end if y is None else max(y, end)
-        held.append(y)
+            far = near.node_of.get((k, not at_start))
+            beyond = [x for x in near.meeting.get(far, ()) if x[0] != k] if far in near.nodes else []
+            if nodes or out[k][0][-1] >= MERGE_SHORT or not beyond:
+                tops.append(come_down(k, at_start))
+                continue
+            top = max(come_down(k2, start2) for k2, start2 in beyond)
+            if top > float(out[k][1].max()):
+                out[k] = (out[k][0], np.full(len(out[k][0]), top))
+                tilts[k] = np.zeros_like(tilts[k])
+                _ramp_to(near.axis[k][-1 if at_start else 0], top, True, near, hj, out, tilts, planes)
+            tops.append(float(out[k][1][0 if at_start else -1]))
+        held.append(max(tops) if tops else None)
     return tuple(held)
 
 

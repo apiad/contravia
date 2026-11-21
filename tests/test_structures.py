@@ -465,6 +465,18 @@ def test_a_bridge_over_a_valley_that_ends_at_a_junction_holds_the_junction_up():
         assert _steepest(y) < GRADE + 0.02
 
 
+def test_a_valley_bridge_whose_street_is_too_short_to_come_down_in_holds_the_junction_behind_it():
+    """A fork 12 m past the bridge's east end, on the valley's wall: the street between has no room to come
+    down in, so the fork is held up and the street runs level from it to the bridge."""
+    j = [(-900, 0), (-150, 0), (150, 0), (162, 0), (900, 0), (600, 500)]
+    t = _valley(60.0, wall=250.0)
+    city, _, _ = _city(t, _graph(j, [(0, 1), (1, 2), (2, 3), (3, 4), (3, 5)], {(1, 2): 1}))
+    for path in ([j[0], j[1], j[2], j[3], j[4]], [j[0], j[1], j[2], j[3], j[5]]):
+        y = _roll(city, t, path)
+        assert np.abs(np.diff(y)).max() < 0.15
+        assert _steepest(y) < GRADE + 0.02
+
+
 def test_a_bridge_over_a_shallow_dip_keeps_its_ends_on_the_ground():
     j = [(-900, 0), (-150, 0), (150, 0), (900, 0)]
     t = _valley(8.0, wall=40.0, half=170.0)                         # 8 m deep, its walls 20 % steep
