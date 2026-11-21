@@ -8,5 +8,8 @@
              "path": [[0, 1.7, 0, 60, 1.7, 0], [80, 1.7, 0, 140, 1.7, 0]]},
   "loma": {"name": "120 m over the Castillo del Príncipe: distance, fog, far summaries", "at": [23.1330, -82.3895],
            "when": "2026-06-21 10:00", "weather": "clear",
-           "path": [[0, 120, 0, 1000, 60, 0], [0, 120, 0, 707, 60, -707]]}
+           "path": [[0, 120, 0, 1000, 60, 0], [0, 120, 0, 707, 60, -707]]},
+  "neptuno": {"name": "Neptuno at 19:55 looking west: the low sun between the buildings, light shafts", "at": [23.13776, -82.36493],
+              "when": "2026-06-21 19:55", "weather": "clear",
+              "path": [[0, 18, 0, -274, 33, -121], [-40, 18, 4, -314, 33, -117]]}
 }
