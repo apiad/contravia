@@ -17,7 +17,8 @@ the street triangles around it and counts, by kind:
 - structure, walk, motif: a triangle of a bridge or tunnel's dressing, of a pavement or of a park's motifs
   (benches, lamps, fountains) drawn between LOW and HEAD over a street's asphalt.
 
-"Into a street" is past EDGE from the surface's edge, since kerbs, bevels and parapets stand on that edge; an
+"Into a street" is past EDGE from the surface's edge, since kerbs, bevels and parapets stand on that edge (a
+pavement may reach WALK_EDGE: walks.py lets its outline cut a rounded corner by SIMPLIFY, and its bevel runs on); an
 avenue's median (contravia/medians.py) is no part of the surface, so its kerb, lamps and wall are edges too. The
 2D walls are tested against the streets drawn in the open, as clearance.py cuts the boxes; what has heights is
 tested against every level, tunnels too. Each cell is tested against the streets of its 3 x 3 cells, since a
@@ -38,6 +39,8 @@ from contravia.mesh import lattice
 from contravia.rules.ground import drawn
 from contravia.shore import of as shore_of
 from contravia.structures import KERB_TOP, LEAVES
+from contravia.walks import BEVEL, KERB
+from contravia.walks import SIMPLIFY as WALK_SIMPLIFY
 from contravia.walls import parts
 
 EDGE = 0.3  # metres a thing may reach past the street surface's edge: kerbs, bevels and parapets stand on it
@@ -50,6 +53,7 @@ REACH = 0.5  # metres under a structure wall's foot from where it stops the car 
 STEP = 1.0  # metres between the points a street triangle is tested at
 FINE = 0.5  # metres between the points a drawn thing or a wall is tested at
 SLIVER = 0.05  # m²: a street triangle smaller than this is not judged steep
+WALK_EDGE = WALK_SIMPLIFY + KERB * BEVEL + 0.02  # metres a pavement and its bevel may reach into a street
 KINDS = ("ground", "water", "step", "steep", "building", "landmark", "park", "tree", "cemetery", "tomb", "parapet",
          "structure", "walk", "motif")
 _NONE = shapely.Polygon()
@@ -139,14 +143,21 @@ class Check:
             return tuple(out)
         return self._held(self._inner, (i, j), make)
 
-    def _inside(self, i: int, j: int, which: int, geoms) -> np.ndarray:
-        """Whether each geometry reaches into a street of the 3 x 3 cells round (i, j)."""
+    def _inside(self, i: int, j: int, which: int, geoms, deeper: float = 0.0) -> np.ndarray:
+        """Whether each geometry reaches into a street of the 3 x 3 cells round (i, j); with deeper, whether it
+        reaches that many metres further in than EDGE (a cell's border is no edge of a street)."""
         out = np.zeros(len(geoms), bool)
         for di in (-1, 0, 1):
             for dj in (-1, 0, 1):
                 piece = self.inner(i + di, j + dj)[which]
-                if not piece.is_empty:
-                    out |= shapely.intersects(piece, geoms)
+                if piece.is_empty:
+                    continue
+                hit = shapely.intersects(piece, geoms)
+                if deeper and hit.any():
+                    a, b = (i + di) * CELL, (j + dj) * CELL
+                    edge = piece.boundary.difference(shapely.box(a, b, a + CELL, b + CELL).boundary.buffer(1e-6))
+                    hit[hit] = shapely.distance(edge, geoms[hit]) > deeper
+                out |= hit
         return out
 
     def cell(self, i: int, j: int) -> list[tuple[str, float, float, float]]:
@@ -248,7 +259,7 @@ class Check:
         lo, hi = t[:, :, [0, 2]].min(axis=1), t[:, :, [0, 2]].max(axis=1)
         t = t[self._inside(i, j, 0, shapely.box(lo[:, 0], lo[:, 1], hi[:, 0], hi[:, 1]))]
         pts, own = lattice(t, FINE)
-        deep = self._inside(i, j, 0, shapely.points(pts[:, [0, 2]]))
+        deep = self._inside(i, j, 0, shapely.points(pts[:, [0, 2]]), WALK_EDGE - EDGE if kind == "walk" else 0.0)
         pts, own = pts[deep], own[deep]
         p, h = levels.under(pts[:, [0, 2]])
         up = pts[p, 1] - h

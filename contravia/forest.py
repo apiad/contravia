@@ -23,7 +23,7 @@ from time import perf_counter
 import numpy as np
 
 from contravia import regions
-from contravia.clearance import roads_around
+from contravia.clearance import roads_around, streets_around
 from contravia.grass import yard_trees
 from contravia.rules import foliage, trees
 from contravia.rules.species import CROWNS, SPECIES, season
@@ -152,7 +152,8 @@ class Forest:
         c = regions.current().parks(self.landmarks.keep(i, j, self.city.cell(i, j)))
         near = roads_around(self.city, i, j)
         t = trees.cell_trees(i, j, c, self.city.terrain, near, trees.arrays_of(self.city, i, j),
-                             yard_trees(self.city, i, j, self.landmarks), shore_of(self.city))
+                             yard_trees(self.city, i, j, self.landmarks), shore_of(self.city),
+                             streets_around(self.city, i, j))
         warm(np.unique(t.species))
         return t
 

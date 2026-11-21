@@ -46,9 +46,10 @@ def parts(city, landmarks, i: int, j: int) -> dict[str, np.ndarray]:
     streets-check (contravia/streets_check.py) reads the same ones, so it counts exactly what stops the car."""
     c = regions.current().parks(landmarks.keep(i, j, city.cell(i, j)))
     near = roads_around(city, i, j)
-    rings = [_edges(ring) for ring, *_ in boxes(c, near, streets_around(city, i, j))]
+    streets = streets_around(city, i, j)
+    rings = [_edges(ring) for ring, *_ in boxes(c, near, streets)]
     grown = trees.cell_trees(i, j, c, city.terrain, near, trees.arrays_of(city, i, j),
-                             yard_trees(city, i, j, landmarks), shore_of(city))
+                             yard_trees(city, i, j, landmarks), shore_of(city), streets)
     tall, low = cemetery.walls(cemetery.yard(city, i, j, landmarks))
     out = {"building": np.concatenate(rings) if rings else [], "landmark": landmarks.walls(i, j),
            "park": [] if c.park_walls is None else c.park_walls[:, :4], "tree": trees.trunks(grown),
