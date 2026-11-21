@@ -54,6 +54,9 @@ class Flow:
         self.cap = self.lanes * np.where(controlled, CAPACITY_CONTROLLED, CAPACITY)
         self.t_in, self.t_out = a["g_turn_in"].astype(np.int64), a["g_turn_out"].astype(np.int64)
         self.t_w = a["g_turn_w"].astype(np.float64)
+        # An edge with no turn out of it goes on into the next province: what reaches its end leaves the
+        # graph.
+        self.leaves = np.bincount(self.t_in, minlength=len(graph)) == 0
         self.n = np.zeros(len(graph))
         self.demand = True  # False: no vehicles start or park (tests of the moving part alone)
         # Edges the car layer owns (near the player): the flow does not move their vehicles, and what it sends
@@ -130,7 +133,7 @@ class Flow:
         np.minimum.at(fifo, self.t_in[limited], ratio[self.t_out[limited]])
         moved = want * fifo[self.t_in]
         inflow = np.bincount(self.t_out, moved, E)
-        self.n += inflow - np.bincount(self.t_in, moved, E)
+        self.n += inflow - np.bincount(self.t_in, moved, E) - np.where(self.leaves, demand, 0.0)
         self.arrived += np.where(self.owned, inflow, 0.0)
 
         if self.demand:

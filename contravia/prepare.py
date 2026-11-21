@@ -423,6 +423,7 @@ def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]
 
     if raw.boundary:
         province = unary_union([Polygon(_local(r)) for r in raw.boundary if len(r) >= 3])
+        around = province.simplify(50.0).buffer(GRAPH_MARGIN)
     else:
         province = None
 
@@ -430,6 +431,11 @@ def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]
         if province is None or len(xz) == 0:
             return np.ones(len(xz), bool)
         return shapely.contains_xy(province, xz[:, 0], xz[:, 1])
+
+    def near(xz: np.ndarray) -> np.ndarray:  # in the province or within GRAPH_MARGIN of it
+        if province is None or len(xz) == 0:
+            return np.ones(len(xz), bool)
+        return shapely.contains_xy(around, xz[:, 0], xz[:, 1])
 
     # Roads: split, then keep the segments whose midpoint is in the province.
     road_xz = _locals(pts for _, pts in raw.roads)
@@ -479,7 +485,7 @@ def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]
 
     graph = build_graph(raw.ways, raw.controls, raw.restrictions, raw.municipios, rings,
                         lambda lat, lon: to_local(lat, lon), WIDTHS, inside,
-                        places=(raw.places, raw.place_points, raw.consejos))
+                        places=(raw.places, raw.place_points, raw.consejos), near=near)
 
     # Parks: blocks with few or no buildings (contravia.parks). They get no filler, and their own trees.
     park_rings, kinds, park_zone, face_seeds = find_parks(raw, faces, rings, cents, graph, roads)
@@ -552,6 +558,7 @@ def report(city: CityData, info: dict, street_report: dict) -> dict:
 
 
 BOX_MARGIN = 0.03  # degrees around a province's outline that its reading and its relief cover
+GRAPH_MARGIN = 2000.0  # metres past a province's border whose roads its graph reads; less than BOX_MARGIN
 TERRAIN_STRIDE = {"La Habana": 1}  # every how many 30 m samples a province's relief keeps; 3 (90 m) elsewhere
 
 
