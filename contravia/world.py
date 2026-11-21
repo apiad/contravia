@@ -276,6 +276,15 @@ class World:
             self._causeways = Causeways.of(self.folder) if self.folder is not None else None
         return self._causeways
 
+    @property
+    def water(self):
+        """The island's inland water (contravia/water.py, from water.src beside the provinces), or None."""
+        if not hasattr(self, "_water"):
+            from contravia.water import Water
+
+            self._water = Water.of(self.folder) if self.folder is not None else None
+        return self._water
+
     def cell(self, i: int, j: int) -> Cell:
         """Cell (i, j): the features of every province that holds it, its streets raised onto any causeway.
 

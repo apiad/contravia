@@ -6,6 +6,9 @@ sea it goes down with the distance from the waterline, gently across the band of
 the water at its outer edge, then SHELF metres per metre down to MAX_DEPTH. A car wades through the band and fords
 a river mouth, whose water is never far from land, but past the band it rolls on into deeper water.
 
+Inland water (contravia/water.py) is the same at another height: `floor`, `in_sea` and `ashore` take how far
+that water stands over the sea, or its level, and a river too narrow to be DEEP anywhere is forded.
+
 `in_sea` says when a car is in the sea: its wheels on that floor (not on a bridge or in a tunnel under the sea)
 and DEEP metres or more under the water. Then the car sinks for SINK seconds: water drag slows it at DRAG per
 second, the engine is cut, and it settles down DROP metres with a slight bob and its nose tilted down (`sunk`).
@@ -46,18 +49,19 @@ def depth(d, reach) -> np.ndarray:
     return np.minimum(np.where(out <= reach, WADE * out / reach, WADE + SHELF * (out - reach)), MAX_DEPTH)
 
 
-def floor(y, d, reach) -> np.ndarray:
+def floor(y, d, reach, over=0.0) -> np.ndarray:
     """The height the wheels stand on, from the drawn shore's height y at signed distance d with its band of
-    shallows reaching `reach` metres: the drawn ground on land, and over the sea whichever lies lower, it or the
-    floor going down from the shallows' height (a cliff's foot already lies deep)."""
+    shallows reaching `reach` metres: the drawn ground on land, and over the water whichever lies lower, it or the
+    floor going down from the shallows' height (a cliff's foot already lies deep). over is how far the water
+    there stands over the sea: 0 at sea, a river's or a lake's height inland."""
     y = np.asarray(y, float)
-    return np.where(np.asarray(d) < 0, np.minimum(y, SHALLOW_Y - depth(d, reach)), y)
+    return np.where(np.asarray(d) < 0, np.minimum(y, SHALLOW_Y + over - depth(d, reach)), y)
 
 
-def in_sea(floor_y: float, wheels_y: float) -> bool:
-    """Whether a car whose wheels stand at wheels_y is in the sea where the sea floor lies at floor_y: on that
-    floor, and DEEP metres or more under the water."""
-    return WATER_Y - floor_y >= DEEP and abs(wheels_y - floor_y) <= ON_FLOOR
+def in_sea(floor_y: float, wheels_y: float, level: float = WATER_Y) -> bool:
+    """Whether a car whose wheels stand at wheels_y is in the water where its floor lies at floor_y and its
+    surface at level (the sea's by default): on that floor, and DEEP metres or more under the water."""
+    return level - floor_y >= DEEP and abs(wheels_y - floor_y) <= ON_FLOOR
 
 
 def drag(dt: float) -> float:
@@ -104,22 +108,23 @@ def away(x: float, z: float, px: float, pz: float, yaw: float) -> float:
     return yaw
 
 
-def ashore(x: float, z: float, road, ground) -> tuple[float, float, float, float | None] | None:
+def ashore(x: float, z: float, road, ground, level: float = WATER_Y) -> tuple[float, float, float, float | None] | None:
     """Where a car that sank at (x, z) comes back: (x, z, yaw, y), stopped, facing away from the water, with y
     the height to settle it near (None: the road's own level, as a teleport finds it). road(x, z) gives the nearest
-    road's middle and its yaw, or None; ground(xs, zs) the floor's heights. The nearest road within ROAD_REACH
+    road's middle and its yaw, or None; ground(xs, zs) the floor's heights; level the height of the water it sank
+    in (the sea's by default), which dry land stands DRY over. The nearest road within ROAD_REACH
     whose middle is dry, else the nearest dry land with INLAND metres of dry land beyond it, on rings of RING
     metres out to LAND_REACH; None when there is neither."""
     found = road(x, z)
     if found is not None:
         rx, rz, ryaw = found
-        if math.hypot(rx - x, rz - z) <= ROAD_REACH and float(np.ravel(ground(rx, rz))[0]) >= WATER_Y + DRY:
+        if math.hypot(rx - x, rz - z) <= ROAD_REACH and float(np.ravel(ground(rx, rz))[0]) >= level + DRY:
             return rx, rz, away(x, z, rx, rz, ryaw), None
     a = np.linspace(0.0, math.tau, 48, endpoint=False)
     ux, uz = np.cos(a), np.sin(a)
     for r in np.arange(RING, LAND_REACH + RING / 2, RING):
         px, pz = x + ux * r, z + uz * r
-        dry = (ground(px, pz) >= WATER_Y + DRY) & (ground(px + ux * INLAND, pz + uz * INLAND) >= WATER_Y + DRY)
+        dry = (ground(px, pz) >= level + DRY) & (ground(px + ux * INLAND, pz + uz * INLAND) >= level + DRY)
         if dry.any():
             k = int(np.flatnonzero(dry)[0]) if dry.sum() == 1 else _middle(np.flatnonzero(dry), len(a))
             return float(px[k]), float(pz[k]), float(a[k]), float(ground(px[k], pz[k])[0])

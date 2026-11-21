@@ -651,4 +651,9 @@ def main(pbf, out, dem=None, provinces=None, resume: bool = False, jobs: int = 1
 
         reports["causeways"] = causeway.write(pbf, out)
         print("causeways", json.dumps(reports["causeways"], ensure_ascii=False), flush=True)
+    if not provinces:  # the inland water, at levels from the provinces' relief
+        from contravia import water
+
+        reports["water"] = water.write(pbf, out)
+        print("water", json.dumps(reports["water"]), flush=True)
     return reports
