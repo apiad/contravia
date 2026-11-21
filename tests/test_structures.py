@@ -453,6 +453,18 @@ def test_a_bridge_over_a_valley_holds_its_ends_up_so_its_street_comes_down_at_th
     assert deck.min() > 85.0 and np.ptp(deck) < 1.0                 # held up, and level between two even ends
 
 
+def test_a_bridge_over_a_valley_that_ends_at_a_junction_holds_the_junction_up():
+    """At its east end the bridge leaves from a fork on the valley's wall. The fork stands as high as its
+    steeper street can come down to, the bridge comes to it, and neither street is a wall to climb."""
+    j = [(-900, 0), (-150, 0), (150, 0), (900, 0), (190, 60), (600, 500)]
+    t = _valley(60.0, wall=250.0)
+    city, _, _ = _city(t, _graph(j, [(0, 1), (1, 2), (2, 3), (2, 4), (4, 5)], {(1, 2): 1}))
+    for path in ([j[0], j[1], j[2], j[3]], [j[0], j[1], j[2], j[4], j[5]]):
+        y = _roll(city, t, path)
+        assert np.abs(np.diff(y)).max() < 0.15
+        assert _steepest(y) < GRADE + 0.02
+
+
 def test_a_bridge_over_a_shallow_dip_keeps_its_ends_on_the_ground():
     j = [(-900, 0), (-150, 0), (150, 0), (900, 0)]
     t = _valley(8.0, wall=40.0, half=170.0)                         # 8 m deep, its walls 20 % steep

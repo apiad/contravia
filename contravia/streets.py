@@ -1168,12 +1168,14 @@ def heights(ribbons, owner, axes, rings, rnode, chains, terrain, moved=None):
 
 def _hold_ends(axis, width, terrain, near, out, tilts):
     """The heights a bridge over a valley holds its two ends at: (None, None) for a bridge whose ground never
-    drops VALLEY under the line between its ends, and None for an end no single street leaves from.
+    drops VALLEY under the line between its ends, and None for an end nothing on the ground leaves from.
 
     A relief too coarse for a gorge lays the gorge's walls under the bridge's ends, and the street that
     reaches an end comes down that wall. Such an end stands as high as its street can come down to at GRADE
     from its far end, and the street takes that slope where the ground falls faster: a fill, level across
-    where it left the ground (out, tilts)."""
+    where it left the ground (out, tilts). Where the end leaves from a junction on the ground, every street
+    of that junction comes down so and the end stands at the highest of them; heights then lays the junction
+    flat there and brings its other streets to it (_ramp_to)."""
     q = densify(axis, BRIDGE_STEP)
     s = arclen(q)
     g = _level(terrain, q, np.full(len(q), width / 2))
@@ -1183,7 +1185,7 @@ def _hold_ends(axis, width, terrain, near, out, tilts):
     for point in (axis[0], axis[-1]):
         nodes, streets = near.at(point)
         y = None
-        for k, at_start in [] if nodes else streets:  # a junction on the ground there keeps its plane
+        for k, at_start in [x for n in nodes for x in near.meeting.get(n, ())] if nodes else streets:
             sk, h = out[k]
             f = h.copy()
             for i in range(len(sk) - 2, -1, -1) if at_start else range(1, len(sk)):
