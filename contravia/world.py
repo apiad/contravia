@@ -70,30 +70,85 @@ def _weights(data: CityData) -> dict:
     return weights
 
 
+BLEND = 20.0  # metres either side of the edge between two cells of different provinces over which their reliefs mix
+
+
 class IslandTerrain:
-    """The ground of every province, as one Terrain answers it: height(x, z) and the heights relief() reads."""
+    """The ground of every province, as one Terrain answers it: height(x, z) and the heights relief() reads.
+
+    Each province's streets, pavements and parks were built on that province's own relief grid, and two grids
+    of the same land differ between their samples (La Habana's are 30 m apart, the others' 90 m, each on its own
+    lattice). So a point takes the relief of the province that holds its cell's features (the lowest in the
+    island's order where two do), which keeps the ground under what stands on it. A cell no province holds
+    takes the grid its centre lies deepest inside. Within BLEND of an edge between cells of different provinces
+    the reliefs mix, each by the share of the square of BLEND round the point that lies in its cells, so the
+    ground has no step there."""
 
     def __init__(self, world: World):
         self.world = world
         self.heights = np.array([[max(world.top, 0.0)]], np.float32)
+        keys = [np.asarray(k, np.int64) for k in world._region_keys]
+        held = np.concatenate(keys) if keys else np.zeros(0, np.int64)
+        holder = np.concatenate([np.full(len(k), n, np.int64) for n, k in enumerate(keys)]) if keys else held
+        order = np.lexsort((holder, held))
+        held, holder = held[order], holder[order]
+        first = np.r_[True, held[1:] != held[:-1]] if len(held) else np.zeros(0, bool)
+        self._held, self._holder = held[first], holder[first]
+
+    def _deepest(self, x, z) -> np.ndarray:
+        """The province whose relief grid each point lies deepest inside, -1 outside them all."""
+        best, out = np.zeros(x.shape), np.full(x.shape, -1, np.int64)
+        for k in self.world._regions_over(x, z):
+            x0, z0, x1, z1 = self.world._grids[k]
+            edge = np.minimum(np.minimum(x - x0, x1 - x), np.minimum(z - z0, z1 - z))
+            take = edge > best
+            out, best = np.where(take, k, out), np.where(take, edge, best)
+        return out
+
+    def owner(self, i, j) -> np.ndarray:
+        """The province whose relief cells (i, j) take: the one that holds the cell, else the grid its centre
+        lies deepest inside, else -1."""
+        i, j = np.asarray(i, np.int64), np.asarray(j, np.int64)
+        key = (i << 32) | (j & 0xFFFFFFFF)
+        n = np.minimum(np.searchsorted(self._held, key), max(len(self._held) - 1, 0))
+        found = (self._held[n] == key) if len(self._held) else np.zeros(key.shape, bool)
+        out = np.where(found, self._holder[n] if len(self._held) else -1, -1)
+        if not found.all():
+            bare = ~found
+            out[bare] = self._deepest((i[bare] + 0.5) * CELL, (j[bare] + 0.5) * CELL)
+        return out
 
     def height(self, x, z, near=None) -> np.ndarray:
         x, z = np.asarray(x, float), np.asarray(z, float)
-        out = np.zeros(np.broadcast(x, z).shape)
-        if not out.size:
-            return out
-        best = np.full(out.shape, 0.0)  # how deep inside its grid each point's answer lies; 0: none yet
-        for k in self.world._regions_over(x, z):
-            t = self.world._terrain(k)
-            rows, cols = t.heights.shape
-            x0, z0 = t.origin
-            x1, z1 = x0 + (cols - 1) * t.step[0], z0 + (rows - 1) * t.step[1]
-            edge = np.minimum(np.minimum(x - x0, x1 - x), np.minimum(z - z0, z1 - z))
-            take = edge > best
-            if take.any():
-                out = np.where(take, t.height(x, z), out)
-                best = np.where(take, edge, best)
-        return out
+        shape = np.broadcast(x, z).shape
+        if not np.prod(shape, dtype=int):
+            return np.zeros(shape)
+        x, z = np.broadcast_to(x, shape).ravel(), np.broadcast_to(z, shape).ravel()
+        if len(self.world._grids) == 1:  # one province: its relief inside its grid, 0 outside
+            return np.where(self._deepest(x, z) == 0, self.world._terrain(0).height(x, z), 0.0).reshape(shape)
+        i, j = np.floor(x / CELL).astype(np.int64), np.floor(z / CELL).astype(np.int64)
+        u, v = x - i * CELL, z - j * CELL
+        # the share of the square of BLEND round each point in the cell before, its own and the one after, per axis
+        share = [np.stack([lo, 1.0 - lo - hi, hi]) for lo, hi in (
+            (np.clip((BLEND - t) / (2 * BLEND), 0.0, 1.0), np.clip((t + BLEND - CELL) / (2 * BLEND), 0.0, 1.0))
+            for t in (u, v))]
+        weight: dict[int, np.ndarray] = {}
+        for a in (-1, 0, 1):
+            for b in (-1, 0, 1):
+                w = share[0][a + 1] * share[1][b + 1]
+                on = w > 0
+                if not on.any():
+                    continue
+                cells, back = np.unique(np.stack([i[on] + a, j[on] + b], axis=1), axis=0, return_inverse=True)
+                who = self.owner(cells[:, 0], cells[:, 1])[back.ravel()]
+                for k in np.unique(who).tolist():
+                    if k >= 0:
+                        weight.setdefault(k, np.zeros(len(x)))[np.flatnonzero(on)[who == k]] += w[on][who == k]
+        out = np.zeros(len(x))
+        for k, w in weight.items():
+            on = w > 0
+            out[on] += w[on] * self.world._terrain(k).height(x[on], z[on])
+        return out.reshape(shape)
 
 
 class World:
@@ -275,6 +330,15 @@ class World:
 
             self._causeways = Causeways.of(self.folder) if self.folder is not None else None
         return self._causeways
+
+    @property
+    def water(self):
+        """The island's inland water (contravia/water.py, from water.src beside the provinces), or None."""
+        if not hasattr(self, "_water"):
+            from contravia.water import Water
+
+            self._water = Water.of(self.folder) if self.folder is not None else None
+        return self._water
 
     def cell(self, i: int, j: int) -> Cell:
         """Cell (i, j): the features of every province that holds it, its streets raised onto any causeway.

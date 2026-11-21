@@ -110,7 +110,8 @@ class Rain:
 
         def move(q: mx.Query[Transform, Drop], dt: float):
             k = np.rint(q[Drop].k.data[:, 0]).astype(np.int64)
-            pos = self.center + self.rel[k]
+            # a pool made again this frame leaves the old drops alive until the frame's end, past the new rel
+            pos = self.center + self.rel[np.minimum(k, len(self.rel) - 1)]
             pos[k >= self.count] = (0.0, -1e4, 0.0)  # drops not showing go far below the ground
             q[Transform].pos = pos.astype(np.float32)
 

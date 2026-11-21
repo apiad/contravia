@@ -9,7 +9,9 @@ shore.src, which the game ships beside coast.src. ESA WorldCover's mangrove and 
 
 `Shore` answers for a built island: which cells are near the sea, and for each of those its `Field`, the 2.5 m
 grid of heights, normals, colours and types that contravia/rules/shore.py makes of the relief and these
-features, and of the causeways' banks (contravia/causeway.py, causeways.src), which it makes land. The cells draw that grid (rules/ground.py), the wheels stand on it (contravia/surface.py) and the
+features, of the causeways' banks (contravia/causeway.py, causeways.src), which it makes land, and of the inland
+water (contravia/water.py, water.src): a cell with a river or a lake near draws the same grid, with that water
+as its sea, at its own level. The cells draw that grid (rules/ground.py), the wheels stand on it (contravia/surface.py) and the
 mangroves and rocks grow from it. Fields are cached per process; the same cell gives the same field in each.
 """
 
@@ -114,13 +116,14 @@ def load(path) -> dict:
 
 class Shore:
     """The shore of a world: OSM's features (from shore.src, if its folder has one), WorldCover's classes (from
-    cover.src, if there), its causeways (a contravia.causeway.Causeways, from causeways.src, if there) and its
-    terrain; `field(i, j)` makes and keeps a coastal cell's Field."""
+    cover.src, if there), its causeways (a contravia.causeway.Causeways, from causeways.src, if there), its inland
+    water (a contravia.water.Water, from water.src, if there) and its terrain; `field(i, j)` makes and keeps a
+    coastal cell's Field."""
 
-    def __init__(self, terrain, features=None, cover=None, built=None, causeways=None):
+    def __init__(self, terrain, features=None, cover=None, built=None, causeways=None, water=None):
         import shapely
 
-        self.terrain, self.cover, self.built, self.causeways = terrain, cover, built, causeways
+        self.terrain, self.cover, self.built, self.causeways, self.water = terrain, cover, built, causeways, water
         self.features = {k: g for k, g in (features or {}).items() if g is not None and not g.is_empty}
         self._trees = {k: shapely.STRtree(shapely.get_parts(g)) for k, g in self.features.items()}
         self._coastal: dict[tuple[int, int], bool] = {}
@@ -138,15 +141,16 @@ class Shore:
         return shapely.union_all(tree.geometries.take(hit)) if len(hit) else None
 
     def coastal(self, i: int, j: int) -> bool:
-        """Whether the sea or a causeway comes within rules.shore.REACH of cell (i, j): only those cells draw a
-        shore."""
+        """Whether the sea, a causeway or inland water comes within rules.shore.REACH of cell (i, j): only those
+        cells draw a shore."""
         from contravia.rules import shore as rules
 
         key = (i, j)
         if key not in self._coastal:
             self._coastal[key] = rules.coastal(self.terrain, i, j) or (
                 self.causeways is not None
-                and self.causeways.near(i * CELL, j * CELL, (i + 1) * CELL, (j + 1) * CELL, rules.REACH))
+                and self.causeways.near(i * CELL, j * CELL, (i + 1) * CELL, (j + 1) * CELL, rules.REACH)) or (
+                self.water is not None and self.water.near(i, j))
         return self._coastal[key]
 
     def field(self, i: int, j: int):
@@ -176,8 +180,8 @@ class Shore:
         return out
 
     def floor(self, x, z) -> np.ndarray:
-        """What the wheels stand on at points (x, z): the drawn ground on land, and over the sea a floor that goes
-        down with the distance from the waterline past the band of shallows (contravia/sea.py)."""
+        """What the wheels stand on at points (x, z): the drawn ground on land, and over the sea or inland water a
+        floor that goes down with the distance from the waterline past the band of shallows (contravia/sea.py)."""
         from contravia import sea
         from contravia.rules import shore as rules
 
@@ -189,7 +193,22 @@ class Shore:
             if f is not None:
                 k = (ci == i) & (cj == j)
                 d = f.sample(f.d, x[k], z[k])
-                out[k] = sea.floor(f.height(x[k], z[k]), d, rules.shallows(f.sample(f.w, x[k], z[k])))
+                out[k] = sea.floor(f.height(x[k], z[k]), d, rules.shallows(f.sample(f.w, x[k], z[k])),
+                                   0.0 if f.s is None else f.sample(f.s, x[k], z[k]))
+        return out
+
+    def level(self, x, z) -> np.ndarray:
+        """The height of the water nearest points (x, z): the sea's, or near inland water that water's."""
+        from contravia.rules.ground import WATER_Y
+
+        x, z = np.atleast_1d(np.asarray(x, float)), np.atleast_1d(np.asarray(z, float))
+        out = np.full(x.shape, WATER_Y)
+        ci, cj = np.floor(x / CELL).astype(np.int64), np.floor(z / CELL).astype(np.int64)
+        for i, j in set(zip(ci.tolist(), cj.tolist(), strict=True)):
+            f = self.field(i, j)
+            if f is not None and f.s is not None:
+                k = (ci == i) & (cj == j)
+                out[k] = f.level(x[k], z[k])
         return out
 
 
@@ -211,5 +230,6 @@ def of(city) -> Shore | None:
 
             features = load(folder / NAME) if (folder / NAME).exists() else None
             grid = cover.load(folder / cover.NAME) if (folder / cover.NAME).exists() else None
-            _shores[key] = Shore(city.terrain, features, grid, built=city, causeways=getattr(city, "causeways", None))
+            _shores[key] = Shore(city.terrain, features, grid, built=city, causeways=getattr(city, "causeways", None),
+                                 water=getattr(city, "water", None))
     return _shores[key]

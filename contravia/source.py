@@ -55,6 +55,10 @@ def pack(pbf, dem, out, provinces=None, worldcover=None) -> dict:
 
         sizes["causeways"] = causeway.write(pbf, out, causeway.island(terrains))
         print(f"causeways: {json.dumps(sizes['causeways'], ensure_ascii=False)}", flush=True)
+        from contravia import water
+
+        sizes["water"] = water.write(pbf, out, causeway.island(terrains))  # the inland water, on the same relief
+        print(f"water: {json.dumps(sizes['water'])}", flush=True)
     return sizes
 
 

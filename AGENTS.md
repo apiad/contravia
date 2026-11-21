@@ -63,6 +63,18 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   kept in `causeways.src` beside `coast.src` (100 KB): `contravia causeways <pbf> --out data/cuba` (about 45 s,
   on the island's relief) writes it without rebuilding; `prepare` and `source` write it, the first run copies it,
   and the index adds the banks to the map's land when it is next written.
+- Inland water is the sea at another height (`contravia/water.py`): OSM's rivers, canals and streams
+  (`waterway=`), lakes and reservoirs (`natural=water`), each at a level from the relief. A waterway lies 1.5 m under
+  the relief along its line and never rises downstream, so it carves the valley the smoothed relief closes (45 m at
+  most for a river); a lake takes a low height of its outline; where the relief is sea, the water is the sea's. A
+  road that crosses water without a bridge keeps its ground, as over a culvert. It is kept in `water.src` beside
+  `coast.src` in 1 km tiles: `contravia water <pbf> --out data/cuba` writes it on the provinces' relief without
+  rebuilding, `prepare` and `source` write it and the first run copies it. A cell with water within 46 m draws the
+  shore's 2.5 m grid with that water as its sea (`rules/shore.py`: `Field.s` is how far a node's nearest water
+  stands over the sea, the bank type slopes up to the relief and turns to rock where steep, and water over the sea
+  is drawn by the grid, since no plane lies under it). The wheels go down under it; a car sinks where the water is
+  wider than about 22 m and fords the rest (`sea.in_sea(..., level)`). A pier goes 50 m under the relief, so it
+  stands on a carved bed: run `contravia streets` after `contravia water` on data built before it.
 - What changes by place is in `contravia/regions.toml` (`contravia/regions.py`, spec
   `docs/superpowers/specs/2026-11-20-regions-design.html`), applied when a cell opens: the municipio rules of
   buildings, Guanabacoa's two storeys, and cemeteries (`landuse=cemetery`) with no filler houses and no laid parks.

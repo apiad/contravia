@@ -694,7 +694,7 @@ class Game:
             return
         if getattr(self, "sinking", None) is None:
             floor = float(shore.floor(np.array([self.car.x]), np.array([self.car.z]))[0])
-            if sea.in_sea(floor, self.car.y):
+            if sea.in_sea(floor, self.car.y, float(shore.level(self.car.x, self.car.z)[0])):
                 self.sinking = 0.0
             return
         self.sinking += dt
@@ -708,7 +708,8 @@ class Game:
         """Put a car that sank on the shore (sea.ashore), stopped, the chase camera easing in from where it was."""
         x, z = self.car.x, self.car.z
         eye = np.array(self.eye if getattr(self, "eye", None) is not None else [x, self.car.y + 3.0, z], float)
-        found = sea.ashore(x, z, self.walls.nearest_road, self.surface.height)
+        found = sea.ashore(x, z, self.walls.nearest_road, self.surface.height,
+                           float(self.surface.shore.level(x, z)[0]))
         if found is None:
             self.teleport(x, z)
         else:
