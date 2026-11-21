@@ -101,6 +101,11 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   '{"x":..,"z":..,"h":..}'` opens the map there and `engine.state.map` reports its camera and line counts;
   `bench/map_flight.py` flies a fixed path offscreen and prints wall and main-thread CPU per frame.
 - `contravia prepare` also builds the road graph traffic drives on (g_* arrays); data from before layer 2 plays with no traffic.
+- A road that crosses a province border is cut at a junction both provinces' graphs hold (the same OSM node), where
+  the GPS joins them. Whether a road leads somewhere is asked over the province plus `prepare.GRAPH_MARGIN` (2 km,
+  inside the box `read_osm` already reads), and only the edges with their midpoint in the province are kept. A
+  one-way piece into the border has no turn out of it in its province's graph: a traffic car drives off its end
+  and the flow empties it. Provinces prepared before this lack those pieces (Bacunayagua's bridge among them).
 - `contravia prepare` then builds the street surface from that graph (`contravia/streets.py`): avenues' two carriageways
   joined, junctions merged and rounded, each junction on the plane that fits the ground under it and each street
   5 cm over the ground, tilted with it across, cut per cell and triangulated. The cells draw
