@@ -40,3 +40,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: uvx --from "$FASTCI" fastci
+
+  signoff:
+    # Every commit of a pull request carries Signed-off-by (CONTRIBUTING.md, the Developer Certificate of Origin).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Every commit is signed off
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          missing=$(git log --format='%H %(trailers:key=Signed-off-by,valueonly,separator=%x2C)' \
+            "origin/$BASE..HEAD" --no-merges | awk 'NF < 2 {print $1}')
+          if [ -n "$missing" ]; then echo "commits without Signed-off-by:"; echo "$missing"; exit 1; fi
+          echo "$(git rev-list --count --no-merges "origin/$BASE..HEAD") commits signed off"
