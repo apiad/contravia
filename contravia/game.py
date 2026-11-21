@@ -162,6 +162,7 @@ class Game:
         self.rig, self._chased = None, None  # the chase camera's contravia.camera.Rig, and the eye it last placed
         self.mouse_orbit = Orbit()  # the mouse's turn of the chase camera round the car
         self.mode = "drive"  # or "menu", "paused", "photo", "map", "garage": see contravia/menu.py
+        self.sound = None  # contravia.audio.Sound, started by main() or the bench
         self.photo = None  # the photo mode's and the Garaje's camera around the car: (yaw, pitch, distance)
         self.map = None  # the map's camera, a contravia.mapview.MapCam, while the map shows
         self.flight = None  # the camera's flight between the street and the map (contravia/flight.py), while it flies
@@ -553,6 +554,8 @@ class Game:
         self.handles = spawn_car(self.engine, vehicle, palette=palette)
         if rebuilt and self.driven is not None:
             self._rebuild()
+        if rebuilt and self.sound is not None:
+            self.sound.vehicle(self)
 
     def _rebuild(self) -> None:
         """New physics for the current model and family, standing where the car stands, stopped."""
@@ -648,6 +651,8 @@ class Game:
         self.rain_on = options["rain"].value
         self.help_level, self.locked_assists = options["help"].value, options.locked_assists
         self.hud.configure(options["units"].value, options["minimap"].value)
+        if self.sound is not None:
+            self.sound.apply_options(options)
 
     def _find_area(self, now: float) -> None:
         """Twice a second, from the road graph, the street the car drives on: its municipio and its address."""
@@ -763,6 +768,8 @@ class Game:
         weather = {state: label.lower() for label, state in WEATHER}.get(self.weather_state, "")
         pid = a["place"].id
         self.album.add(pid, when, weather)
+        if self.sound is not None:
+            self.sound.ui("shutter")
         self._photo_pending = (self.album.photo_path(pid), self.engine.read_texture(texture))
         self.spot = None
         return texture, when, weather
@@ -961,6 +968,7 @@ class Game:
             self._before = self.car
             t0 = time.perf_counter()
             self.car = self.driven.step(c, self._dt, walls, self.strengths(), self._crashes().controls())
+            self.controls_now = c
             if self.help and self.car.telemetry is not None:
                 self.car.telemetry.setdefault("lit", {}).update(self.help.lit)
             self.physics_ms = (time.perf_counter() - t0) * 1000
@@ -1049,6 +1057,8 @@ class Game:
         st.y = round(self.car.y, 1)
         st.grade = round(math.tan(self.car.pitch) * 100, 1)  # percent, positive uphill
         st.frame_ms = round(self.frame_ms, 2)
+        if self.sound is not None:
+            self.sound.frame(self)
         if self.curtain is not None:  # last, so it goes on over the HUD this frame put up
             self._step_curtain(now)
 
@@ -1188,6 +1198,7 @@ class Game:
             self.engine.fog_start, self.engine.fog_end = max(self.look.fog[0], fog[0]), max(self.look.fog[1], fog[1])
         self.stars_shown = self.nightsky.update(when, eye, self.look, moon, sun)
         self.weather_state = now.state
+        self.weather_now, self.sun_now, self.when_now = now, sun, when  # for the sound
         self.rain.update(self._dt, eye, now.rain if self.rain_on else 0.0, tuple(1.4 * v for v in self.look.horizon))
         t = time.perf_counter()
         if t - self._sky_state_at > 0.5:
@@ -1216,6 +1227,7 @@ class Game:
         xyz, head, pitch = cars.world(self.surface)
         bxyz, bhead, bpitch, blook = crashes.poses()
         self.fleet.draw(np.r_[xyz, bxyz] - self.o, np.r_[head, bhead], np.r_[pitch, bpitch], np.r_[cars.look, blook])
+        self.traffic_now = (xyz, head, cars.v.copy(), cars.look.copy(), cars.wait.copy())  # for the sound
         now = time.perf_counter()
         if now - self._state_at > 0.5:
             self._state_at = now
@@ -1254,7 +1266,8 @@ def roofs_near(city, landmarks, x: float, z: float, reach: float) -> tuple[list,
 def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, size=(1280, 720),
          traffic: str | None = None, when: str | None = None, warp: float = 1.0, sky: str | None = None,
          pipelined: bool = True, with_traffic: bool = False,
-         screen: str | None = None, height: float | None = None, yaw: float = 0.0, place: str | None = None) -> None:
+         screen: str | None = None, height: float | None = None, yaw: float = 0.0, place: str | None = None,
+         mute: bool = False, audio_out: str | None = None) -> None:
     """Open a window on the main menu, or with `shot`, render offscreen until the city is drawn and save a PNG.
 
     screen opens a menu screen ("main", "free", "options", "pause", "photo", "map", "garage", "design") or "drive"
@@ -1269,6 +1282,7 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     frame while the window draws this one; --no-pipeline is the serial path, for comparing the two.
     With screen "map", height (metres) puts the map's camera that high over `at`, turned yaw degrees from north,
     and the car stays at the Capitolio: `at` may be far from any road.
+    mute plays no sound (a shot never does); audio_out records the mix, and a WAV per bus beside it, to that path.
     """
     os.environ["HAVANA_DATA"] = os.path.abspath(data)
     builders = start_builders()  # first: they load the world while this process does and the menu shows
@@ -1336,7 +1350,13 @@ def _main(data, builders, at, shot, frames, size, traffic, when, warp, sky, pipe
 
     free = FreeDrive.from_flags(at=at, when=when, force=sky_config.force if sky_config else None,
                                 traffic=with_traffic or bool(traffic), warp=warp)
-    menu = Menu(engine, game, free, Options.load(), screen=screen if screen in ("main", "free", "options") else None)
+    options = Options.load()
+    from contravia.audio import Sound
+
+    game.sound = Sound.start(engine.state, options, backend="file" if audio_out else "null" if mute or shot else "device",
+                             path=audio_out)
+    game.sound.attach(game)
+    menu = Menu(engine, game, free, options, screen=screen if screen in ("main", "free", "options") else None)
     if screen in ("pause", "photo", "map"):
         engine.on("startup")(lambda _=None: (menu.pause(), screen != "pause" and menu.show(screen)))
     if screen in ("album", "province"):  # over the pause; the province of --place, or La Habana
