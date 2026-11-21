@@ -39,6 +39,7 @@ MINIMAP_ZOOM = 0.01  # change of height, as a fraction, that renders the minimap
 MINIMAP_MOVE = 1.5  # metres the car moves before the minimap renders again at its lowest, about one pixel of it
 MINIMAP_MARKS = 12  # most places the minimap shows at once
 MARK_PX = 18  # pixels across a place's icon on the minimap
+ROUTE_ICON = 34  # pixels across the GPS panel's icon
 OFF = (-1000, -1000)  # offset that puts an unused icon outside the window
 MARGIN = 24  # pixels between the HUD and the window's edges
 STATS_LINES = 9  # lines of the F1 panel
@@ -142,6 +143,7 @@ class Hud:
         self._address = None
         self._spot = ""  # the name of the place the photo hint shows, or "" with no hint
         self._pilot = ""  # the pilot's line over the lamps, or "" with the pilot off
+        self._route = None  # what the GPS panel shows (distance, words, left, kind, angle), None with no route
         self._note, self._note_t, self._note_a = "", 0.0, None  # the driving help's note and how long it has shown
         self.places, self.has = None, lambda pid: False  # the collectible places and whether one is photographed
         self.marks = []  # (panel, image) of the minimap's place icons, the unused ones at OFF
@@ -238,6 +240,17 @@ class Hud:
         self.pilot_text = Text(self._pilot, style_overrides={"font": ui.BOLD, "font_size": 14, "fg": ui.INK})
         self.pilot_panel = Panel([self.pilot_text], anchor="bottom-right", offset=(MARGIN, MARGIN + 162),
                                  style_overrides={"padding": "2 8", "bg": ui.YELLOW})
+        # Top centre, over the sky, while the GPS has a route: the next step's icon, distance and words, and what is
+        # left under them.
+        self.route_icon = Image(ui.manoeuvre("straight", 0.0, ROUTE_ICON), style_overrides={"width": ROUTE_ICON,
+                                                                                              "height": ROUTE_ICON})
+        self.route_far = Text("", style_overrides={"font": ui.TITLE, "font_size": 22, "fg": ui.YELLOW})
+        self.route_what = Text("", style_overrides={"font": ui.BOLD, "font_size": 15, "fg": ui.PAPER})
+        self.route_left = Text("", style_overrides={"font": ui.BOLD, "font_size": 12, "fg": ui.GREY})
+        words = Panel([self.route_far, self.route_what], style_overrides={**CLEAR, "gap": 0})
+        self.route_panel = Panel([Panel([self.route_icon, words], style_overrides={**CLEAR, "direction": "h", "gap": 12}),
+                                  self.route_left], anchor="top-center", offset=(0, MARGIN),
+                                 style_overrides={"gap": 4, "padding": "10 16 10 12", "bg": ui.alpha(ui.INK, 0.92)})
         # Over the pilot's line, for a moment after L: the driving help's new level.
         self.note_text = Text(self._note, style_overrides={"font": ui.TITLE, "font_size": 22, "fg": ui.alpha(ui.PAPER, 0)})
         self.note_panel = Panel([self.note_text], anchor="bottom-right", offset=(MARGIN, MARGIN + 192),
@@ -259,7 +272,7 @@ class Hud:
                                  style_overrides={"padding": 10, "gap": 2, "bg": "#000000b0", "width": 460,
                                                   "height": 24 + 22 * STATS_LINES})
         for p in (clock, area, gear_panel, self.address_back, self.address, self.spot_panel, self.pilot_panel,
-                  self.note_panel):  # the others fit by their anchor
+                  self.note_panel, self.route_panel):  # the others fit by their anchor
             ui.fit(p)
         if self.shown:
             self.shown = False
@@ -279,8 +292,10 @@ class Hud:
             (g.append if on else g.remove)(self.stats_panel)
         if self._spot:
             (g.append if on else g.remove)(self.spot_panel)
-        if self._pilot:
+        if self._pilot and not self._route:
             (g.append if on else g.remove)(self.pilot_panel)
+        if self._route:
+            (g.append if on else g.remove)(self.route_panel)
 
     def configure(self, units: str, minimap: bool) -> None:
         """km/h or mph, and the minimap shown or hidden; takes effect at once."""
@@ -368,8 +383,28 @@ class Hud:
             return
         self.pilot_text.text = line
         ui.refit(self.pilot_panel)
-        if self.shown and bool(had) != bool(line):
+        if self.shown and not self._route and bool(had) != bool(line):
             (self.engine.gui.append if line else self.engine.gui.remove)(self.pilot_panel)
+
+    def set_route(self, far: str, what: str, left: str, kind: str, angle: float) -> None:
+        """The GPS panel: the next step's distance and words, what is left, and the step's kind and angle for its
+        icon; what = "" takes the panel off. While it shows, the pilot's line is off (its speed is in `left`)."""
+        now = (far, what, left, kind, round(angle, 2)) if what else None
+        if now == self._route:
+            return
+        had, self._route = self._route, now
+        if not self.panels:
+            return
+        if now:
+            self.route_far.text, self.route_what.text, self.route_left.text = far, what, left
+            if had is None or had[3:] != now[3:]:
+                self.route_icon.svg = ui.manoeuvre(kind, angle, ROUTE_ICON)
+            ui.refit(self.route_panel)
+        if self.shown and bool(had) != bool(now):
+            g = self.engine.gui
+            (g.append if now else g.remove)(self.route_panel)
+            if self._pilot:
+                (g.remove if now else g.append)(self.pilot_panel)
 
     def note(self, text: str) -> None:
         """Show `text` over the lamps at once; update fades it after NOTE_SHOWN seconds, as the municipio's."""
@@ -445,6 +480,10 @@ class Hud:
         self.engine.refresh_texture(self.texture)
         self._place_marks(car)
 
+    def redraw_minimap(self) -> None:
+        """Render the minimap on the next update, whatever the car did: the scene it shows changed (the GPS band)."""
+        self._drawn = None
+
     def set_places(self, places, has) -> None:
         """The collectible places the minimap marks, and has(id), whether one is photographed."""
         self.places, self.has = places, has
@@ -469,6 +508,20 @@ class Hud:
             if image.svg != svg:
                 image.svg = svg
             panel.offset = (round(centre - right), round(centre + down))
+
+
+def route_left(seconds: float, metres: float, now, wanted: float | None, units: str = "kmh") -> str:
+    """The GPS panel's second line: «12 min · 8,4 km · llegas 10:42», after the pilot's wanted speed when it drives."""
+    from datetime import timedelta
+
+    from contravia.gps import distance_text
+
+    far = "0 m" if metres < 30 else distance_text(metres)
+    when = (now + timedelta(seconds=seconds)).strftime("%H:%M")
+    line = f"{max(1, round(seconds / 60))} min · {far} · llegas {when}"
+    if wanted is None:
+        return line
+    return f"{speed_text(wanted, units)} {'km/h' if units == 'kmh' else 'mph'} · {line}"
 
 
 def pilot_line(wanted: float | None, turn: float | None, units: str = "kmh") -> str:

@@ -55,6 +55,10 @@ OCEAN = 30_000_000.0  # metres: the side of the ocean, centred on the Capitolio,
 OCEAN_TILE = 1_000_000.0  # metres: the ocean is laid in squares no larger than this, so clipping stays exact
 MAP_SINK = 2.0  # screen pixels the water sinks below sea level in the map, so the coast never flickers on it
 SHALLOW = (0.16, 0.42, 0.45)
+KERB_KEEP = 40.0  # metres: an arrived route's stop line is kept for the pilot only this close ahead on its street
+ROUTE_KEYS = ("route-casing", "route", "route-mark")  # the GPS route's layers on the map, in drawing order
+ROUTE_PX, MARK_PX = 3.0, 10.0  # the route's width and its end's cross, screen pixels
+ROUTE_FILL = (0.84, 0.05, 0.03, 1.0)  # linear red, the brand's
 HIDDEN_Y = -1e4  # metres: where the shallows wait while driving, far under everything
 WATER = (0.10, 0.24, 0.32)
 FLAT_BASE_Y = -1.0  # with flat data: below every streamed ground, which always wins over it
@@ -103,6 +107,14 @@ class Game:
 
         # detail: the cells' asphalt and ground (surfaces DETAIL_ASPHALT and DETAIL_GROUND) get wear, grain and
         # tufts from noise in the shader up close; the summaries' surfaces are 0 and stay flat.
+        from manifoldx.textures import texture_array
+
+        from contravia import hlod
+
+        # baked: the level-1 summaries carry an image of their cells, drawn on their ground and roofs through a
+        # layer of this array each (contravia/hlod.py); `manifoldx emit hlod on=0` shows their own colours.
+        baked = texture_array(engine, hlod.LAYERS, hlod.SIZE)  # made on the GPU once the engine has a device
+        self.hlod = True
         # builders: the two streamers' worker processes, from start_builders; made here when not given.
         quad, ring = builders or start_builders()
         self.streamer = QuadStreamer(engine, CELL, city.tree.origin, LEVELS, city.exists, build_node,
@@ -110,7 +122,7 @@ class Game:
                                      focus_radius=NEAR_NODES,  # what the curtain waits for builds first
                                      crossfade=0.3,  # a level of detail fades into the next, it never pops
                                      material=StandardMaterial("#ffffff", roughness=0.9, vertex_colors=True,
-                                                               faded=True, detail=True))
+                                                               faded=True, detail=True, baked=baked))
         # The detail ring: cornices, balconies, sills and roof tanks in the 3 x 3 cells around the car, drawn over
         # the massing (rules/detail.py). It narrows to the car's own cell when the frame time pushes tau to its top.
         self.detail = Streamer(engine, CELL, build_detail, radius=1, ready_radius=2, workers=ring)
@@ -135,6 +147,10 @@ class Game:
         self.base = self._spawn_base()
         self.shelf = self._spawn_shelf()
         self.shadow = self._spawn_shadow()
+        self.arrows = self._spawn_arrows()
+        self._arrow_yaw, self._arrow_step, self._arrow_pulse = None, None, 1.0
+        self._band = self._band_for = self._band_job = None  # the GPS band's entity, (route, metres) it was laid
+        # for, and the thread laying the next one: [result] once in
         self.model = kept(engine.state, "player car", "CarParams()", _player_car)
         self.handles = spawn_car(engine, self.model)
         self.family, self.driven, self.help_level, self.locked_assists = "moderno", None, DEFAULT, ()
@@ -151,6 +167,7 @@ class Game:
         self.tune = True  # tau follows the frame time; the bench and offline shots keep it fixed
         self.driver = Driver()
         self.hud = Hud(engine)
+        self._make_gps()
         # The collectible places, the player's collection, and the place the photo hint offers (contravia/collect.py).
         self.places = collect.Places.load().with_meshes(self.walls.landmarks.bounds, self.walls.landmarks.place_boxes)
         self.album = Album.load({p.id: p.province for p in self.places})
@@ -188,11 +205,14 @@ class Game:
         engine.system(self.traffic, parallel=True)
         engine.system(self.sky, parallel=True)
         engine.on("teleport")(self._teleport_event)
+        engine.on("gps")(self._gps_event)
+        engine.on("gps_clear")(self.gps_clear)
         engine.on("traffic_config")(self.configure_traffic)
         engine.on("close")(self.close_street)
         engine.on("sky_config")(self.configure_sky)
         engine.on("weather")(self.force_weather)
         engine.on("quality")(self.quality_event)
+        engine.on("hlod")(self.set_hlod)
         engine.on("shutdown")(self._shutdown)
         # The quality preset (contravia/quality.py): Alto until the options or a --quality flag say otherwise; a
         # reload under contravia dev keeps the one the old game had.
@@ -255,6 +275,21 @@ class Game:
         self.layer = TrafficLayer(graph, self.runner, radius=radius, tables=tables)
         self.fleet = Fleet(self.engine)
         self.runner.start()
+
+    def set_hlod(self, payload=None) -> None:
+        """`manifoldx emit hlod on=0|1`: draw the level-1 summaries with the image of their cells (1, the
+        default) or with their own colours (0), to compare in place."""
+        self.hlod = bool(int((payload or {}).get("on", 1)))
+        self._show_hlod()
+
+    def _show_hlod(self) -> None:
+        """Each drawn level-1 node shows its layer, or none (-1) while hlod is off."""
+        layers = getattr(self.streamer, "_layers", None)
+        baked = self.engine.store._components.get("Baked")
+        if not layers or baked is None:
+            return
+        idx = np.fromiter(layers.keys(), int, len(layers))
+        baked[idx, 0] = np.fromiter(layers.values(), float, len(layers)) if self.hlod else -1.0
 
     def configure_traffic(self, changes: dict) -> None:
         """Change demand settings while playing; refused settings leave the old ones and say why in state."""
@@ -394,6 +429,123 @@ class Game:
 
         return BASE_Y - MAP_SINK * mapview.metres_per_pixel(self.map, max(self.engine.h, 1))
 
+    def _spawn_arrows(self):
+        """The GPS arrow over the car, twice: faint (while the next step is far) and solid; both wait hidden."""
+        from manifoldx.components import Material, Mesh, Transform
+        from manifoldx.resources import StandardMaterial
+
+        from contravia.gps import ARROW_FAINT, arrow_mesh
+
+        m = arrow_mesh()
+        return {k: self.engine.spawn(Mesh({"positions": m.positions, "normals": m.normals, "colors": m.colors,
+                                           "indices": m.indices}),
+                                     Material(StandardMaterial("#ffffff", roughness=0.6, vertex_colors=True,
+                                                               opacity=k)),
+                                     Transform(pos=(0.0, HIDDEN_Y, 0.0)))
+                for k in (ARROW_FAINT, 1.0)}
+
+    def _place_arrow(self) -> None:
+        """Over the car's roof, turned toward the route look_ahead() metres on; pulses when the step changes;
+        hidden with no route or out of the drive."""
+        from contravia.gps import ARROW_UP, arrow_opacity, arrow_rotation, arrow_yaw, look_ahead
+
+        g = self.gps
+        show = None
+        if self.mode == "drive" and g.route is not None and g.router.rg is not None:
+            show = arrow_opacity(g.to_step)
+            x, z = g.ahead(look_ahead(self.car.speed), g.router.rg.point)
+            self._arrow_yaw = arrow_yaw(self._arrow_yaw, math.atan2(z - self.car.z, x - self.car.x), self._dt)
+            if g.step is not self._arrow_step:
+                self._arrow_step, self._arrow_pulse = g.step, 0.0
+            self._arrow_pulse = min(self._arrow_pulse + self._dt / 0.3, 1.0)
+        else:
+            self._arrow_yaw = None
+        for k, arrow in self.arrows.items():
+            if k != show:
+                arrow.transform.pos = (0.0, HIDDEN_Y, 0.0)
+                continue
+            _, height, _ = self.driven.spec.size
+            arrow.transform.pos = (self.car.x, self.car.y + height + ARROW_UP, self.car.z)
+            arrow.transform.rot = arrow_rotation(self._arrow_yaw, (self.eye[0] - self.car.x, self.eye[2] - self.car.z))
+            grow = 1.0 + 0.25 * (1.0 - self._arrow_pulse)
+            arrow.transform.scale = (grow, grow, grow)
+
+    def _lay_band(self) -> None:
+        """Keep the GPS band on the route's next BAND_AHEAD metres in this province: laid on a thread for a new
+        route and every BAND_EVERY metres driven, swapped in whole, and the minimap told; gone with the route."""
+        from contravia.gps import BAND_AHEAD, BAND_EVERY, band_mesh, band_width
+        from contravia.traffic import lane_geometry
+
+        g, rg = self.gps, self.gps.router.rg
+        if self._band_job is not None and self._band_job[1]:
+            mesh, self._band_job = self._band_job[1][0], None
+            self._drop_band()
+            if mesh is not None:
+                self._band = self._spawn_band(mesh)
+            self.hud.redraw_minimap()
+        if g.route is None or rg is None:
+            if self._band is not None:
+                self._drop_band()
+                self.hud.redraw_minimap()
+            self._band_for = None
+            return
+        fresh = self._band_for is None or self._band_for[0] is not g.route
+        if self._band_job is not None or not (fresh or g.done_m - self._band_for[1] >= BAND_EVERY):
+            return
+        k = self.city.names.index(self.city.focused)
+        graph, edges, left = self.city.graph, [], BAND_AHEAD
+        for j, e in enumerate(g.route.edges[g.k:].tolist()):
+            p, local = rg.local(e)
+            if p != k or left <= 0:
+                break
+            edges.append(local)
+            left -= float(rg.length[e]) - (g.s if j == 0 else 0.0)
+        self._band_for = (g.route, g.done_m)
+        if not edges:
+            self._band_job = (None, [None])
+            return
+        last = edges[-1]
+        s1 = float(graph.a["g_len"][last]) + min(left, 0.0)
+        if rg.island(k, last) == g.route.edges[-1]:
+            s1 = min(s1, g.route.s1)
+        turns = [(st.at - g.done_m, float(np.sign(st.angle))) for st in g.steps
+                 if st.kind in ("turn", "slight") and st.at > g.done_m]
+        twoway, lane_w = lane_geometry(graph.a) if not hasattr(self, "_lanes_for") or self._lanes_for[0] is not graph \
+            else self._lanes_for[1]
+        self._lanes_for = (graph, (twoway, lane_w))
+        e0 = edges[0]
+        width = band_width(float(lane_w[e0]), float(lane_w[e0] * graph.a["g_lanes"][e0]), self.car.speed)
+        job = (None, [])
+        self._band_job = job
+
+        def work(s0=g.s):
+            try:
+                job[1].append(band_mesh(graph, edges, s0, s1, turns, width, self.surface.height))
+            except Exception:  # a band is a guide, never a crash: say why, and the next lay tries again
+                import traceback
+
+                traceback.print_exc()
+                job[1].append(None)
+
+        threading.Thread(target=work, name="gps-band", daemon=True).start()
+
+    def _spawn_band(self, m):
+        from manifoldx.components import Material, Mesh, Transform
+        from manifoldx.resources import StandardMaterial
+
+        from contravia.gps import BAND_OPACITY
+
+        return self.engine.spawn(Mesh({"positions": m.positions, "normals": m.normals, "colors": m.colors,
+                                       "indices": m.indices}),
+                                 Material(StandardMaterial("#ffffff", roughness=0.8, vertex_colors=True,
+                                                           opacity=BAND_OPACITY)),
+                                 Transform(pos=(0.0, 0.0, 0.0)))
+
+    def _drop_band(self) -> None:
+        if self._band is not None:
+            self._band.destroy()
+            self._band = None
+
     def _spawn_shadow(self):
         """A dark ellipse straight under the car on the bare ground, not on the road: where the road stands
         above the ground it hides under the road, and where the screen shows the ground under a car that
@@ -413,6 +565,80 @@ class Game:
                                        "indices": m.indices}),
                                  Material(StandardMaterial("#ffffff", roughness=1.0, vertex_colors=True)),
                                  Transform(pos=(0.0, BASE_Y, 0.0)))
+
+    def _make_gps(self) -> None:
+        """The GPS's guide; a destination kept in engine.state (a reload under contravia dev) is set again. The
+        routing graph is built on the router's thread at the first route and kept across reloads."""
+        from contravia.gps import ROUTE_VERSION, Guide, Router, RouteGraph
+
+        def graph():
+            return kept(self.engine.state, "gps route graph", (str(self.city.source), ROUTE_VERSION),
+                        lambda: RouteGraph.for_world(self.city))
+
+        self.gps, self.place = Guide(Router(graph)), None
+        to = getattr(self.engine.state, "gps_to", None)
+        if to:
+            self.gps.go(to[0], to[1], to[2])
+
+    def gps_to(self, x: float, z: float, title: str | None = None) -> str | None:
+        """Guide the car to (x, z), named title when it is a place; the error when no street is near it."""
+        from contravia.gps import ROAD_NEAR
+
+        found = self.walls.nearest_road(x, z)
+        if found is None or math.hypot(found[0] - x, found[1] - z) > ROAD_NEAR:
+            return "Aquí no hay calle cerca"
+        self.gps.go(x, z, title)
+        self.engine.state.gps_to = [float(x), float(z), title]
+        self._pilot_stop = None
+        return None
+
+    def _gps_event(self, p: dict) -> None:
+        if "lat" in p:
+            x, z = to_local(float(p["lat"]), float(p["lon"]))
+        else:
+            x, z = float(p["x"]), float(p["z"])
+        self.gps_to(float(x), float(z), p.get("title"))
+
+    def gps_clear(self, _=None) -> None:
+        """Drop the GPS destination and its route."""
+        self.gps.clear()
+        self.engine.state.gps_to = None
+        self._pilot_stop = None
+
+    def _show_route(self, help) -> None:
+        """The GPS panel from the guide: the next step and what is left, or «Llegaste» or «No hay ruta» for a
+        moment; «Ruta nueva» as a note when a route comes in."""
+        from contravia.gps import say
+        from contravia.hud import route_left
+
+        g = self.gps
+        if g.route is not None and g.route is not getattr(self, "_route_noted", None):
+            self._route_noted = g.route
+            self.hud.note("Ruta nueva")
+        if g.route is not None and g.step is not None:
+            far, what = say(g.step, g.to_step, self.address[0] or None)
+            left = route_left(g.left_s, g.left_m, self.clock.now(), help.wanted if help else None, self.hud.units)
+            self.hud.set_route(far, what, left, g.step.kind, g.step.angle)
+        elif g.message and g.message != "Ruta nueva":
+            self.hud.set_route("", g.message, "", "arrive" if g.message.startswith("Llegaste") else "straight", 0.0)
+        else:
+            self.hud.set_route("", "", "", "", 0.0)
+
+    def _follow_route(self) -> None:
+        """Move the guide along with the car, from this frame's place on the road, and report it in state.gps."""
+        g, rg, p = self.gps, self.gps.router.rg, self.place
+        edge = None
+        if p is not None and rg is not None:
+            edge = rg.island(self.city.names.index(self.city.focused), p.edge)
+        was = g.to
+        g.update(edge, p.s if p is not None else 0.0, self.car, self._dt)
+        if was is not None and g.to is None:
+            self.engine.state.gps_to = None
+        st = g.step
+        self.engine.state.gps = None if g.to is None else {
+            "to": list(g.to), "title": g.title, "left_m": round(g.left_m), "left_s": round(g.left_s),
+            "step": None if st is None else {"kind": st.kind, "in_m": round(g.to_step), "name": st.name},
+            "reroutes": g.reroutes, "message": g.message}
 
     def _teleport_event(self, p: dict) -> None:
         if "lat" in p:
@@ -509,12 +735,52 @@ class Game:
             return c
         if getattr(self, "help", None) is None or getattr(self, "_help_for", None) != (id(graph), id(self.driven)):  # another province or vehicle
             length, _, width = self.driven.spec.size
-            self.help = DrivingHelp(Road(graph), *self.driven.steering(), length, width)
+            self.help = DrivingHelp(self._road(), *self.driven.steering(), length, width)
             self._help_for = (id(graph), id(self.driven))
+        self._route_for_pilot()
         on = road_assists(level, locked)
         return self.help.apply(c, self.car, self._dt, level, locked, float(self.strengths()[0]),
                                self._ahead_of_car() if on & {"brake", "pilot"} else None,
-                               self.layer.signal_open if self.layer else None)
+                               self.layer.signal_open if self.layer else None, place=self.place)
+
+    def _route_for_pilot(self) -> None:
+        """Hand the pilot the GPS route in this province's edge ids: the next edge (None across a border, where it
+        takes the straightest exit until the focus moves) and the destination as a stop line, kept until it has
+        stopped there even after the guide arrived."""
+        g, rg, h = self.gps, self.gps.router.rg, self.help
+        level, locked = getattr(self, "help_level", DEFAULT), getattr(self, "locked_assists", ())
+        if h.arrived or "pilot" not in road_assists(level, locked):  # below level 0 the driver steers
+            self._pilot_stop = None
+        if "pilot" not in road_assists(level, locked):
+            h.route_next = h.stop_at = None
+            return
+        if g.route is None or rg is None:  # arrived, or no route: keep the stop only while it lies just ahead
+            stop, p = getattr(self, "_pilot_stop", None), self.place
+            if stop is not None and (p is None or p.edge != stop[0] or not 0 <= stop[1] - p.s <= KERB_KEEP):
+                stop = self._pilot_stop = None
+            h.route_next, h.stop_at = None, stop
+            return
+        k = self.city.names.index(self.city.focused)
+
+        def next_local(e: int, k=k) -> int | None:
+            n = g.next_edge(rg.island(k, e))
+            if n is None:
+                return None
+            p, local = rg.local(n)
+            return local if p == k else None
+
+        last_k, last = rg.local(int(g.route.edges[-1]))
+        self._pilot_stop = (last, g.route.s1) if last_k == k else None
+        h.route_next, h.stop_at = next_local, self._pilot_stop
+
+    def _road(self) -> Road | None:
+        """The focused province's streets, indexed for Road.locate; None with no graph."""
+        graph = self.city.graph
+        if not len(graph):
+            return None
+        if getattr(self, "_road_for", None) is not graph:
+            self._road_for, self._road_index = graph, Road(graph)
+        return self._road_index
 
     def _ahead_of_car(self) -> tuple[np.ndarray, np.ndarray]:
         """What the emergency brake must not hit: the walls, the traffic and the crashed cars near the car, as
@@ -655,10 +921,25 @@ class Game:
         self._lifting = (f.start, got)
         threading.Thread(target=work, name="flight-lift", daemon=True).start()
 
+    def back_to_car(self) -> None:
+        """Leave the map for the car where it stands: the camera flies down to the chase camera's place behind it
+        and driving goes on, the car not moved (a GPS route was just set)."""
+        from contravia import mapview
+
+        _, eye, target = chase(None, self.car, 0.0, self.surface)
+        self.flight = flight.down(mapview.pose(self.map), (eye, target), (self.car.x, self.car.z))
+        self._lift_flight(self.car.x, self.car.z)
+        self.map, self._keep_car = None, True
+
     def _land(self) -> None:
-        """The flight down landed: the car on its road and driving, the chase camera on from the flight's eye."""
+        """The flight down landed: the car on its road and driving, the chase camera on from the flight's eye;
+        back to the car (back_to_car), the car stays where it was."""
         eye, (x, z) = self.eye, self.flight.dest
         self.flight = None
+        if getattr(self, "_keep_car", False):
+            self._keep_car = False
+            self.resume()
+            return
         self.teleport(x, z)
         self.eye = eye  # teleport puts the eye over the car; the chase starts from the flight's last one instead
         self.km, self.area, self.address = 0.0, "", ("", "", "")
@@ -879,6 +1160,42 @@ class Game:
                                   "lines": {k: len(v) for k, v in self.engine.lines.layers.items()},
                                   "streets_busy": self.maproads.busy})
 
+    def _map_route(self) -> None:
+        """The GPS route on the map as a line over the roads (engine.lines, after maproads' layers so it draws on
+        top), and a cross where it ends; set again when the route or the render frame changes, hidden off the map."""
+        from contravia import mapview, maproads
+        from contravia.summary import _heights
+
+        lines, g = self.engine.lines, self.gps
+        on = (self.mode == "map" and self.map is not None and self.flight is None and g.route is not None
+              and g.router.rg is not None and getattr(self, "maproads", None) is not None)
+        if not on:
+            if getattr(self, "_route_drawn", None) is not None:
+                for k in ROUTE_KEYS:
+                    lines.look(k, alpha=0.0)
+                self._route_drawn = None
+            elif not getattr(self, "_route_cleared", False):  # a reload under dev keeps the engine and its lines
+                for k in ROUTE_KEYS:
+                    lines.remove(k)
+                self._route_cleared = True
+            return
+        mpp = mapview.metres_per_pixel(self.map, max(self.engine.h, 1))
+        key = (id(g.route), tuple(self.engine.origin), round(math.log(mpp), 1))
+        if key != getattr(self, "_route_drawn", None):
+            self._route_drawn = key
+            o = np.array([self.engine.origin[0], 0.0, self.engine.origin[1]])
+            pts = g.route.polyline(g.router.rg)
+            y = _heights(pts, self.terrain, True) + maproads.LIFT
+            p3 = np.c_[pts[:, 0], y, pts[:, 1]] - o
+            lines.set("route-casing", p3[:-1], p3[1:], maproads.DARK, ROUTE_PX + maproads.CASING)
+            lines.set("route", p3[:-1], p3[1:], ROUTE_FILL, ROUTE_PX)
+            r = MARK_PX * mpp  # the end's cross, MARK_PX screen pixels across its arms
+            c = p3[-1]
+            arms = np.array([[r, 0.0, r], [r, 0.0, -r]])
+            lines.set("route-mark", c - arms, c + arms, ROUTE_FILL, ROUTE_PX + 1.0)
+        for k in ROUTE_KEYS:
+            lines.look(k, scale=maproads.scale(self.map.h) if k != "route-mark" else 1.0, alpha=1.0)
+
     def _recentre(self) -> np.ndarray:
         """Move the engine's origin to the camera (behind the car while driving) when it has gone RECENTRE
         metres; returns the origin as (x, 0, z)."""
@@ -931,6 +1248,10 @@ class Game:
         from contravia import curtain
 
         self.curtain, self.waiting_now = curtain.Curtain(time.perf_counter(), then), None
+        # A mode about to start elsewhere: the builders drop the menu's queue instead of finishing it first.
+        # hasattr: under contravia dev, a manifoldx older than QuadStreamer.cancel stays loaded until a restart.
+        if then is not None and hasattr(self.streamer, "cancel"):
+            self.streamer.cancel()
         self._curtain_panel = self._curtain_panel or curtain.Panel(self.engine)
         self._curtain_panel.show(1.0)
         if self._budgets is None:
@@ -991,13 +1312,16 @@ class Game:
             if inp.just_pressed("t") and not veiled:
                 x, z, _ = self.walls.random_road(self._rng)
                 self.teleport(x, z)
+            road = self._road()
+            self.place = road.locate(self.car.x, self.car.z, self.car.yaw) if road is not None else None
             if veiled:  # the car stands on its brakes till the curtain lifts
                 c = Controls(0.0, 1.0, 0.0, True)
             else:
                 c = self.autopilot(self.car) if self.autopilot else self.road_help(self.controls(self._dt))
+            self._follow_route()
             if getattr(self, "sinking", None) is not None:  # under water the engine is cut and the wheels held
                 c = Controls(0.0, 1.0, 0.0, True)
-            walls = self.walls.near(self.car.x, self.car.z, self.car.y)
+            walls = self.walls.near(self.car.x, self.car.z, self.car.y, wait=not veiled)  # held: none needed yet
             if self.layer:
                 walls = np.concatenate([walls.reshape(-1, 2, 2), self.layer.boxes_near(self.car.x, self.car.z)])
             # the physics checks its walls in every 1/120 s step: hand it only those this frame can reach
@@ -1022,6 +1346,8 @@ class Game:
         ground = float(self.surface.height(np.array([self.car.x]), np.array([self.car.z]), near=self.car.y)[0])
         self.shadow.transform.pos = (self.car.x, ground + SHADOW_LIFT, self.car.z)
         self.shadow.transform.rot = (0.0, float(np.sin(half)), 0.0, float(np.cos(half)))
+        self._place_arrow()
+        self._lay_band()
         captured = self.mode == "drive" and not self.camera_override  # the mouse turns the camera while driving
         if inp.pointer_captured != captured:
             inp.capture_pointer(captured)
@@ -1069,6 +1395,7 @@ class Game:
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
         self.engine.camera.vertical_scale = self._exaggeration()
         self._map_roads()
+        self._map_route()
         self._save_photo()
         self.engine.camera.fov = collect.fov_for(self.aim["zoom"]) if self.mode == "aim" and self.aim else collect.FOV_DEG
         self.hud.show(self.mode == "drive")
@@ -1080,6 +1407,7 @@ class Game:
             help = getattr(self, "help", None)
             self.hud.set_pilot(pilot_line(help.wanted, help.exit[1] if help.exit else None, self.hud.units)
                                if help else "")
+            self._show_route(help)
             self._find_area(now)
             self._find_spot(now)
             self.hud.set_spot(self.spot.title if self.spot else "")
@@ -1143,10 +1471,13 @@ class Game:
     def stream(self, query, dt: float) -> None:
         """Point the city's streamer at the camera and publish the cells it holds."""
         self._tune()
-        self.streamer.focus(self.eye[0], self.eye[2], height=max(float(self.eye[1]), 1.0))
-        self.detail.radius = 0 if self.streamer.tau >= self.tau_range[1] else self.detail_radius
-        # going down to the map's crosshair, the detail ring builds the cells there from the flight's start
-        self.detail.focus(*(self.flight.dest if self.flight is not None and self.flight.dest else (self.car.x, self.car.z)))
+        if self.curtain is None or self.curtain.then is None:  # else the mode starts next frame, maybe elsewhere
+            self.streamer.focus(self.eye[0], self.eye[2], height=max(float(self.eye[1]), 1.0))
+            self.detail.radius = 0 if self.streamer.tau >= self.tau_range[1] else self.detail_radius
+            # going down to the map's crosshair, the detail ring builds the cells there from the flight's start
+            self.detail.focus(*(self.flight.dest if self.flight is not None and self.flight.dest
+                                else (self.car.x, self.car.z)))
+        self._show_hlod()
         o = self.city.tree.origin
         full = {(o[0] + a, o[1] + b) for L, a, b in self.streamer.drawn() if L == 0}
         self.forest.update(full, self.eye)

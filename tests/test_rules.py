@@ -37,6 +37,34 @@ def test_filler_rings_follow_the_rules():
         assert (r[:, 1] >= 3 - 1e-6).all() and (r[:, 1] <= 77 + 1e-6).all()
 
 
+def test_filler_corners_are_checked_as_one_corner_at_a_time():
+    """_clear_inside gives what checking each corner with _inside and _edge_distance gave, on blocks and quads
+    that straddle their edges and setbacks."""
+    rng = np.random.default_rng(7)
+    blocks = [L, np.array([[0, 0], [100, 0], [100, 80], [0, 80]], float)]
+    for _ in range(60):
+        a = np.sort(rng.uniform(0, 2 * np.pi, rng.integers(3, 9)))
+        blocks.append(np.stack([np.cos(a), np.sin(a)], 1) * rng.uniform(10, 60, (len(a), 1)))
+    for block in blocks:
+        lo, hi = block.min(0) - 5, block.max(0) + 5
+        for _ in range(40):
+            p0, d = rng.uniform(lo, hi), rng.uniform(2, 15, 2)
+            quad = np.array([p0, p0 + (d[0], 0), p0 + d, p0 + (0, d[1])])
+            one = all(buildings._inside(c, block) and buildings._edge_distance(c, block) >= buildings.SETBACK - 1e-6
+                      for c in quad)
+            assert buildings._clear_inside(quad, block) == one
+
+
+def test_filler_rings_are_placed_once_per_block_and_kept_read_only():
+    block = np.array([[0, 0], [100, 0], [100, 80], [0, 80]], float)
+    rings = buildings.filler_rings(block, seed=11)
+    placed = buildings._place_fillers(block, 11)
+    assert len(rings) == len(placed) and all(np.array_equal(a, b) for a, b in zip(rings, placed, strict=True))
+    assert all(a is b for a, b in zip(rings, buildings.filler_rings(block.copy(), seed=11), strict=True))
+    with pytest.raises(ValueError):
+        rings[0][0, 0] = 1.0
+
+
 def test_meshdata_is_valid():
     mb = MeshBuilder()
     buildings.box(mb, L, 1)

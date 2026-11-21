@@ -48,6 +48,19 @@ def test_a_folder_of_provinces_is_one_island(island):
     assert w.summary(LEVELS, 0, 0) is not None and any((folder / "summary").iterdir())
 
 
+def test_a_province_read_ahead_is_the_one_a_start_there_opens(island):
+    folder, _ = island
+    w = World.load(folder)
+    k = w.province_at(FAR_EAST, 0.0)
+    assert k not in w._open
+    w.open_soon(FAR_EAST, 0.0)
+    read = w._reading[k]
+    assert w.province(k) is read.result() and k in w._open and not w._reading
+    assert w.nearest_road(FAR_EAST + 300, 0.0)[0] == pytest.approx(FAR_EAST)
+    w.open_soon(FAR_EAST, 0.0)  # open already: nothing more is read
+    assert not w._reading
+
+
 def test_focus_moves_the_graph_to_the_province_of_the_car(island):
     folder, _ = island
     w = World.load(folder)

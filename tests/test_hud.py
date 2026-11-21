@@ -247,3 +247,66 @@ def test_the_minimap_waits_the_presets_frames_and_takes_its_size():
     hud = Hud(mx.Engine("hud-q", width=64, height=48))
     hud.configure_quality(PRESETS["bajo"])
     assert (hud.minimap_px, hud.minimap_every) == (192, 8)
+
+
+def test_what_is_left_of_a_route_reads_as_the_panel_s_second_line():
+    from datetime import datetime
+
+    from contravia.hud import route_left
+
+    at = datetime(2026, 11, 20, 10, 30)
+    assert route_left(720, 8400, at, None, "kmh") == "12 min · 8,4 km · llegas 10:42"
+    assert route_left(720, 8400, at, 11.1, "kmh") == "40 km/h · 12 min · 8,4 km · llegas 10:42"
+    assert route_left(30, 400, at, None, "kmh") == "1 min · 400 m · llegas 10:30"
+
+
+def test_each_manoeuvre_has_its_own_icon():
+    import math
+
+    from contravia import ui
+
+    icons = {ui.manoeuvre(k, a, 34) for k, a in (("turn", 1.5), ("turn", -1.5), ("straight", 0.0),
+                                                  ("roundabout", 0.5), ("arrive", 0.0), ("slight", math.radians(45)))}
+    assert len(icons) == 6 and all(i.startswith("<svg") for i in icons)
+
+
+def test_the_gps_panel_shows_while_a_route_is_set_and_hides_the_pilot_line():
+    from contravia.hud import Hud
+
+    engine = _Engine()
+    hud = Hud(engine)
+    engine.started[0]()
+    hud.show(True)
+    hud.set_pilot("40 km/h · recto")
+    assert hud.pilot_panel in engine.gui._panels
+    hud.set_route("200 m", "Dobla a la derecha en Galiano", "12 min · 8,4 km · llegas 10:42", "turn", 1.5)
+    assert hud.route_panel in engine.gui._panels and hud.pilot_panel not in engine.gui._panels
+    assert (hud.route_far.text, hud.route_what.text) == ("200 m", "Dobla a la derecha en Galiano")
+    hud.set_pilot("40 km/h · recto")
+    assert hud.pilot_panel not in engine.gui._panels
+    hud.show(False)
+    assert hud.route_panel not in engine.gui._panels
+    hud.show(True)
+    hud.set_route("", "", "", "", 0.0)
+    assert hud.route_panel not in engine.gui._panels
+    hud.set_pilot("40 km/h · recto")
+    assert hud.pilot_panel in engine.gui._panels
+
+
+def test_a_new_gps_band_renders_the_minimap_again_on_the_next_frame():
+    import numpy as np
+
+    from contravia.hud import MINIMAP_EVERY, Hud
+
+    engine = _Engine()
+    renders = []
+    engine.refresh_texture = renders.append
+    hud = Hud(engine)
+    engine.started[0]()
+    car = CarState(0, 0, 0, 0.0)
+    for _ in range(MINIMAP_EVERY + 2):
+        hud.update(car, np.zeros(3))
+    before = len(renders)
+    hud.redraw_minimap()
+    hud.update(car, np.zeros(3))
+    assert len(renders) == before + 1

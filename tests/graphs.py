@@ -5,10 +5,11 @@ import numpy as np
 from contravia.graph import CLASSES, Graph
 
 
-def make_graph(junctions, edges, cls="residential", control=None, lanes=1, kmh=40.0, uturns=False) -> Graph:
+def make_graph(junctions, edges, cls="residential", control=None, lanes=1, kmh=40.0, uturns=False, names=None) -> Graph:
     """A Graph over these junction positions and (from, to) edges, every turn allowed except U-turns.
 
-    control: {junction index: 1 signal, 2 stop, 3 give_way} for the edges ending there.
+    control: {junction index: 1 signal, 2 stop, 3 give_way} for the edges ending there. names: a street name or
+    None per edge (g_name, g_names).
     """
     control = control or {}
     j = np.asarray(junctions, np.float64)
@@ -36,6 +37,10 @@ def make_graph(junctions, edges, cls="residential", control=None, lanes=1, kmh=4
                 t_out.append(o)
     a["g_turn_in"], a["g_turn_out"] = np.array(t_in, np.int32), np.array(t_out, np.int32)
     a["g_turn_w"] = np.ones(len(t_in), np.float32)
+    names = names or [None] * E
+    table = sorted({n for n in names if n})
+    a["g_names"] = np.array(table, dtype=str)
+    a["g_name"] = np.array([table.index(n) if n else -1 for n in names], np.int32)
     return Graph(a)
 
 
@@ -51,3 +56,17 @@ def four_way(arm=150.0, control=None) -> Graph:
     for k in (1, 2, 3, 4):
         edges += [(k, 0), (0, k)]
     return make_graph(j, edges, control=control)
+
+
+def grid(n=3, step=100.0, lanes=1) -> Graph:
+    """An n × n grid of two-way streets: junction i * n + j at (j * step, i * step), x east and z south."""
+    j = [(c * step, r * step) for r in range(n) for c in range(n)]
+    edges = []
+    for r in range(n):
+        for c in range(n):
+            k = r * n + c
+            if c + 1 < n:
+                edges += [(k, k + 1), (k + 1, k)]
+            if r + 1 < n:
+                edges += [(k, k + n), (k + n, k)]
+    return make_graph(j, edges, lanes=lanes)
