@@ -237,7 +237,9 @@ class RouteGraph:
         if not near:
             return []
         reach = min(n[2] for n in near) + SAME_STREET
-        return [(e, s) for e, s, d in near if d <= reach]
+        ends = [(e, s) for e, s, d in near if d <= reach]
+        inside = [(e, s) for e, s in ends if s >= 0.5]  # a point at a junction ends on the edges entering it
+        return inside or ends
 
 
 @dataclass
@@ -493,3 +495,131 @@ def main(data: str, start: str, to: str) -> int:
         prev = st.at
     print(f"{r.metres / 1000:.1f}".replace(".", ",") + f" km · {round(r.seconds / 60)} min · route found in {ms:.0f} ms")
     return 0
+
+
+OFF_ROUTE = 1.0  # seconds on an edge that is neither the route's current one nor a later one: route again
+LOST, LOST_M = 3.0, 30.0  # seconds off every road, farther than LOST_M metres from the route: route again
+ARRIVE_ALONG, ARRIVE_NEAR = 15.0, 20.0  # metres before the end along the last edge, or in a straight line
+SAID = 4.0  # seconds «Llegaste» or «No hay ruta» shows
+NOTE = 1.5  # seconds «Ruta nueva» shows
+
+
+class Guide:
+    """Follows the car along a route each frame: which step comes next and how far, what is left, when it left the
+    route (and routes again from where it is) and when it arrived."""
+
+    def __init__(self, router: Router):
+        self.router = router
+        self.to = self.title = self.route = self.step = None
+        self.steps: list[Step] = []
+        self.k, self.s, self.done_m = 0, 0.0, 0.0  # the route edge the car is on, s along it, metres driven
+        self.to_step = self.left_m = self.left_s = 0.0
+        self.reroutes = 0
+        self._t, self._off, self._lost = 0.0, 0.0, 0.0
+        self._message, self._message_until = "", 0.0
+        self._asked = False
+
+    @property
+    def message(self) -> str:
+        """«Llegaste», «No hay ruta» or «Ruta nueva» while it shows, else ""."""
+        return self._message if self._t <= self._message_until else ""
+
+    def _say(self, text: str, seconds: float) -> None:
+        self._message, self._message_until = text, self._t + seconds
+
+    def go(self, x: float, z: float, title: str | None = None) -> None:
+        """Set a destination; the route is asked on the next update, from where the car is then."""
+        self.to, self.title, self.route, self.steps, self.step = (float(x), float(z)), title, None, [], None
+        self._asked = False
+
+    def clear(self) -> None:
+        self.to = self.title = self.route = self.step = None
+        self.steps, self._asked = [], False
+
+    def update(self, edge: int | None, s: float, car, dt: float) -> None:
+        """Move along the route: edge is the island edge the car is on (None off the road), s metres along it."""
+        self._t += dt
+        if self.to is None:
+            return
+        got = self.router.take()
+        if got == "none":
+            self.clear()
+            self._say("No hay ruta", SAID)
+            return
+        if got is not None:
+            self.route, self.k, self.s, self._off, self._lost, self._asked = got, 0, got.s0, 0.0, 0.0, False
+            self.steps = steps(self.router.rg, got)
+            self._say("Ruta nueva", NOTE)
+        if self.route is None:
+            if not self._asked:
+                self._ask(car)
+            return
+        if np.hypot(car.x - self.to[0], car.z - self.to[1]) < ARRIVE_NEAR:
+            return self._arrive()
+        edges = self.route.edges
+        if edge is not None:
+            self._lost = 0.0
+            later = np.flatnonzero(edges[self.k:] == edge)
+            if len(later):
+                self.k, self.s, self._off = self.k + int(later[0]), float(s), 0.0
+                if self.k == len(edges) - 1 and self.s >= self.route.s1 - ARRIVE_ALONG:
+                    return self._arrive()
+            else:
+                self._off += dt
+        else:
+            self._lost += dt
+            if self._lost > LOST and self._far(car) > LOST_M:
+                self._off = OFF_ROUTE + 1.0
+        if self._off > OFF_ROUTE and not self.router.busy:
+            self.reroutes += 1
+            self._off = 0.0
+            self._ask(car)
+        self._measure()
+
+    def _ask(self, car) -> None:
+        self.router.ask((car.x, car.z, car.yaw), self.to, self.title)
+        self._asked = True
+
+    def _arrive(self) -> None:
+        title = self.title
+        self.clear()
+        self._say(f"Llegaste · {title}" if title else "Llegaste", SAID)
+
+    def _far(self, car) -> float:
+        """Metres from the car to the route's current and next edges."""
+        rg = self.router.rg
+        pts = np.concatenate([rg.poly[rg.poly_start[e]:rg.poly_start[e + 1]] for e in self.route.edges[self.k:self.k + 3]])
+        return float(np.hypot(*(pts - (car.x, car.z)).T).min())
+
+    def _measure(self) -> None:
+        r, rg = self.route, self.router.rg
+        before = float(rg.length[r.edges[:self.k]].sum()) - r.s0 if self.k else -r.s0
+        self.done_m = before + self.s
+        self.left_m = max(r.metres - self.done_m, 0.0)
+        self.left_s = r.seconds * self.left_m / max(r.metres, 1e-9)
+        nxt = [st for st in self.steps if st.at > self.done_m - 1.0]
+        self.step = nxt[0] if nxt else None
+        self.to_step = max(self.step.at - self.done_m, 0.0) if self.step else 0.0
+
+    def next_edge(self, edge: int) -> int | None:
+        """The route's edge after `edge`, or None off the route or at its end."""
+        if self.route is None:
+            return None
+        at = np.flatnonzero(self.route.edges[self.k:] == edge)
+        j = self.k + int(at[0]) + 1 if len(at) else len(self.route.edges)
+        return int(self.route.edges[j]) if j < len(self.route.edges) else None
+
+    def ahead(self, metres: float, points, from_edge_s: tuple[int, float] | None = None) -> tuple[float, float]:
+        """The point `metres` along the route past the car (or past from_edge_s), as points(edge, s) gives it."""
+        rg, edges = self.router.rg, self.route.edges
+        k, s = self.k, self.s
+        if from_edge_s is not None:
+            hit = np.flatnonzero(edges == from_edge_s[0])
+            k, s = (int(hit[0]) if len(hit) else 0), from_edge_s[1]
+        left = metres
+        while True:
+            end = self.route.s1 if k == len(edges) - 1 else float(rg.length[edges[k]])
+            if s + left <= end or k == len(edges) - 1:
+                return points(int(edges[k]), min(s + left, end))
+            left -= end - s
+            k, s = k + 1, 0.0
