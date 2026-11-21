@@ -43,7 +43,7 @@ from contravia.landmarks import cached
 from contravia.mesh import lattice
 from contravia.rules.ground import drawn
 from contravia.shore import of as shore_of
-from contravia.structures import KERB_TOP, LEAVES
+from contravia.structures import MEDIAN
 from contravia.walks import BEVEL, KERB
 from contravia.walks import SIMPLIFY as WALK_SIMPLIFY
 from contravia.walls import parts
@@ -148,7 +148,7 @@ class Check:
             median = np.zeros((0, 3, 2))
             if c.struct_tris is not None and len(c.struct_tris):
                 paint = np.asarray(c.struct_paint)
-                median = np.asarray(c.struct_tris, float)[(paint >= KERB_TOP) & (paint <= LEAVES)][:, :, [0, 2]]
+                median = np.asarray(c.struct_tris, float)[np.isin(paint, MEDIAN)][:, :, [0, 2]]
             return np.asarray(t, float).reshape(-1, 3, 3), open_streets(self.city, i, j), median
         return self._held(self._streets, (i, j), make)
 

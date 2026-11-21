@@ -194,6 +194,38 @@ def test_no_verge_is_laid_across_a_street_where_it_climbs_off_the_ground():
     assert _kinds(city).get("walk", 0) == 0
 
 
+def test_an_avenues_median_wall_is_not_counted_and_the_same_wall_of_a_bridge_is(built):
+    """Boyeros' wall between its carriageways (contravia/medians.py) is no part of the street's surface; the same
+    triangles and walls in a bridge's concrete are a wall along the middle of the street."""
+    from dataclasses import replace
+
+    from contravia.structures import BARRIER, CONCRETE
+
+    x0, x1, z0, z1, top = -180.0, -120.0, 0.5, 1.0, 1.0
+    tris = np.array([[[x0, top, z0], [x1, top, z0], [x1, top, z1]], [[x0, top, z0], [x1, top, z1], [x0, top, z1]]],
+                    np.float32)
+    walls = np.array([[x0, z0, x1, z0, 0.0, top], [x0, z1, x1, z1, 0.0, top]], np.float32)
+
+    class Walled:
+        def __init__(self, paint):
+            self.paint = paint
+
+        def __getattr__(self, name):
+            return getattr(built, name)
+
+        def cell(self, i, j):
+            c = built.cell(i, j)
+            if (i, j) != (-1, 0):
+                return c
+            return replace(c, struct_tris=np.concatenate([np.asarray(c.struct_tris, np.float32), tris]),
+                           struct_paint=np.concatenate([np.asarray(c.struct_paint, np.uint8), [self.paint] * 2]),
+                           struct_walls=np.concatenate([np.asarray(c.struct_walls, np.float32), walls]))
+
+    found = _kinds(Walled(CONCRETE))
+    assert found.get("structure") and found.get("parapet")
+    assert _kinds(Walled(BARRIER)) == {}
+
+
 def _scan(city, kept):
     """streets_check._run over the city's cells as a worker runs it: (findings, cells checked again)."""
     streets_check._check, streets_check._kept = Check(city), kept

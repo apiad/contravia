@@ -240,8 +240,9 @@ shore's grid (`rules.shore.vegetated`). The
   [--out findings.json]` walks a built island's cells and counts, on the street surface the cells draw, the ground
   or water standing over it, steps and steep triangles in it, the walls the car hits inside it by source (the
   segments `walls.parts` gives the car), bridge and tunnel walls across it at the car's height, and bridge
-  dressing, pavements and park motifs drawn in the 3.5 m over the asphalt. Every count must read 0; a province
-  takes about 6 minutes on 6 processes the first time, and it needs `data/`, so it is not a rift rule. A run keeps
+  dressing, pavements and park motifs drawn in the 3.5 m over the asphalt. An avenue's median (`structures.MEDIAN`
+  paints: kerb, paving, lamps, Boyeros' wall as `BARRIER`) is no part of the surface. Every count must read 0; a province
+  takes about 4 minutes on 11 processes the first time, and it needs `data/`, so it is not a rift rule. A run keeps
   each cell's findings in `streets-check.kept` beside `index.npz` with a fingerprint of the data of the cells two
   round it; the next run checks again only the cells whose fingerprint changed (after `contravia streets` or `walks`
   on a province, the cells they changed), and all of them when the island's relief or files (`ISLAND`) or a module
