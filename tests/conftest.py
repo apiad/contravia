@@ -6,6 +6,22 @@ from contravia.citydata import CityData
 from contravia.prepare import build_city, read_osm
 
 
+_KNOBS = (("forest", "LOD_AT"), ("rules.foliage", "NEAR"), ("graveyard", "LOD_AT"), ("grass", "NEAR"), ("grass", "FAR"),
+          ("grass", "BLADES"), ("rain", "POOL"), ("atmosphere", "FOG_CLEAR"))
+
+
+@pytest.fixture(autouse=True)
+def _alto():
+    """A test that applies a quality preset leaves the module-wide knobs (quality.py) as they were: Alto."""
+    import importlib
+
+    mods = {m: importlib.import_module(f"contravia.{m}") for m, _ in _KNOBS}
+    saved = [(mods[m], k, getattr(mods[m], k)) for m, k in _KNOBS]
+    yield
+    for mod, k, v in saved:
+        setattr(mod, k, v)
+
+
 @pytest.fixture(autouse=True)
 def _config(tmp_path_factory, monkeypatch):
     """Every test keeps options, designs and the photo collection in a folder of its own, never the user's."""

@@ -68,3 +68,23 @@ def test_real_evening_in_november():
     t = datetime(2026, 11, 15, 17, 40)
     lk = look(sky.sun(t), sky.moon(t), CLEAR, SkyConfig())
     assert lk.env in ("golden", "twilight") and not lk.shadows
+
+
+def test_configure_sets_the_shadow_map_and_the_clear_fog():
+    import manifoldx as mx
+
+    from contravia.atmosphere import Atmosphere
+    from contravia.quality import PRESETS
+
+    engine = mx.Engine("atmo-q", width=64, height=48)
+    atmo = Atmosphere(engine)
+    atmo.configure(PRESETS["bajo"])
+    lk = look(Body(60.0, 180, 0, 0), NO_MOON, CLEAR, SkyConfig())
+    assert lk.shadows and lk.fog == (1500.0, 6000.0)
+    atmo.apply(lk, (0.0, 0.0, 0.0))
+    c = engine._shadow_config
+    assert (c["extent"], c["resolution"], c["pcf_radius"]) == (80.0, 1024, 0)
+    atmo.configure(PRESETS["alto"])
+    atmo.apply(look(Body(60.0, 180, 0, 0), NO_MOON, CLEAR, SkyConfig()), (0.0, 0.0, 0.0))
+    c = engine._shadow_config
+    assert (c["extent"], c["resolution"], c["pcf_radius"]) == (150.0, 2048, 1)

@@ -215,6 +215,13 @@ class Lawn:
         self.drawn = 0  # patches drawn at either level
 
 
+def _meshes() -> list:
+    """The two patch meshes, dense and sparse, with BLADES blades."""
+    from manifoldx.components import Mesh
+
+    return [Mesh(patch(BLADES[0], seed=1)), Mesh(patch(BLADES[1], height=(0.3, 0.6), width=0.09, seed=2))]
+
+
 class Grass:
     """The patches of the cells drawn in full, kept in step with the city's streamer."""
 
@@ -226,11 +233,24 @@ class Grass:
         self.shore = shore_of(city)  # near the sea the ground is the shore's (contravia/shore.py)
         self.material = StandardMaterial("#ffffff", roughness=0.95, vertex_colors=True, tinted=True,
                                          sway=0.35, sway_reach=0.6)
-        self.meshes = [Mesh(patch(BLADES[0], seed=1)), Mesh(patch(BLADES[1], height=(0.3, 0.6), width=0.09, seed=2))]
+        self.meshes = _meshes()
         self._pool = ThreadPoolExecutor(workers, thread_name_prefix="grass")
         self._pending: dict[tuple[int, int], Future] = {}
         self.lawns: dict[tuple[int, int], Lawn] = {}
         self._at = None  # where the camera stood when the levels were last checked
+
+    def configure(self, q) -> None:
+        """Take a quality preset's reach and blades (contravia/quality.py): every patch is dropped, the blade
+        meshes are made again if their counts changed, and the next update lays the patches at the new levels."""
+        global NEAR, FAR, BLADES
+        NEAR, FAR = float(q.grass[0]), float(q.grass[1])
+        if tuple(q.grass[2:]) != BLADES:
+            BLADES = tuple(q.grass[2:])
+            self.meshes = _meshes()
+        for lawn in self.lawns.values():
+            self._drop(lawn, slice(None))
+            lawn.drawn = 0
+        self._at = None
 
     def update(self, cells, eye, car=None) -> None:
         """Follow the set of cells drawn in full: lay the new ones' lawns on a thread, drop the cells no

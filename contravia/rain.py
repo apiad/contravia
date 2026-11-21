@@ -55,9 +55,9 @@ def fall(pos: np.ndarray, dt: float, wind=(1.5, 0.0)) -> np.ndarray:
     return (p + BOX / 2) % BOX - BOX / 2
 
 
-def shown(intensity: float) -> int:
-    """How many drops of the pool show at this rain intensity."""
-    return round(POOL * min(1.0, max(0.0, intensity)))
+def shown(intensity: float, pool: int = POOL) -> int:
+    """How many drops of a pool of this size show at this rain intensity."""
+    return round(pool * min(1.0, max(0.0, intensity)))
 
 
 class Rain:
@@ -91,14 +91,22 @@ class Rain:
         class Drop(Component):
             k: Float
 
-        rng = np.random.default_rng(seed)
-        self.rel = rng.uniform(-BOX / 2, BOX / 2, (POOL, 3))
+        self.engine, self._rng = engine, np.random.default_rng(seed)
         self.material = RainMaterial()
         self.center = np.zeros(3)
-        self.count = 0
-        engine.spawn(PointCloud(), Material(self.material), Transform(pos=np.zeros((POOL, 3), np.float32)),
-                     ScalarValue(value=np.zeros(POOL, np.float32)), Radius(radius=np.full(POOL, STREAK, np.float32)),
-                     Drop(k=np.arange(POOL, dtype=float)), n=POOL)
+        self.count, self.pool = 0, POOL
+
+        def spawn() -> None:
+            n = self.pool
+            self.rel = self._rng.uniform(-BOX / 2, BOX / 2, (n, 3))
+            self.ents = engine.spawn(PointCloud(), Material(self.material),
+                                     Transform(pos=np.zeros((n, 3), np.float32)),
+                                     ScalarValue(value=np.zeros(n, np.float32)),
+                                     Radius(radius=np.full(n, STREAK, np.float32)),
+                                     Drop(k=np.arange(n, dtype=float)), n=n).indices
+
+        self._spawn = spawn
+        spawn()
 
         def move(q: mx.Query[Transform, Drop], dt: float):
             k = np.rint(q[Drop].k.data[:, 0]).astype(np.int64)
@@ -108,9 +116,17 @@ class Rain:
 
         engine.system(move)
 
+    def configure(self, q) -> None:
+        """Take a quality preset's number of streaks (contravia/quality.py): the pool is made again at that size."""
+        if q.rain_pool == self.pool:
+            return
+        self.pool = int(q.rain_pool)
+        self.engine.destroy(self.ents)
+        self._spawn()
+
     def update(self, dt: float, eye, intensity: float, light) -> None:
         """Move the drops, follow the camera, show as many as the rain asks, in the frame's light."""
         self.rel = fall(self.rel, dt)
         self.center = np.asarray(eye, float)
-        self.count = shown(intensity)
+        self.count = shown(intensity, self.pool)
         self.material.u[:3] = np.clip(np.asarray(light, np.float32), 0.05, 0.9)

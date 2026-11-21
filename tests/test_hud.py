@@ -235,6 +235,20 @@ def test_the_minimap_zooms_out_smoothly_as_the_car_speeds_up():
     assert hud.camera.far > MINIMAP_LOW + 200.0  # the far plane follows the height
 
 
+def test_the_minimap_waits_the_presets_frames_and_takes_its_size():
+    import manifoldx as mx
+
+    from contravia.hud import Hud, minimap_stale
+    from contravia.quality import PRESETS
+
+    last = (100.0, 200.0, 0.3)
+    moved = (150.0, 200.0, 0.3)
+    assert minimap_stale(last, moved, 6) and not minimap_stale(last, moved, 6, every=8)
+    hud = Hud(mx.Engine("hud-q", width=64, height=48))
+    hud.configure_quality(PRESETS["bajo"])
+    assert (hud.minimap_px, hud.minimap_every) == (192, 8)
+
+
 def test_what_is_left_of_a_route_reads_as_the_panel_s_second_line():
     from datetime import datetime
 

@@ -33,8 +33,10 @@ FROND_SWAY = (0.035, 3.0)  # the fronds' sway and reach, in metres along the fro
 
 def near(d, old=None) -> np.ndarray:
     """Whether trees d metres from the camera carry the detail layer; given whether they did, a tree keeps its
-    state unless it is more than HOLD metres past NEAR."""
+    state unless it is more than HOLD metres past NEAR. A NEAR of 0 (quality Bajo) gives no tree the layer."""
     d = np.asarray(d, float)
+    if NEAR <= 0:
+        return np.zeros(d.shape, bool)
     if old is None:
         return d < NEAR
     return np.where(old, d < NEAR + HOLD, d < NEAR - HOLD)

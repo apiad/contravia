@@ -211,8 +211,42 @@ class Game:
         engine.on("close")(self.close_street)
         engine.on("sky_config")(self.configure_sky)
         engine.on("weather")(self.force_weather)
+        engine.on("quality")(self.quality_event)
         engine.on("hlod")(self.set_hlod)
         engine.on("shutdown")(self._shutdown)
+        # The quality preset (contravia/quality.py): Alto until the options or a --quality flag say otherwise; a
+        # reload under contravia dev keeps the one the old game had.
+        kept_q = engine.state.get("quality") if hasattr(engine.state, "get") else None
+        if kept_q and kept_q.get("preset"):
+            from dataclasses import fields, replace
+
+            from contravia.quality import PRESETS
+            # knobs added since the old game started take its preset's value (Alto's for Personalizado)
+            knobs = {f.name: (tuple(kept_q[f.name]) if isinstance(kept_q[f.name], list) else kept_q[f.name])
+                     for f in fields(PRESETS["alto"]) if f.name in kept_q}
+            q = replace(PRESETS.get(kept_q["preset"], PRESETS["alto"]), **knobs)
+            self.set_quality(kept_q["preset"], q, pinned=kept_q.get("pinned", False))
+        else:
+            from contravia.quality import PRESETS
+            self.set_quality("alto", PRESETS["alto"])
+
+    def set_quality(self, name: str, q, pinned: bool = False) -> None:
+        """Play at this quality (contravia/quality.py); pinned keeps it over the saved options across a reload."""
+        from contravia import quality
+
+        quality.apply(self, q, name, pinned)
+
+    def quality_event(self, changes: dict) -> None:
+        """`manifoldx emit quality preset=ultra` or `rain_pool=6000`: change the quality while playing. A bad
+        preset, knob or value changes nothing and says why in engine.state.quality["error"]."""
+        from contravia import quality
+
+        try:
+            name, q = quality.parse(changes, self.quality)
+        except (ValueError, TypeError) as e:
+            self.engine.state.quality = {**self.engine.state.quality, "error": str(e)}
+            return
+        self.set_quality(name, q, pinned=True)
 
     def _start_traffic(self, config, on: bool) -> None:
         """The flow layer over the whole graph, warmed up to now, and the cars around the player; off unless asked."""
@@ -237,7 +271,8 @@ class Game:
 
         tables = kept(self.engine.state, "traffic tables", (source(traffic.__file__), len(graph)),
                       lambda: _baked_tables(self.city.focused_file(), graph))
-        self.layer = TrafficLayer(graph, self.runner, tables=tables)
+        radius = self.quality.traffic_radius if hasattr(self, "quality") else 400.0
+        self.layer = TrafficLayer(graph, self.runner, radius=radius, tables=tables)
         self.fleet = Fleet(self.engine)
         self.runner.start()
 
@@ -925,10 +960,12 @@ class Game:
         self.mode = "menu"
         self.clock.pause()
 
-    def apply_options(self, options) -> None:
-        """The options screen's choices: view distance, rain on screen, units and minimap."""
-        self.tau_range = options["view"].value
-        self.streamer.tau = min(max(self.streamer.tau, self.tau_range[0]), self.tau_range[1])
+    def apply_options(self, options, quality: bool = False) -> None:
+        """The options screen's choices: graphics quality, rain on screen, units and minimap. The saved quality
+        does not replace one a --quality flag or an emitted change pinned, unless quality says the player just
+        chose it."""
+        if quality or not self.engine.state.quality.get("pinned"):
+            self.set_quality(*options.quality())
         self.rain_on = options["rain"].value
         self.help_level, self.locked_assists = options["help"].value, options.locked_assists
         self.hud.configure(options["units"].value, options["minimap"].value)
@@ -1415,7 +1452,7 @@ class Game:
         return eye, target
 
     def _tune(self) -> None:
-        """Every TUNE_EVERY frames, trade the streamer's detail for frame time: a median frame over TARGET_MS
+        """Every TUNE_EVERY frames, trade the streamer's detail for frame time: a median frame over the preset's target
         raises tau (fewer, coarser nodes), one well under it lowers tau back, within TAU."""
         if not self.tune or self.curtain is not None:  # under the curtain the streamers run at full speed
             return
@@ -1425,9 +1462,9 @@ class Game:
             return
         ms, self._tune_ms = float(np.median(self._tune_ms)), []
         tau = self.streamer.tau
-        if ms > TARGET_MS * 1.1:
+        if ms > self.target_ms * 1.1:
             tau *= 1.2
-        elif ms < TARGET_MS * 0.75:
+        elif ms < self.target_ms * 0.75:
             tau /= 1.1
         self.streamer.tau = min(max(tau, self.tau_range[0]), self.tau_range[1])
 
@@ -1436,7 +1473,7 @@ class Game:
         self._tune()
         if self.curtain is None or self.curtain.then is None:  # else the mode starts next frame, maybe elsewhere
             self.streamer.focus(self.eye[0], self.eye[2], height=max(float(self.eye[1]), 1.0))
-            self.detail.radius = 0 if self.streamer.tau >= self.tau_range[1] else 1
+            self.detail.radius = 0 if self.streamer.tau >= self.tau_range[1] else self.detail_radius
             # going down to the map's crosshair, the detail ring builds the cells there from the flight's start
             self.detail.focus(*(self.flight.dest if self.flight is not None and self.flight.dest
                                 else (self.car.x, self.car.z)))
@@ -1518,14 +1555,14 @@ class Game:
         self.look = look(sun, moon, now, self.weather.config)
         eye = self.eye - self.o  # these write render-frame positions
         self.atmosphere.apply(self.look, eye)
-        self.engine.camera.far = FAR
+        self.engine.camera.far = self.far
         view = flight.view((self.eye, self._target)) if self.flight is not None and self._target is not None \
             else self.map if self.mode == "map" else None
         if view:  # from high up the horizon is far: push the far plane and the fog out
             from contravia import mapview
 
             far, fog = mapview.far_and_fog(view)
-            self.engine.camera.far = max(FAR, far)
+            self.engine.camera.far = max(self.far, far)
             self.engine.fog_start, self.engine.fog_end = max(self.look.fog[0], fog[0]), max(self.look.fog[1], fog[1])
         self.stars_shown = self.nightsky.update(when, eye, self.look, moon, sun)
         self.weather_state = now.state
@@ -1598,7 +1635,7 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
          traffic: str | None = None, when: str | None = None, warp: float = 1.0, sky: str | None = None,
          pipelined: bool = True, with_traffic: bool = False,
          screen: str | None = None, height: float | None = None, yaw: float = 0.0, place: str | None = None,
-         mute: bool = False, audio_out: str | None = None) -> None:
+         mute: bool = False, audio_out: str | None = None, quality: str | None = None) -> None:
     """Open a window on the main menu, or with `shot`, render offscreen until the city is drawn and save a PNG.
 
     screen opens a menu screen ("main", "free", "options", "pause", "photo", "map", "garage", "design") or "drive"
@@ -1614,12 +1651,13 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     With screen "map", height (metres) puts the map's camera that high over `at`, turned yaw degrees from north,
     and the car stays at the Capitolio: `at` may be far from any road.
     mute plays no sound (a shot never does); audio_out records the mix, and a WAV per bus beside it, to that path.
+    quality plays at that preset of contravia/quality.py instead of the saved one.
     """
     os.environ["HAVANA_DATA"] = os.path.abspath(data)
     builders = start_builders()  # first: they load the world while this process does and the menu shows
     try:
         _main(data, builders, at, shot, frames, size, traffic, when, warp, sky, pipelined, with_traffic, screen,
-              height, yaw, place, mute, audio_out)
+              height, yaw, place, mute, audio_out, quality)
     except BaseException:
         for b in builders:  # a start that failed (a broken save under contravia dev) leaves no builder behind
             b.close()
@@ -1640,7 +1678,7 @@ def start_builders() -> tuple:
 
 
 def _main(data, builders, at, shot, frames, size, traffic, when, warp, sky, pipelined, with_traffic, screen,
-          height, yaw, place, mute=False, audio_out=None) -> None:
+          height, yaw, place, mute=False, audio_out=None, quality=None) -> None:
     """main's body, with the builders already started."""
     import manifoldx as mx
 
@@ -1659,6 +1697,10 @@ def _main(data, builders, at, shot, frames, size, traffic, when, warp, sky, pipe
     look = screen == "map" and height  # then `at` is where the map looks; the car waits at the Capitolio
     game = Game(engine, World.load(data), at=(0.0, 0.0) if look else at, traffic=load_config(traffic) if traffic else None,
                 clock=clock, sky=sky_config, with_traffic=with_traffic or bool(traffic), builders=builders)
+    if quality:
+        from contravia.quality import PRESETS
+
+        game.set_quality(quality, PRESETS[quality], pinned=True)
     screen = screen or ("drive" if shot else "main")
     if look:
         from contravia import mapview
@@ -1687,7 +1729,7 @@ def _main(data, builders, at, shot, frames, size, traffic, when, warp, sky, pipe
     game.sound = Sound.start(engine.state, options, backend="file" if audio_out else "null" if mute or shot else "device",
                              path=audio_out)
     game.sound.attach(game)
-    menu = Menu(engine, game, free, options, screen=screen if screen in ("main", "free", "options") else None)
+    menu = Menu(engine, game, free, options, screen=screen if screen in ("main", "free", "options", "quality") else None)
     if screen in ("pause", "photo", "map"):
         engine.on("startup")(lambda _=None: (menu.pause(), screen != "pause" and menu.show(screen)))
     if screen in ("album", "province"):  # over the pause; the province of --place, or La Habana

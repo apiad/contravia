@@ -212,3 +212,63 @@ def test_dev_reloads_when_the_region_rules_or_a_side_file_change(tmp_path, monke
     rules = os.path.join(os.path.dirname(game.__file__), "regions.toml")
     assert os.path.isfile(rules)
     assert [os.fspath(p) for p in hot._watched] == [rules, os.path.join(str(tmp_path), "*.src")]
+
+
+def test_quality_event_applies_a_preset_and_refuses_a_bad_knob_whole(city):
+    import manifoldx as mx
+
+    from contravia.game import Game
+    from contravia.world import World
+
+    engine = mx.Engine("q", width=64, height=48)
+    game = Game(engine, World(city))
+    try:
+        assert engine.state.quality["preset"] == "alto" and game.tau_range == (12.0, 48.0)
+        game.quality_event({"preset": "bajo"})  # emit queues it for the next frame; call the handler
+        assert engine.state.quality["preset"] == "bajo" and game.tau_range == (24.0, 72.0)
+        assert game.far == 7000.0 and game.target_ms == 33.3 and game.detail_radius == 0
+        assert game.streamer.tau >= 24.0
+        game.quality_event({"rain_pool": 6000})
+        assert engine.state.quality["preset"] == "personalizado" and engine.state.quality["rain_pool"] == 6000
+        assert engine.state.quality["far"] == 7000.0  # the other knobs stay Bajo's
+        game.quality_event({"rain_pool": 7, "far": 15000})
+        assert "rain_pool" in engine.state.quality["error"] and game.far == 7000.0
+        engine.render_frame(supersample=1)
+        assert engine.camera.far == 7000.0
+    finally:
+        game._shutdown()
+
+
+def test_quality_survives_a_reload(city):
+    import manifoldx as mx
+
+    from contravia.game import Game
+    from contravia.world import World
+
+    engine = mx.Engine("q1", width=64, height=48)
+    game = Game(engine, World(city))
+    game.quality_event({"preset": "ultra"})
+    game._shutdown()
+    engine2 = mx.Engine("q2", width=64, height=48)
+    engine2.state.update(engine.state)
+    game2 = Game(engine2, World(city))
+    try:
+        assert engine2.state.quality["preset"] == "ultra" and game2.tau_range == (8.0, 32.0)
+    finally:
+        game2._shutdown()
+
+
+def test_a_reload_keeps_a_quality_saved_before_a_knob_was_added(city):
+    import manifoldx as mx
+
+    from contravia.game import Game
+    from contravia.world import World
+
+    engine = mx.Engine("q-old", width=64, height=48)
+    old = {"preset": "bajo", "tau": [24.0, 72.0], "far": 7000.0, "error": None, "pinned": True}  # most knobs missing
+    engine.state.quality = old
+    game = Game(engine, World(city))
+    try:
+        assert engine.state.quality["preset"] == "bajo" and game.far == 7000.0 and game.tau_range == (24.0, 72.0)
+    finally:
+        game._shutdown()

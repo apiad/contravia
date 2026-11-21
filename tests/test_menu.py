@@ -32,10 +32,86 @@ def test_options_are_saved_and_read_back(tmp_path, monkeypatch):
     opts = Options.load()
     assert opts["units"].value == "kmh"
     opts["units"].step(1)
-    opts["view"].step(1)
+    opts["quality"].pick("medio")
     opts.save()
     again = Options.load()
-    assert again["units"].value == "mph" and again["view"].text == opts["view"].text
+    assert again["units"].value == "mph" and again["quality"].text == "Medio"
+    assert "view" not in [r.key for r in again.rows]
+
+
+def test_personalizado_saves_its_base_and_knobs(tmp_path, monkeypatch):
+    import json
+
+    from contravia.quality import PRESETS
+
+    monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path))
+    opts = Options.load()
+    assert opts["quality"].value == "alto" and opts.quality() == ("alto", PRESETS["alto"])
+    opts.customise("alto", {"rain_pool": 1000})
+    opts.save()
+    saved = json.loads((tmp_path / "settings.json").read_text())
+    assert (saved["quality"], saved["quality_base"], saved["quality_knobs"]) == ("personalizado", "alto",
+                                                                                 {"rain_pool": 1000})
+    assert "tune_quality" not in saved
+    again = Options.load()
+    assert again.quality() == ("personalizado", PRESETS["alto"].changed(rain_pool=1000))
+
+
+def test_old_settings_load_as_alto_and_bad_knobs_as_their_base(tmp_path, monkeypatch):
+    import json
+
+    monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path))
+    (tmp_path / "settings.json").write_text(json.dumps({"view": [16.0, 64.0], "units": "mph"}))
+    o = Options.load()
+    assert o.quality()[0] == "alto" and o["units"].value == "mph"
+    (tmp_path / "settings.json").write_text(json.dumps({"quality": "personalizado", "quality_base": "medio",
+                                                        "quality_knobs": {"rain_pool": 7}}))
+    from contravia.quality import PRESETS
+    assert Options.load().quality()[1] == PRESETS["medio"]
+
+
+def test_turning_a_knob_makes_the_quality_personalizado_at_once(city_npz, tmp_path, monkeypatch):
+    import manifoldx as mx
+
+    from contravia.game import Game
+    from contravia.menu import Menu
+    from contravia.world import World
+
+    monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path))
+    engine = mx.Engine("menu-q", width=64, height=48)
+    game = Game(engine, World.load(str(city_npz)), clock=Clock(at=parse_at("Tue 10:00")))
+    options = Options.load()
+    menu = Menu(engine, game, FreeDrive.from_flags(when="Tue 17:30"), options)
+    try:
+        engine.render_frame(supersample=1)
+        menu.show("options")
+        assert menu.screens["options"].rows()[menu.screens["options"].index].key == "quality"
+        menu.press("ArrowRight")  # Alto -> Ultra
+        assert engine.state.quality["preset"] == "ultra"
+        menu.press("ArrowDown")
+        menu.press("Enter")  # Ajustar…
+        assert menu.current == "quality"
+        screen = menu.screens["quality"]
+        k = [r.key for r in screen.rows()].index("rain_pool")
+        screen.select(k)
+        menu.press("ArrowLeft")  # Ultra's 6000 -> 3000
+        assert options["quality"].value == "personalizado" and options.quality_knobs == {"rain_pool": 3000}
+        assert engine.state.quality["preset"] == "personalizado" and engine.state.quality["rain_pool"] == 3000
+        menu.press("Escape")
+        assert menu.current == "options" and Options.load().quality()[1].rain_pool == 3000
+        options_screen = menu.screens["options"]
+        options_screen.select([r.key for r in options_screen.rows()].index("quality"))
+        while options["quality"].value != "bajo":
+            menu.press("ArrowRight")  # turn on to Bajo
+        menu.press("ArrowDown")
+        menu.press("Enter")  # Ajustar… again: its rows are Bajo's now
+        screen = menu.screens["quality"]
+        assert screen.rows()[[r.key for r in screen.rows()].index("far")].value == 7000.0
+        screen.select([r.key for r in screen.rows()].index("rain_pool"))
+        menu.press("ArrowRight")  # Bajo's 1000 -> 2000
+        assert options.quality_base == "bajo" and options.quality_knobs == {"rain_pool": 2000}
+    finally:
+        game._shutdown()
 
 
 def test_driving_help_is_an_option_from_autopilot_to_real(tmp_path, monkeypatch):

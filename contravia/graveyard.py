@@ -74,6 +74,12 @@ class Graveyard:
         self._fading: list[list] = []  # [entities, started, out]
         self.timings: list[float] = []  # seconds each cell's rows took on the thread, for probes
 
+    def configure(self, q) -> None:
+        """Take a quality preset's distances (contravia/quality.py) where the plots change level; the next
+        level-of-detail pass moves them."""
+        global LOD_AT
+        LOD_AT = tuple(q.grave_lod)
+
     def lay(self, i: int, j: int) -> cemetery.Yard:
         """Cell (i, j)'s rows, timed."""
         t = perf_counter()

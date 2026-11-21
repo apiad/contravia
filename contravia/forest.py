@@ -139,6 +139,13 @@ class Forest:
         self.clock = perf_counter
         self._fading: list[list] = []  # [entities, started, out]: parts fading in, or out and then destroyed
 
+    def configure(self, q) -> None:
+        """Take a quality preset's distances (contravia/quality.py): where trees change level and how near the
+        small leaves grow. They hold for the whole process; the next level-of-detail pass moves the trees."""
+        global LOD_AT
+        LOD_AT = tuple(q.tree_lod)
+        foliage.NEAR = float(q.foliage_near)
+
     def grow(self, i: int, j: int):
         """The (Trees) rows of cell (i, j): those the cell's rules grow and the car hits. On this thread too, the
         meshes of their species, which the main thread would otherwise stop for at their first spawn."""

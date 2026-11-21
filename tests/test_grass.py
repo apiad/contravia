@@ -239,3 +239,28 @@ def test_grass_stands_on_a_cliff_top_and_never_on_its_face():
     y = f.height(lawn.xz[:, 0], lawn.xz[:, 1])
     assert (y[top] > R.SHALLOW_Y + R.CLIFF_MIN - 0.5).all()  # the cliff top, metres over the old ground
     assert np.allclose(lawn.y, y + 0.02, atol=1e-6)
+
+
+def test_configure_rebuilds_the_blades_and_levels_for_a_preset():
+    import manifoldx as mx
+
+    from contravia import grass as g
+    from contravia.quality import PRESETS
+
+    engine = mx.Engine("grass-q", width=64, height=64)
+    grass = Grass(engine, _City())
+    for _ in range(200):
+        grass.update({(0, 0)}, (10.0, 2.0, 10.0))
+        if grass.lawns:
+            break
+        grass._pending[(0, 0)].result()
+    grass.configure(PRESETS["bajo"])
+    grass.update({(0, 0)}, (10.0, 2.0, 10.0))
+    lawn = grass.lawns[(0, 0)]
+    d = np.hypot(lawn.xz[:, 0] - 10, lawn.xz[:, 1] - 10)
+    assert (g.NEAR, g.FAR) == (0.0, 25.0) and len(grass.meshes[1]._geometry["positions"]) == 50  # 10 blades
+    assert not (lawn.level == 0).any() and (lawn.level[d < 25.0] == 1).all() and (lawn.level[d >= 25.0] == -1).all()
+    grass.configure(PRESETS["alto"])
+    grass.update({(0, 0)}, (10.0, 2.0, 10.0))
+    assert (lawn.level[d < 20.0] == 0).all() and len(grass.meshes[1]._geometry["positions"]) == 80
+    grass.close()
