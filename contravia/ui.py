@@ -132,6 +132,28 @@ def revs(lit: int, total: int, w: int = 150, h: int = 10) -> str:
     return f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}">{"".join(out)}</svg>'
 
 
+def manoeuvre(kind: str, angle: float, px: int) -> str:
+    """The GPS panel's icon for a step: a yellow arrow bent by the turn's angle (right positive), a roundabout's
+    ring, or the destination's dot."""
+    import math
+
+    s = f'<svg xmlns="http://www.w3.org/2000/svg" width="{px}" height="{px}" viewBox="0 0 34 34">'
+    stroke = f'fill="none" stroke="{YELLOW}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"'
+    if kind == "arrive":
+        return s + f'<circle cx="17" cy="14" r="7" fill="{YELLOW}"/><path d="M17 21v9" {stroke}/></svg>'
+    if kind == "roundabout":
+        a = angle if angle else 0.5
+        return (s + f'<circle cx="17" cy="17" r="7" {stroke}/><path d="M17 31v-7" {stroke}/>'
+                f'<path d="M{17 + 7 * math.sin(a):.1f} {17 - 7 * math.cos(a):.1f}l{8 * math.sin(a):.1f} {-8 * math.cos(a):.1f}" {stroke}/></svg>')
+    bend = 0.0 if kind == "straight" else max(-2.4, min(2.4, angle))
+    tx, ty = 17 + 12 * math.sin(bend), 15 - 12 * math.cos(bend)  # the tip, the turn away from straight up
+    hx, hy = math.sin(bend), -math.cos(bend)
+    left = (tx - 6 * hx - 5 * hy, ty - 6 * hy + 5 * hx)
+    right = (tx - 6 * hx + 5 * hy, ty - 6 * hy - 5 * hx)
+    return (s + f'<path d="M17 31V17L{tx - 4 * hx:.1f} {ty - 4 * hy:.1f}" {stroke}/>'
+            f'<path d="M{tx:.1f} {ty:.1f}L{left[0]:.1f} {left[1]:.1f}L{right[0]:.1f} {right[1]:.1f}z" fill="{YELLOW}"/></svg>')
+
+
 def bar(w: int, h: int, colour: str) -> str:
     """A plain rectangle of one colour."""
     return f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}"><rect width="{w}" height="{h}" fill="{colour}"/></svg>'

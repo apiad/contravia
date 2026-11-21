@@ -106,6 +106,8 @@ class World:
         self._summaries: dict = {}
         self._focus = 0
         self._grids_open: dict = {}
+        self._reading: dict = {}  # province -> the Future of its data, read on a thread (open_soon)
+        self._reader = None
         self.open_max = OPEN
         if core is not None:  # one province, in memory
             self.names, self.paths = ["La Habana"], [None]
@@ -167,15 +169,28 @@ class World:
     # Provinces, opened on demand.
 
     def province(self, k: int) -> CityData:
-        """Province k's data, read now if it is not among the OPEN open."""
+        """Province k's data, read now if it is not among the OPEN open (or taken from open_soon's read)."""
         if k in self._open:
             self._open.move_to_end(k)
             return self._open[k]
-        data = CityData.load(self.paths[k])
+        reading = self._reading.pop(k, None)
+        data = reading.result() if reading is not None else CityData.load(self.paths[k])
         self._open[k] = data
         while len(self._open) > self.open_max:
             self._open.popitem(last=False)
         return data
+
+    def open_soon(self, x: float, z: float) -> None:
+        """Start reading the data of the province at (x, z) on a thread, so that a start there finds it open: a
+        province takes a second or two to read, which a teleport would otherwise wait for."""
+        k = self.province_at(x, z)
+        if k is None or k in self._open or self.paths[k] is None or k in self._reading:
+            return
+        if self._reader is None:
+            from concurrent.futures import ThreadPoolExecutor
+
+            self._reader = ThreadPoolExecutor(1, thread_name_prefix="province")
+        self._reading[k] = self._reader.submit(CityData.load, self.paths[k])
 
     def _terrain(self, k: int):
         """Province k's relief grid, kept for good once read: only its three arrays come off the disk, so a view

@@ -7,6 +7,8 @@ roof. Blocks that OSM left empty get filler boxes along their edges, seeded by t
 stable too.
 """
 
+from functools import lru_cache
+
 import numpy as np
 
 from contravia.mesh import signed_area, triangulate
@@ -16,6 +18,7 @@ from contravia.terrain import footing
 GROUND_SHADE = 0.82  # the shade of a wall's inner face, under the parapet
 PLINTH_SHADE = 0.55  # the shade of the masonry plinth a house on a slope stands on
 SETBACK = 3.0  # metres between a block's edge and its filler boxes
+FILLERS_KEPT = 8192  # blocks whose filler boxes are kept once placed
 FRONT = (8.0, 15.0)
 DEPTH = (10.0, 15.0)
 GAP = (0.0, 3.0)
@@ -158,6 +161,23 @@ def _edge_distance(p, ring) -> float:
     return float(np.min(np.hypot(*(a + ab * t[:, None] - p).T)))
 
 
+def _clear_inside(points, ring) -> bool:
+    """Whether every point lies inside the ring (even-odd rule) and at least SETBACK metres off its edges: _inside
+    and _edge_distance for all the points at once."""
+    x, z = points[:, :1], points[:, 1:]
+    x0, z0, x1, z1 = ring[:, 0], ring[:, 1], np.roll(ring[:, 0], 1), np.roll(ring[:, 1], 1)
+    across = (z0 > z) != (z1 > z)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        cross = across & (x < x0 + (z - z0) * (x1 - x0) / (z1 - z0))
+    if not (cross.sum(1) % 2).all():
+        return False
+    a, ab = ring, np.roll(ring, -1, axis=0) - ring
+    t = np.clip(np.einsum("pij,ij->pi", points[:, None] - a, ab) / np.maximum(np.einsum("ij,ij->i", ab, ab), 1e-12),
+                0, 1)
+    gap = a + ab * t[..., None] - points[:, None]
+    return bool((np.hypot(gap[..., 0], gap[..., 1]).min(1) >= SETBACK - 1e-6).all())
+
+
 def _overlap(r, s) -> bool:
     """Separating axis test for two convex quads."""
     for poly in (r, s):
@@ -171,8 +191,22 @@ def _overlap(r, s) -> bool:
 
 
 def filler_rings(block: np.ndarray, seed: int) -> list[np.ndarray]:
-    """Footprints of filler boxes along the edges of a block, set back SETBACK metres."""
+    """Footprints of filler boxes along the edges of a block, set back SETBACK metres, read-only. They are
+    placed once per block and seed and kept: the grass and the yard trees of every cell ask for those of the
+    3 x 3 cells round it, and the walls, the trees and the grass each ask again."""
     block = np.asarray(block, float)
+    return list(_kept_fillers(block.tobytes(), block.shape, int(seed)))
+
+
+@lru_cache(maxsize=FILLERS_KEPT)
+def _kept_fillers(raw: bytes, shape: tuple, seed: int) -> tuple[np.ndarray, ...]:
+    rings = tuple(_place_fillers(np.frombuffer(raw).reshape(shape), seed))
+    for r in rings:
+        r.setflags(write=False)
+    return rings
+
+
+def _place_fillers(block: np.ndarray, seed: int) -> list[np.ndarray]:
     if signed_area(block) < 0:
         block = block[::-1]
     rng = _rng(seed)
@@ -192,7 +226,7 @@ def filler_rings(block: np.ndarray, seed: int) -> list[np.ndarray]:
             p0 = a + d * t + inward * SETBACK
             quad = np.array([p0, p0 + d * front, p0 + d * front + inward * depth, p0 + inward * depth])
             t += front + rng.uniform(*GAP)
-            if not all(_inside(c, block) and _edge_distance(c, block) >= SETBACK - 1e-6 for c in quad):
+            if not _clear_inside(quad, block):
                 continue
             if any(_overlap(quad, q) for q in placed):
                 continue

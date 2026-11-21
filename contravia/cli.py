@@ -150,6 +150,11 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--compare", action="store_true",
                    help="write bench/out/showcase.html with every showcase run of the history, side by side")
 
+    p = sub.add_parser("route", help="print the GPS route between two points of the island: its steps, length and time")
+    p.add_argument("--from", dest="start", required=True, help="LAT,LON where the car starts")
+    p.add_argument("--to", required=True, help="LAT,LON of the destination")
+    p.add_argument("--data", default="data/cuba")
+
     p = sub.add_parser("flowmap", help="draw the flow layer over the province at a time, as a PNG")
     p.add_argument("out")
     p.add_argument("--data", default="data/cuba/la-habana.npz")
@@ -316,6 +321,12 @@ def main(argv: list[str] | None = None) -> None:
 
         timelapse(args.data, args.out, day=args.day, start=args.start, minutes=args.minutes, step=args.step,
                   sky_file=args.sky)
+    elif args.command == "route":
+        from contravia.gps import main as route
+
+        code = route(args.data, args.start, args.to)
+        if code:
+            raise SystemExit(code)
     elif args.command == "flowmap":
         from contravia.flowmap import main as flowmap
 
