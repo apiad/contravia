@@ -91,14 +91,21 @@ class Rain:
         class Drop(Component):
             k: Float
 
-        rng = np.random.default_rng(seed)
-        self.rel = rng.uniform(-BOX / 2, BOX / 2, (POOL, 3))
+        self.engine, self._rng = engine, np.random.default_rng(seed)
         self.material = RainMaterial()
         self.center = np.zeros(3)
         self.count = 0
-        engine.spawn(PointCloud(), Material(self.material), Transform(pos=np.zeros((POOL, 3), np.float32)),
-                     ScalarValue(value=np.zeros(POOL, np.float32)), Radius(radius=np.full(POOL, STREAK, np.float32)),
-                     Drop(k=np.arange(POOL, dtype=float)), n=POOL)
+
+        def spawn() -> None:
+            self.rel = self._rng.uniform(-BOX / 2, BOX / 2, (POOL, 3))
+            self.ents = engine.spawn(PointCloud(), Material(self.material),
+                                     Transform(pos=np.zeros((POOL, 3), np.float32)),
+                                     ScalarValue(value=np.zeros(POOL, np.float32)),
+                                     Radius(radius=np.full(POOL, STREAK, np.float32)),
+                                     Drop(k=np.arange(POOL, dtype=float)), n=POOL).indices
+
+        self._spawn = spawn
+        spawn()
 
         def move(q: mx.Query[Transform, Drop], dt: float):
             k = np.rint(q[Drop].k.data[:, 0]).astype(np.int64)
@@ -107,6 +114,15 @@ class Rain:
             q[Transform].pos = pos.astype(np.float32)
 
         engine.system(move)
+
+    def configure(self, q) -> None:
+        """Take a quality preset's number of streaks (contravia/quality.py): the pool is made again at that size."""
+        global POOL
+        if q.rain_pool == POOL:
+            return
+        POOL = int(q.rain_pool)
+        self.engine.destroy(self.ents)
+        self._spawn()
 
     def update(self, dt: float, eye, intensity: float, light) -> None:
         """Move the drops, follow the camera, show as many as the rain asks, in the frame's light."""
