@@ -130,6 +130,8 @@ class Game:
         self.base = self._spawn_base()
         self.shelf = self._spawn_shelf()
         self.shadow = self._spawn_shadow()
+        self.arrows = self._spawn_arrows()
+        self._arrow_yaw, self._arrow_step, self._arrow_pulse = None, None, 1.0
         self.model = kept(engine.state, "player car", "CarParams()", _player_car)
         self.handles = spawn_car(engine, self.model)
         self.family, self.driven, self.help_level, self.locked_assists = "moderno", None, DEFAULT, ()
@@ -353,6 +355,47 @@ class Game:
 
         return BASE_Y - MAP_SINK * mapview.metres_per_pixel(self.map, max(self.engine.h, 1))
 
+    def _spawn_arrows(self):
+        """The GPS arrow over the car, twice: faint (while the next step is far) and solid; both wait hidden."""
+        from manifoldx.components import Material, Mesh, Transform
+        from manifoldx.resources import StandardMaterial
+
+        from contravia.gps import ARROW_FAINT, arrow_mesh
+
+        m = arrow_mesh()
+        return {k: self.engine.spawn(Mesh({"positions": m.positions, "normals": m.normals, "colors": m.colors,
+                                           "indices": m.indices}),
+                                     Material(StandardMaterial("#ffffff", roughness=0.6, vertex_colors=True,
+                                                               opacity=k)),
+                                     Transform(pos=(0.0, HIDDEN_Y, 0.0)))
+                for k in (ARROW_FAINT, 1.0)}
+
+    def _place_arrow(self) -> None:
+        """Over the car's roof, turned toward the route look_ahead() metres on; pulses when the step changes;
+        hidden with no route or out of the drive."""
+        from contravia.gps import ARROW_UP, arrow_opacity, arrow_rotation, arrow_yaw, look_ahead
+
+        g = self.gps
+        show = None
+        if self.mode == "drive" and g.route is not None and g.router.rg is not None:
+            show = arrow_opacity(g.to_step)
+            x, z = g.ahead(look_ahead(self.car.speed), g.router.rg.point)
+            self._arrow_yaw = arrow_yaw(self._arrow_yaw, math.atan2(z - self.car.z, x - self.car.x), self._dt)
+            if g.step is not self._arrow_step:
+                self._arrow_step, self._arrow_pulse = g.step, 0.0
+            self._arrow_pulse = min(self._arrow_pulse + self._dt / 0.3, 1.0)
+        else:
+            self._arrow_yaw = None
+        for k, arrow in self.arrows.items():
+            if k != show:
+                arrow.transform.pos = (0.0, HIDDEN_Y, 0.0)
+                continue
+            _, height, _ = self.driven.spec.size
+            arrow.transform.pos = (self.car.x, self.car.y + height + ARROW_UP, self.car.z)
+            arrow.transform.rot = arrow_rotation(self._arrow_yaw, (self.eye[0] - self.car.x, self.eye[2] - self.car.z))
+            grow = 1.0 + 0.25 * (1.0 - self._arrow_pulse)
+            arrow.transform.scale = (grow, grow, grow)
+
     def _spawn_shadow(self):
         """A dark ellipse straight under the car on the bare ground, not on the road: where the road stands
         above the ground it hides under the road, and where the screen shows the ground under a car that
@@ -427,7 +470,7 @@ class Game:
         g, rg, p = self.gps, self.gps.router.rg, self.place
         edge = None
         if p is not None and rg is not None:
-            edge = rg.island(self.city.names.index(self.city.focused()), p.edge)
+            edge = rg.island(self.city.names.index(self.city.focused), p.edge)
         was = g.to
         g.update(edge, p.s if p is not None else 0.0, self.car, self._dt)
         if was is not None and g.to is None:
@@ -957,6 +1000,7 @@ class Game:
         ground = float(self.surface.height(np.array([self.car.x]), np.array([self.car.z]), near=self.car.y)[0])
         self.shadow.transform.pos = (self.car.x, ground + SHADOW_LIFT, self.car.z)
         self.shadow.transform.rot = (0.0, float(np.sin(half)), 0.0, float(np.cos(half)))
+        self._place_arrow()
         captured = self.mode == "drive" and not self.camera_override  # the mouse turns the camera while driving
         if inp.pointer_captured != captured:
             inp.capture_pointer(captured)

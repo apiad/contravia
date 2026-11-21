@@ -313,3 +313,63 @@ def test_the_look_ahead_turns_the_corner_before_the_car():
     x, z = gd.ahead(22.0, points_of(g), from_edge_s=(edge(g, 1, 2), 82.0))  # 18 m before the corner
     assert x == pytest.approx(200.0, abs=0.5) and z == pytest.approx(4.0, abs=0.5)
     assert gd.next_edge(edge(g, 1, 2)) == edge(g, 2, 5)
+
+
+def test_the_arrow_eases_toward_its_heading_the_short_way_round():
+    from contravia.gps import arrow_yaw
+
+    assert arrow_yaw(None, 1.0, 1 / 60) == 1.0
+    assert arrow_yaw(0.0, 1.0, 0.15) == pytest.approx(1 - np.exp(-1), abs=1e-6)
+    assert arrow_yaw(3.0, -3.0, 0.05) > 3.0  # across ±π it turns on, not back through 0
+
+
+def test_the_arrow_is_faint_far_from_the_next_step():
+    from contravia.gps import arrow_opacity
+
+    assert arrow_opacity(400.0) == 0.55 and arrow_opacity(120.0) == 1.0
+
+
+def test_the_arrow_mesh_is_1_6_m_long_along_x():
+    from contravia.gps import arrow_mesh
+
+    m = arrow_mesh()
+    x = m.positions[:, 0]
+    assert x.max() - x.min() == pytest.approx(1.6, abs=0.1) and abs(x.max() + x.min()) < 0.05
+    assert len(m.indices) % 3 == 0 and len(m.positions) == len(m.colors)
+
+
+def test_a_point_along_an_island_edge_follows_its_polyline():
+    g = make_graph([(0, 0), (100, 0), (100, 100)], [(0, 1), (1, 2)])
+    rg = RouteGraph.from_graphs([g])
+    assert rg.point(0, 30.0) == pytest.approx((30.0, 0.0))
+    assert rg.point(1, 100.0) == pytest.approx((100.0, 100.0))
+
+
+def test_the_arrow_s_faces_wind_as_the_shadow_s_that_shows_from_above():
+    from contravia.gps import arrow_mesh
+
+    m = arrow_mesh()
+    p, i = m.positions.astype(float), m.indices.reshape(-1, 3)
+    geo = np.cross(p[i[:, 1]] - p[i[:, 0]], p[i[:, 2]] - p[i[:, 0]])
+    said = m.normals[i[:, 0]]
+    # wound as the car's shadow, which shows from above: its declared normal agrees with its right-hand winding
+    assert np.all((geo * said).sum(1) > 0)
+
+
+def _rotate(q, v):
+    x, y, z, w = q
+    u = np.array([x, y, z])
+    return v + 2 * w * np.cross(u, v) + 2 * np.cross(u, np.cross(u, v))
+
+
+@pytest.mark.parametrize("yaw", [0.0, 1.2, -2.5])
+def test_the_arrow_points_along_its_yaw_and_leans_its_top_toward_the_camera(yaw):
+    from contravia.gps import ARROW_TILT, arrow_rotation
+
+    to_camera = np.array([-np.cos(0.4), -np.sin(0.4)])  # the camera behind the car, seen from above
+    q = arrow_rotation(yaw, to_camera)
+    nose, top = _rotate(q, np.array([1.0, 0, 0])), _rotate(q, np.array([0, 1.0, 0]))
+    ground = nose[[0, 2]] / np.hypot(nose[0], nose[2])
+    assert ground @ np.array([np.cos(yaw), np.sin(yaw)]) > 0.75  # the tilt foreshortens it, never turns it away
+    assert top[1] == pytest.approx(np.cos(ARROW_TILT), abs=1e-6)
+    assert top[[0, 2]] @ to_camera == pytest.approx(np.sin(ARROW_TILT), abs=1e-6)

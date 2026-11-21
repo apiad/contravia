@@ -110,3 +110,20 @@ def test_a_gps_destination_survives_a_reload(city):
     assert again.gps.to == (150.0, 80.0) and again.gps.title == "Capitolio"
     again._gps_clear({})
     assert again.gps.to is None and again.engine.state.gps_to is None
+
+
+def test_following_a_route_reads_the_focused_province_s_edge(city):
+    from contravia.driving_help import Road
+    from contravia.gps import RouteGraph
+    from contravia.world import World
+
+    g = bare_game(city)
+    g.city = World(city)
+    g._make_gps()
+    g.teleport(100.0, 50.0)
+    g._dt = 1 / 60
+    g.gps.router.rg = RouteGraph.from_graphs([g.city.graph])
+    g.place = Road(g.city.graph).locate(g.car.x, g.car.z, g.car.yaw)
+    g.gps_to(g.car.x + 300.0, g.car.z)
+    g._follow_route()
+    assert g.engine.state.gps["to"] == [g.car.x + 300.0, g.car.z]

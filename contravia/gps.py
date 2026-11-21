@@ -224,6 +224,14 @@ class RouteGraph:
             e, s, _ = min(along, key=lambda n: n[2])
         return e, s
 
+    def point(self, e: int, s: float) -> tuple[float, float]:
+        """(x, z) s metres along island edge e, on its thinned polyline."""
+        pts = self.poly[self.poly_start[e]:self.poly_start[e + 1]].astype(np.float64)
+        f = float(np.clip(s / max(self.length[e], 1e-9), 0, 1)) * (len(pts) - 1)
+        k = min(int(f), len(pts) - 2)
+        p = pts[k] + (pts[k + 1] - pts[k]) * (f - k)
+        return float(p[0]), float(p[1])
+
     def _heading_at(self, e: int, s: float) -> float:
         pts = self.poly[self.poly_start[e]:self.poly_start[e + 1]].astype(np.float64)
         k = min(int(s / max(self.length[e], 1e-9) * (len(pts) - 1)), len(pts) - 2)
@@ -623,3 +631,64 @@ class Guide:
                 return points(int(edges[k]), min(s + left, end))
             left -= end - s
             k, s = k + 1, 0.0
+
+
+ARROW_TAU = 0.15  # seconds: the arrow's heading eases toward the route's with this time constant
+ARROW_FAINT, ARROW_NEAR = 0.55, 150.0  # its opacity while the next step is farther than ARROW_NEAR metres
+ARROW_UP = 0.5  # metres over the car's roof: higher, the chase camera sees it edge-on at its own eye level
+ARROW_TILT = np.radians(40)  # its top leans this far toward the camera, so it reads whichever way it points
+LOOK_TIME, LOOK_MIN, LOOK_MAX = 2.0, 20.0, 60.0  # it points LOOK_TIME seconds of road ahead, within these metres
+
+
+def arrow_yaw(prev: float | None, want: float, dt: float, tau: float = ARROW_TAU) -> float:
+    """The arrow's heading after dt seconds easing from prev toward want, the short way round."""
+    if prev is None:
+        return float(want)
+    return float(prev + _wrap(want - prev) * (1 - np.exp(-dt / tau)))
+
+
+def arrow_opacity(to_step: float) -> float:
+    return ARROW_FAINT if to_step > ARROW_NEAR else 1.0
+
+
+def look_ahead(speed: float) -> float:
+    """Metres along the route the arrow points to at this speed."""
+    return float(np.clip(LOOK_TIME * abs(speed), LOOK_MIN, LOOK_MAX))
+
+
+def arrow_mesh():
+    """The arrow over the car, 1.6 m long along +x and centred on the origin: a yellow slab 0.2 m thick with ink
+    sides, a shaft and a head."""
+    from contravia.mesh import MeshBuilder
+    from contravia.ui import INK, YELLOW
+
+    rgb = lambda c: tuple(int(c[i:i + 2], 16) / 255 for i in (1, 3, 5))  # noqa: E731
+    outline = np.array([(-0.8, -0.18), (0.1, -0.18), (0.1, -0.45), (0.8, 0.0), (0.1, 0.45), (0.1, 0.18),
+                        (-0.8, 0.18)])
+    tris = [(0, 1, 5), (0, 5, 6), (2, 3, 4)]
+    mb = MeshBuilder()
+    for y, up in ((0.1, 1.0), (-0.1, -1.0)):
+        top = np.c_[outline[:, 0], np.full(len(outline), y), outline[:, 1]]
+        faces = tris if up > 0 else [(a, c, b) for a, b, c in tris]  # wound as the engine shows them, see test
+        mb.add(top, [(0, up, 0)] * len(top), rgb(YELLOW), faces)
+    for k in range(len(outline)):
+        a, b = outline[k], outline[(k + 1) % len(outline)]
+        n = np.array([b[1] - a[1], 0.0, -(b[0] - a[0])])
+        n /= np.linalg.norm(n)
+        quad = [(a[0], 0.1, a[1]), (b[0], 0.1, b[1]), (b[0], -0.1, b[1]), (a[0], -0.1, a[1])]
+        mb.add(quad, [tuple(n)] * 4, rgb(INK), [(0, 2, 1), (0, 3, 2)])
+    return mb.to_meshdata(0.0, 0.0)
+
+
+def arrow_rotation(yaw: float, to_camera) -> tuple[float, float, float, float]:
+    """The arrow's quaternion (x, y, z, w): +x turned to yaw (atan2(dz, dx)), then its top leaned ARROW_TILT toward
+    to_camera, the ground direction (dx, dz) from the car to the camera."""
+    d = np.asarray(to_camera, float)
+    d = d / max(np.hypot(*d), 1e-9)
+    yaw_q = np.array([0.0, np.sin(-yaw / 2), 0.0, np.cos(-yaw / 2)])
+    k = np.array([d[1], 0.0, -d[0]])  # up × to_camera: turning about it leans the top toward the camera
+    tilt_q = np.r_[k * np.sin(ARROW_TILT / 2), np.cos(ARROW_TILT / 2)]
+    (x1, y1, z1, w1), (x2, y2, z2, w2) = tilt_q, yaw_q
+    q = (w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2, w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+         w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2, w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2)
+    return tuple(float(v) for v in q)
