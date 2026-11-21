@@ -180,18 +180,19 @@ class DrivingHelp:
         self.arrived = False  # stopped at stop_at; it holds the car until the accelerator
 
     def apply(self, c, car, dt: float, level: int, locked=(), steer_strength: float = 1.0, obstacles=None,
-              signal=None):
+              signal=None, place=None):
         """The controls after the road assists of this level; steer_strength is the chassis steering assist's,
         which narrows the wheel with speed. obstacles: (W, 2, 2) segments and their velocities (W, 2), what the
         brake and the pilot must not hit. signal(edge, dist, v): whether the signal at the end of edge lets the
-        car go on (None: no signals, as with the traffic off)."""
+        car go on (None: no signals, as with the traffic off). place: where the car is on the road when the caller found it this
+        frame already; None locates it here."""
         from dataclasses import replace
 
         self.lit = {name: False for name in ROAD_ASSISTS}
         on = road_assists(level, locked)
         yaw_rate = 0.0 if self.yaw is None else ((car.yaw - self.yaw + np.pi) % (2 * np.pi) - np.pi) / dt
         self.yaw = car.yaw
-        p = self.road.locate(car.x, car.z, car.yaw) if on & {"lane", "pilot"} else None
+        p = (place or self.road.locate(car.x, car.z, car.yaw)) if on & {"lane", "pilot"} else None
         pilot = "pilot" in on and p is not None and not self._handed_back(c)
         if self.arrived and c.throttle > 0:  # the driver drives on from the destination
             self.arrived, self.stop_at = False, None

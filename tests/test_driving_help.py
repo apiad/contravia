@@ -339,3 +339,18 @@ def test_before_a_turn_the_pilot_moves_to_the_turn_s_lane():
     run, _ = pilot_run(g, 105.0, left_lane, 0.0, 12.0, route_next=nxt)
     lanes = [p.lane for _, car, p in run if p and p.edge == e12 and 175.0 < car.x < 190.0]
     assert lanes and lanes[-1] == 0
+
+
+def test_the_help_uses_the_place_the_game_found_this_frame():
+    from types import SimpleNamespace
+
+    from contravia.car import Controls
+    from contravia.driving_help import DrivingHelp, Place
+
+    help = DrivingHelp(Road(straight()), 0.6, 2.6)
+    car = SimpleNamespace(x=100.0, z=500.0, yaw=0.0, speed=5.0)  # far off the road: locate finds nothing
+    c = Controls(0.0, 0.0, 0.0, False)
+    help.apply(c, car, 1 / 60, 0, obstacles=(np.zeros((0, 2, 2)), np.zeros((0, 2))))
+    assert not help.lit["pilot"]
+    help.apply(c, car, 1 / 60, 0, obstacles=(np.zeros((0, 2, 2)), np.zeros((0, 2))), place=Place(0, 100.0, 1.5, 0, 0.0))
+    assert help.lit["pilot"]
