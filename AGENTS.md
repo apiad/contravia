@@ -66,7 +66,7 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   2.6 s stands, stopped, on the nearest dry road within 300 m or else the nearest dry land, facing inland.
 - Causeways are land (`contravia/causeway.py`): every drivable road but a bridge or tunnel, near the coast, where it
   lies outside the coast's land, on a strip with sea within 30 m both sides, or where the relief is sea, is a
-  causeway (the pedraplenes to the cays, about 143 km island-wide; OSM's `embankment` is not trusted). Its bank is
+  causeway (a service road only on the coast's land, a dike: over open water it is a pier) (the pedraplenes to the cays, about 143 km island-wide; OSM's `embankment` is not trusted). Its bank is
   the road plus 2.5 m of earth either side with its crown 1.7 m over the water, ramping down to the land at 5 %,
   and riprap sloping 1:1.5 into the sea: the shore makes it land with a fifth type, riprap (big grey seeded rocks,
   grass on the shoulders), and `World.cell` raises the streets, kerbs, paint and pavements onto the crown. It is
