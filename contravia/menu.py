@@ -10,6 +10,9 @@ docs/superpowers/specs/2026-11-18-garaje-design.html proposes, over the vehicle 
 The game behind runs in one of these modes (game.mode): "menu" while a menu screen covers it (the car stands,
 the clock stops, the streamer keeps loading the start's cells), "drive", "paused", "photo", "map" and "garage". The menu tells
 the game what to do through Game.start, Game.pause, Game.resume and Game.to_menu.
+A mode chosen in the main menu (the free drive, the map) starts under the loading curtain (contravia/curtain.py,
+Game.raise_curtain), which lifts once the world round its start is drawn; under it only Escape works, back to the
+main menu. A later move within the game (the pause, the map's flights) never shows it.
 While driving, Escape pauses, F aims a camera at a place and L turns the driving help to its next level.
 """
 
@@ -244,7 +247,7 @@ class MainScreen(ListScreen):
         m = self.menu
         return [("Historia", "Cuentos del almendrón · próximamente", None),
                 ("Modo libre", "Maneja donde quieras, cuando quieras", lambda: m.show("free")),
-                ("Mapa de Cuba", "Explora la isla desde el aire", lambda: m.show("map")),
+                ("Mapa de Cuba", "Explora la isla desde el aire", m.open_map),
                 ("Garaje", "Todos los vehículos de Cuba, a tu gusto", lambda: m.show("garage")),
                 ("Álbum", "Tus fotos de los lugares de Cuba", lambda: m.show("album")),
                 ("Opciones", "", lambda: m.show("options")),
@@ -1290,6 +1293,14 @@ class Menu:
 
     def press(self, key: str) -> None:
         """One key, by its engine name ("ArrowUp", "Enter", "Escape"...), as if it were just pressed."""
+        if self.game.curtain is not None:  # a mode starting under the curtain: Escape goes back to the main menu
+            if key == "Escape":
+                self.game.drop_curtain()
+                if self.current == "map":
+                    self.screens["map"].key("back")
+                else:
+                    self.to_menu()
+            return
         if self.current is None:
             if key == "Escape" and self.game.mode == "drive":
                 self.pause()
@@ -1313,6 +1324,10 @@ class Menu:
     def update(self, query, dt: float) -> None:
         """Read this frame's keys, follow a resized window and animate the screen."""
         inp = self.engine.input
+        if self.game.curtain is not None:  # a mode starting under the curtain: only Escape counts (press)
+            if inp.just_pressed("Escape"):
+                self.press("Escape")
+            return
         for k in KEY_NAMES:
             if inp.just_pressed(k):
                 if self.current in ("photo", "map", "aim") and k in ("w", "s", "a", "d", "ArrowUp", "ArrowDown",
@@ -1329,11 +1344,20 @@ class Menu:
         self.screens[self.current].tick(min(dt, 0.1))
 
     def start_free(self) -> None:
-        """Drive with the free drive's rows."""
+        """Drive with the free drive's rows, started under the loading curtain."""
         self.show(None)
-        self.chosen = self.free["vehicle"].value
-        self._put(self.chosen)
-        self.game.start(**self.free.start())
+
+        def start():
+            self.chosen = self.free["vehicle"].value
+            self._put(self.chosen)
+            self.game.start(**self.free.start())
+
+        self.game.raise_curtain(start)
+
+    def open_map(self) -> None:
+        """The map from the main menu, under the loading curtain till its first view is drawn."""
+        self.show("map")
+        self.game.raise_curtain()
 
     # The Garaje
 

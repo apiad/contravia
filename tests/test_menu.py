@@ -85,6 +85,7 @@ def test_menu_goes_from_main_to_driving_to_pause_and_back(city_npz, tmp_path, mo
     menu.press("Enter")  # Modo libre
     assert menu.current == "free"
     menu.press("Enter")  # Arrancar
+    _lift(engine, game)
     assert menu.current is None and game.mode == "drive"
     assert game.clock.now().strftime("%a %H:%M") == "Tue 17:30"
     engine.render_frame(supersample=1)
@@ -127,6 +128,7 @@ def test_the_map_opens_from_the_pause_and_the_main_menu_and_drives_at_its_crossh
     engine.render_frame(supersample=1)
     menu.press("ArrowDown")  # from Modo libre to Mapa de Cuba
     menu.press("Enter")
+    _lift(engine, game)
     assert menu.current == "map" and game.mode == "map" and game.map is not None
     menu.press("Escape")
     assert menu.current == "main" and game.mode == "menu" and game.map is None
@@ -134,7 +136,7 @@ def test_the_map_opens_from_the_pause_and_the_main_menu_and_drives_at_its_crossh
     menu.press("ArrowUp")  # Modo libre
     menu.press("Enter")
     menu.press("Enter")  # Arrancar
-    engine.render_frame(supersample=1)
+    _lift(engine, game)
     menu.press("Escape")
     menu.press("ArrowDown")  # Mapa
     eye = game.eye.copy()
@@ -192,6 +194,15 @@ def test_the_map_screen_opens_as_the_shot_path_opens_it(city_npz, tmp_path, monk
     assert menu.current == "map" and game.flight is None and game.map.h == pytest.approx(2500.0)
     game.streamer.close()
     game.detail.close()
+
+
+def _lift(engine, game, frames=600):
+    """Render frames until the loading curtain over a mode started from the main menu has lifted."""
+    for _ in range(frames):
+        if game.curtain is None:
+            return
+        engine.render_frame(supersample=1, dt=0.05)
+    raise AssertionError("the curtain never lifted")
 
 
 def _fly(engine, game, frames=200):
@@ -315,6 +326,7 @@ def test_the_map_names_the_place_under_its_crosshair_offers_its_card_and_joins_a
     game.album.add(capitolio.id, "10:00", "Despejado")
     menu.press("ArrowDown")  # Mapa de Cuba
     menu.press("Enter")
+    _lift(engine, game)
     screen = menu.screens["map"]
     game.map = mapview.MapCam(capitolio.x, capitolio.z, 600.0, 0.0)
     screen.tick(0.0)
@@ -415,6 +427,7 @@ def test_the_maps_panel_names_what_lies_near_the_crosshair_at_each_height(city_n
     engine.render_frame(supersample=1)
     menu.press("ArrowDown")  # Mapa de Cuba
     menu.press("Enter")
+    _lift(engine, game)
     screen = menu.screens["map"]
     capitolio = game.places.by_id("L0333")
 
