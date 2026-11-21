@@ -591,10 +591,12 @@ def _province(pbf, out, dem, name: str, slug: str, box, worldcover=None) -> dict
     province that resume would take as built."""
     import time
 
+    from contravia import coast
     from contravia.terrain import read_terrain
 
     t0 = time.perf_counter()
-    terrain = read_terrain(dem, box, stride=TERRAIN_STRIDE.get(name, 3)) if dem else None
+    land = coast.load(Path(out) / coast.NAME) if (Path(out) / coast.NAME).exists() else None
+    terrain = read_terrain(dem, box, stride=TERRAIN_STRIDE.get(name, 3), land=land) if dem else None
     raw = read_osm(pbf, boundary=name, box=box)
     if worldcover:
         from contravia import builtup

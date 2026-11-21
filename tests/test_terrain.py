@@ -72,3 +72,68 @@ def test_relief_fades_to_flat_at_the_edge():
     assert t.height(0.0, 5000.0) == 0 and t.height(-5000.0, 5000.0) == 0  # edge and outside are flat
     x = np.arange(-500.0, 1900.0, 50.0)  # across the west edge, where the ground is 100 m high
     assert np.abs(np.diff(t.height(x, np.full_like(x, 5000.0)))).max() < 15.0  # no cliff
+
+
+def test_the_coasts_land_is_never_sea():
+    """A spit 60 m wide between two samples of sea, which the cleaning flattens, stands over the sea again."""
+    import shapely
+
+    from contravia.rules.ground import SEA
+    from contravia.terrain import LAND, ashore
+
+    t = Terrain(np.zeros((5, 8), np.float32), (0.0, 0.0), (30.0, 30.0), fade=0.0)
+    t.heights[:, 6:] = 4.0  # a hill the coast does not reach
+    land = shapely.box(-10.0, 50.0, 100.0, 70.0)  # the samples of row 2, columns 0 to 3
+    assert ashore(t, land) == 4
+    assert (t.heights[2, :4] == LAND).all() and LAND > SEA
+    assert t.heights[2, 4] == 0.0 and (t.heights[[0, 1, 3, 4], :6] == 0.0).all()  # the sea stays the sea
+    assert (t.heights[:, 6:] == 4.0).all()
+    assert ashore(t, land) == 0
+
+
+def test_a_carved_sea_is_not_raised_onto_the_land():
+    """A sample under 0 was lowered on purpose (the Malecón's sea past its wall) and stays there."""
+    import shapely
+
+    from contravia.terrain import ashore
+
+    t = Terrain(np.zeros((3, 3), np.float32), (0.0, 0.0), (30.0, 30.0), fade=0.0)
+    t.heights[1, 1] = -2.0
+    assert ashore(t, shapely.box(-10.0, -10.0, 100.0, 100.0)) == 8
+    assert t.heights[1, 1] == -2.0
+
+
+def test_reading_the_relief_raises_the_coasts_land(tmp_path):
+    """read_terrain with the coast: flat tiles at 0 m come out at LAND inside it and 0 outside."""
+    import shapely
+
+    from contravia.geo import to_local
+    from contravia.terrain import LAND, read_terrain
+
+    tifffile.imwrite(tmp_path / _tile_name(23, -83), np.zeros((3600, 3600), np.float32))
+    box = (23.10, -82.45, 23.14, -82.40)
+    (x0, z0), (x1, z1) = to_local(np.array([23.11, 23.13]), np.array([-82.44, -82.41]))
+    land = shapely.box(min(x0, x1), min(z0, z1), max(x0, x1), max(z0, z1))
+    plain = read_terrain(tmp_path, box, fetch=False)
+    raised = read_terrain(tmp_path, box, fetch=False, land=land)
+    assert plain.heights.max() == 0.0
+    cols, rows = np.meshgrid(np.arange(raised.heights.shape[1]), np.arange(raised.heights.shape[0]))
+    inside = shapely.contains_xy(land, raised.origin[0] + cols * raised.step[0], raised.origin[1] + rows * raised.step[1])
+    assert inside.sum() > 100 and (raised.heights[inside] == LAND).all() and (raised.heights[~inside] == 0.0).all()
+
+
+def test_relief_command_raises_a_built_province_in_place(city, tmp_path):
+    """`contravia relief`: the saved file's low samples on the coast beside it come back at LAND."""
+    import shapely
+
+    from contravia import coast
+    from contravia.terrain import LAND, main
+
+    a = dict(city.a)
+    a["heights"] = np.zeros((4, 4), np.float32)
+    a["heights_origin"], a["heights_step"] = np.array([0.0, 0.0]), np.array([30.0, 30.0])
+    CityData(a).save(tmp_path / "x.npz")
+    coast.save(shapely.box(-10.0, -10.0, 40.0, 100.0), tmp_path / coast.NAME)  # columns 0 and 1
+    assert main(tmp_path / "x.npz") == {"samples": 16, "raised": 8}
+    h = CityData.load(tmp_path / "x.npz").terrain.heights
+    assert (h[:, :2] == LAND).all() and (h[:, 2:] == 0.0).all()

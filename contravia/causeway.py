@@ -8,7 +8,9 @@ that leaves it sinks.
 
 `read` finds them instead by where a road runs: every drivable OSM road that is not a bridge or a tunnel, near the
 coast (NEAR_COAST), at the points where it lies outside the coast's land, or where the relief there is sea (under
-rules.ground.SEA), or where the land under it is a strip with sea within ACROSS metres on both sides. Runs of such
+rules.ground.SEA), or where the land under it is a strip with sea within ACROSS metres on both sides. A service
+road outside the coast's land is a pier or a dock and stays out; on the land (a dike, a breakwater) it counts.
+Runs of such
 points on one road are its pieces; pieces that join into a causeway shorter than MIN_LENGTH are left out (a road
 that grazes the waterline). Each vertex of a piece keeps the height of the causeway's crown there: CROWN over the
 water, coming down at RAMP to BASE towards an end that meets land, so the road climbs onto it from the shore.
@@ -44,13 +46,15 @@ DEPTH = 3.0  # metres under the water the riprap goes down to
 LIFT = 0.05  # metres the street stands over the bank, as it does over the ground elsewhere
 
 
+PIER = "service"  # the highway class that over open water is a pier or a dock, not a causeway
+
+
 def _drivable(tags) -> str | None:
-    """The highway class of an OSM way the game drives on and a causeway may carry, or None. Service roads are
-    left out: over water they are piers and docks."""
+    """The highway class of an OSM way the game drives on and a causeway may carry, or None."""
     from contravia.prepare import WIDTHS
 
     hw = tags.get("highway")
-    return hw if hw in WIDTHS and hw != "service" else None
+    return hw if hw in WIDTHS else None
 
 
 def _crossing(tags) -> bool:
@@ -98,10 +102,11 @@ def near_coast(land, x, z) -> np.ndarray:
     return code[i] == q if len(code) else np.zeros(len(q), bool)
 
 
-def detect(lines, widths, crossings, land, height=None) -> tuple[list, dict]:
+def detect(lines, widths, crossings, land, height=None, piers=None) -> tuple[list, dict]:
     """(pieces, report): the causeways among roads, as the module says. lines are shapely LineStrings in local
     metres with their widths; crossings the bridges' and tunnels' lines near them; land the coast (coast.load);
-    height(x, z) the relief, or None to judge by the coast alone. Each piece is (xz (n, 2), crown (n,), width)."""
+    height(x, z) the relief, or None to judge by the coast alone; piers marks the lines that are service roads,
+    which count only on the coast's land. Each piece is (xz (n, 2), crown (n,), width)."""
     import shapely
 
     from contravia.rules.ground import SEA
@@ -131,6 +136,8 @@ def detect(lines, widths, crossings, land, height=None) -> tuple[list, dict]:
         over = outside | strip
         if height is not None:
             over |= np.asarray(height(p[:, 0], p[:, 1])) < SEA
+        if piers is not None and piers[k]:
+            over &= ~outside
         over &= close
         idx = np.flatnonzero(over)
         for run in np.split(idx, np.flatnonzero(np.diff(idx) > 1) + 1) if len(idx) else []:
@@ -194,7 +201,8 @@ def read(pbf, land, height=None) -> tuple[list, dict]:
     geoms = _local(np.array([g for g, _, _ in ways], dtype=object))
     crossing = np.array([_crossing(t) for _, _, t in ways])
     widths = np.array([road_width(hw, t, WIDTHS) for _, hw, t in ways])
-    pieces, report = detect(geoms[~crossing], widths[~crossing], geoms[crossing], land, height)
+    piers = np.array([hw == PIER for _, hw, _ in ways])
+    pieces, report = detect(geoms[~crossing], widths[~crossing], geoms[crossing], land, height, piers[~crossing])
     names = [t.get("name") for (_, _, t), c in zip(ways, crossing, strict=True) if not c]
     report["named"] = named(pieces, geoms[~crossing], names)
     return pieces, report

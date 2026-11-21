@@ -107,6 +107,11 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--window", action="store_true", help="show the build screen instead of printing the progress")
     p.add_argument("--shot", help="with --window: render offscreen and save SHOT-<step>.png as the build goes")
 
+    p = sub.add_parser("relief", help="raise the relief of a prepared data file onto the coast's land, in place; "
+                       "rebuild its streets and walks after it")
+    p.add_argument("--data", default="data/cuba/la-habana.npz")
+    p.add_argument("--coast", help="the coast contravia coast wrote; coast.src beside the data file by default")
+
     p = sub.add_parser("streets", help="rebuild the street surface of a prepared data file in place")
     p.add_argument("--data", default="data/cuba/la-habana.npz")
 
@@ -290,6 +295,10 @@ def main(argv: list[str] | None = None) -> None:
         from contravia.firstrun import main as build
 
         build(args.source, args.home)
+    elif args.command == "relief":
+        from contravia.terrain import main as relief
+
+        relief(args.data, args.coast)
     elif args.command == "streets":
         from contravia.streets import main as streets
 

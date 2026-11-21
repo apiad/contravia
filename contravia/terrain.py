@@ -26,6 +26,7 @@ _M_PER_DEG_LAT = float(_STEP[0, 1] - _STEP[2, 1]) * 100
 
 
 FADE = 1000.0  # metres over which the relief falls to flat at the grid's edge, so leaving it shows no cliff
+LAND = 0.6  # metres: the least height of the relief on the coast's land, twice rules.ground.SEA
 
 
 class Terrain:
@@ -203,13 +204,36 @@ def fetch_tile(folder, lat: int, lon: int) -> Path | None:
     return path
 
 
-def read_terrain(folder, box, step: float = 30.0, stride: int = 1, fetch: bool = True) -> Terrain:
+def ashore(terrain: Terrain, land) -> int:
+    """Raise to LAND the samples of terrain that lie on land (the coast, a shapely geometry in local metres:
+    coast.load) between 0 and LAND, in place, and return how many.
+
+    The cleaning opens the surface model over 150 m and the grid keeps a sample every 30 or 90 m, so a spit, a
+    cay or a low shore the satellite saw a metre over the sea comes out at 0: the game draws no ground there and
+    its streets and houses stand in the water. The coast is the truth about where the sea is. LAND is twice
+    rules.ground.SEA, so between a raised sample and a sample of sea the waterline falls half way. A sample
+    under 0 was lowered on purpose (the Malecón's sea, landmarks.malecon.carve) and stays."""
+    import shapely
+
+    h = terrain.heights
+    low = (h >= 0.0) & (h < LAND)
+    rows, cols = np.nonzero(low)
+    if not len(rows) or land.is_empty:
+        return 0
+    shapely.prepare(land)
+    on = shapely.contains_xy(land, terrain.origin[0] + cols * terrain.step[0], terrain.origin[1] + rows * terrain.step[1])
+    h[rows[on], cols[on]] = LAND
+    return int(on.sum())
+
+
+def read_terrain(folder, box, step: float = 30.0, stride: int = 1, fetch: bool = True, land=None) -> Terrain:
     """The cleaned ground over box (south, west, north, east) on a regular grid of local metres.
 
     Each sample is placed through the island's projection and read from the GLO-30 tile under it, so the grid
     stays true far from the Capitolio, where meridians turn by degrees against the local axes. The heights are
     cleaned (clean) at `step` metres, then every `stride`-th sample is kept: a coarser grid for big provinces.
-    Missing tiles are downloaded into folder when fetch is True; sea without a tile reads 0.
+    Missing tiles are downloaded into folder when fetch is True; sea without a tile reads 0. With land, the
+    coast (coast.load), the samples on it stand over the sea (ashore).
     """
     import tifffile
 
@@ -255,5 +279,28 @@ def read_terrain(folder, box, step: float = 30.0, stride: int = 1, fetch: bool =
             band[k] = ((grid[r0, c0] * (1 - ac) + grid[r0, c0 + 1] * ac) * (1 - ar)
                        + (grid[r0 + 1, c0] * (1 - ac) + grid[r0 + 1, c0 + 1] * ac) * ar)
         out[r: r + len(zs)] = band.reshape(len(zs), cols)
-    ground = clean(out)[::stride, ::stride]
-    return Terrain(ground, (x0, z0), (step * stride, step * stride))
+    terrain = Terrain(clean(out)[::stride, ::stride], (x0, z0), (step * stride, step * stride))
+    if land is not None:
+        ashore(terrain, land)
+    return terrain
+
+
+def main(path, coast_path=None) -> dict:
+    """Raise the relief of a prepared data file onto the coast's land (ashore) in place and print the count; the
+    coast is coast.src beside the file unless given. Its streets and walks are then rebuilt on the new relief
+    (`contravia streets`, `contravia walks`), and the island's causeways and water with theirs; the far view
+    follows when index.npz is deleted and written again on the next load."""
+    import json
+    from pathlib import Path
+
+    from contravia import coast
+    from contravia.citydata import CityData
+
+    city = CityData.load(path)
+    terrain = city.terrain
+    report = {"samples": int(terrain.heights.size),
+              "raised": ashore(terrain, coast.load(coast_path or Path(path).parent / coast.NAME))}
+    city.a["heights"] = terrain.heights
+    city.save(path)
+    print(json.dumps(report))
+    return report

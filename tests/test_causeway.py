@@ -65,6 +65,21 @@ def test_a_road_the_relief_drowns_is_a_causeway():
     assert len(pieces) == 1
 
 
+def test_a_service_road_is_a_causeway_on_a_dike_and_a_pier_over_the_water():
+    """A service road over open water is a pier or a dock and stays out; on a strip of land the coast wraps (a
+    dike, a breakwater) or on land the relief drowns it is a causeway like any road."""
+    strip = shapely.box(0, 1990, 1500, 2010)
+    dike, pier = line((-200, 2000), (1700, 2000)), line((-200, 1000), (1700, 1000))
+    land = shapely.union(LAND, strip)
+    pieces, _ = causeway.detect([dike, pier], [4.0, 4.0], [], land, piers=np.array([True, True]))
+    assert len(pieces) >= 1 and all(np.allclose(xz[:, 1], 2000) for xz, _, _ in pieces)
+    assert min(xz[:, 0].min() for xz, _, _ in pieces) <= 0 and max(xz[:, 0].max() for xz, _, _ in pieces) >= 1500
+    wide = shapely.union(LAND, shapely.box(-10, 1500, 1510, 2500))  # the coast says land, 1 km across
+    low = lambda x, z: np.where((np.asarray(x) > 0) & (np.asarray(x) < 1500), 0.0, 5.0)
+    drowned, _ = causeway.detect([dike], [4.0], [], wide, height=low, piers=np.array([True]))
+    assert len(drowned) == 1 and drowned[0][0][:, 0].min() <= 0 and drowned[0][0][:, 0].max() >= 1500
+
+
 def test_no_ramp_where_the_causeway_meets_a_bridge():
     a, b = line((-200, 1000), (700, 1000)), line((760, 1000), (1700, 1000))
     bridge = line((700, 1000), (760, 1000))
