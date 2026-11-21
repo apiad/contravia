@@ -12,7 +12,8 @@ the camera alone, then the streamer, the traffic and the sky run together as one
 Traffic runs in two layers: the flow layer counts vehicles on every street
 in a thread, on the machine's clock, and the car layer drives the cars within 400 m. engine.state shows what
 an agent needs to check the game without a person at the keyboard; the "teleport" event moves the car (x, z or
-lat, lon), "traffic_config" changes the demand settings and "close" closes a street.
+lat, lon), "traffic_config" changes the demand settings, "close" closes a street and "map" opens the map with its
+camera over (x, z or lat, lon) at height h, turned yaw degrees (contravia/menu.py).
 """
 
 import math

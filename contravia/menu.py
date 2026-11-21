@@ -627,6 +627,13 @@ class MapScreen(Screen):
         self.menu.engine.gui.remove(panel)
         self.panels.remove(panel)
 
+    def _clear_of(self) -> tuple:
+        """The screen's boxes the emblems keep clear of: the panel on the right and the hints at the bottom."""
+        so = self.here_panel.style_overrides
+        w, h = so.get("width") or 0, so.get("height") or 0
+        right, top = self.here_panel.offset
+        return ((self.width - right - w, top, self.width - right, top + h), (0, ui.DESIGN_H - 46, self.width, ui.DESIGN_H))
+
     def _on_top(self) -> None:
         """Put the crosshair, the panel, the note and the hints back over the emblems."""
         gui = self.menu.engine.gui
@@ -742,7 +749,7 @@ class MapScreen(Screen):
             return
         if self.choice is None:
             self._move(dt)
-        if self.emblems.update(g.map, self.width, ui.DESIGN_H, dt):
+        if self.emblems.update(g.map, self.width, ui.DESIGN_H, dt, self._clear_of()):
             self._on_top()
         self._place_marks()
         self._here()
@@ -1296,7 +1303,28 @@ class Menu:
         if screen:
             game.to_menu()
         engine.on("startup")(self._startup)
+        engine.on("map")(self._map_event)
         engine.system(self.update)
+
+    def _map_event(self, p: dict) -> None:
+        """Open the map (over the pause when driving) with its camera over (x, z) or (lat, lon), h metres up
+        (as it was by default), turned yaw degrees from north (0 by default): for an agent checking the map."""
+        g = self.game
+        if self.current != "map":
+            if self.current is None:
+                self.pause()
+            self.show("map")
+        if g.map is None:
+            return
+        if "lat" in p:
+            from contravia.geo import to_local
+
+            x, z = to_local(float(p["lat"]), float(p["lon"]))
+        else:
+            x, z = float(p.get("x", g.map.x)), float(p.get("z", g.map.z))
+        h = min(mapview.MAX_H, max(mapview.MIN_H, float(p.get("h", g.map.h))))
+        g.flight = None  # no flight from the car: the camera is put there
+        g.map = mapview.MapCam(float(x), float(z), h, math.radians(float(p.get("yaw", 0.0))))
 
     def _startup(self, _=None) -> None:
         if self._first:

@@ -53,9 +53,12 @@ class Pool:
             self.attached, self.grew = self.used, True
         if image.svg != svg:
             image.svg = svg
-        style = {"width": round(w, 1), "height": round(h, 1), "opacity": round(alpha, 2)}
+        size = {"width": round(w, 1), "height": round(h, 1)}
+        style = {**size, "opacity": round(alpha, 2)}
         if image.style_overrides != style:
             image.style_overrides = style
+        if panel.style_overrides != {**CLEAR, **size}:  # a root panel with no size fills the window
+            panel.style_overrides = {**CLEAR, **size}
         offset = (round(x, 1), round(y, 1))
         if panel.offset != offset:
             panel.offset = offset
@@ -82,12 +85,12 @@ class EmblemLayer:
         self.placed_for = None
         self.placed: list[emblems.Emblem] = []
 
-    def update(self, cam: mapview.MapCam, w: float, h: float, dt: float) -> bool:
+    def update(self, cam: mapview.MapCam, w: float, h: float, dt: float, avoid: tuple = ()) -> bool:
         """Lay the emblems out again when the camera moved, step the fades and fill the pools. True when panels
         went into the GUI or left it, so the screen can put its own panels back on top."""
-        if self.placed_for != (cam, w):
-            self.placed_for = (cam, w)
-            self.placed = emblems.layout(self.towns, cam, w, h, self.near)
+        if self.placed_for != (cam, w, avoid):
+            self.placed_for = (cam, w, avoid)
+            self.placed = emblems.layout(self.towns, cam, w, h, self.near, avoid)
             now = {e.name: e for e in self.placed}
             for name, entry in self.shown.items():
                 entry[2] = name in now

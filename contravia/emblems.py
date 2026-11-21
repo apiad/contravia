@@ -119,8 +119,10 @@ def _hit(box, boxes, own=None) -> bool:
     return any(b is not own and box[0] < b[2] and box[2] > b[0] and box[1] < b[3] and box[3] > b[1] for b in boxes)
 
 
-def layout(towns, cam: mapview.MapCam, w: float, h: float, near: dict[str, int] | None = None) -> list[Emblem]:
-    """The emblems the camera cam draws in a w x h frame, placed so no two symbols or names overlap."""
+def layout(towns, cam: mapview.MapCam, w: float, h: float, near: dict[str, int] | None = None,
+           avoid: tuple = ()) -> list[Emblem]:
+    """The emblems the camera cam draws in a w x h frame, placed so no two symbols or names overlap, nor any of
+    the (left, top, right, bottom) boxes in `avoid` (the screen's panels)."""
     if opacity(cam.h) <= 0.0:
         return []
     cand = shown(towns, cam.h)
@@ -129,7 +131,7 @@ def layout(towns, cam: mapview.MapCam, w: float, h: float, near: dict[str, int] 
     eye, target = mapview.pose(cam)
     ndc = collect.project(eye, target, np.array([[t.x, 0.0, t.z] for t in cand]), 1.0, w / h)
     s = scale(cam.h)
-    boxes, placed = [], []
+    boxes, placed = list(avoid), []
     for t, (nx, ny, depth) in zip(cand, ndc, strict=True):  # pass 1: the symbols
         if depth <= 0:
             continue
@@ -173,9 +175,11 @@ def medallion_svg(name: str, chip: int = 0) -> str:
     """A medallion as SVG on a 100 x 106 box, with a yellow chip of `chip` places at its top right when it is not
     0: the GUI scales it to the emblem's size."""
     glyph = GLYPHS.get(name, GENERIC)
-    tag = (f'<rect x="58" y="0" width="{30 + 9 * len(str(chip))}" height="24" rx="12" fill="{ui.YELLOW}" '
-           f'stroke="{ui.INK}" stroke-width="3"/><text x="66" y="19" font-family="{_family(CITY_FONT)}" '
-           f'font-size="19" fill="{ui.INK}">★{chip}</text>') if chip else ""
+    tag = (f'<rect x="58" y="0" width="{30 + 10 * len(str(chip))}" height="24" rx="12" fill="{ui.YELLOW}" '
+           f'stroke="{ui.INK}" stroke-width="3"/><path transform="translate(63 3) scale(0.75)" fill="{ui.INK}" '
+           'd="M12 1l3.2 7 7.6.7-5.8 5 1.8 7.4L12 17.2 5.2 21.1 7 13.7 1.2 8.7 8.8 8z"/>'
+           f'<text x="83" y="19" font-family="{_family(CITY_FONT)}" font-size="19" fill="{ui.INK}">{chip}</text>'
+           ) if chip else ""
     return ('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 106">'
             f'<circle cx="50" cy="55" r="48" fill="{ui.INK}" opacity=".5"/>'
             f'<circle cx="50" cy="50" r="48" fill="{ui.INK}"/><circle cx="50" cy="50" r="40" fill="{ui.PAPER}"/>'
@@ -203,8 +207,8 @@ def label_svg(town_name: str, medallion: bool, size: float, w: float, h: float) 
     fill = ui.YELLOW if town_name == "La Habana" else ui.PAPER
     x, y, k = HALO + size * 0.05, HALO + size * 1.0, HALO
     d = k * 0.7
-    copies = "".join(f'<text x="{x + dx:.1f}" y="{y + dy:.1f}" fill="{ui.INK}">{text}</text>'
+    font = f'font-family="{family}" font-size="{size:.1f}"'  # on each text: thorvg does not inherit them from a group
+    copies = "".join(f'<text x="{x + dx:.1f}" y="{y + dy:.1f}" {font} fill="{ui.INK}">{text}</text>'
                      for dx, dy in ((-k, 0), (k, 0), (0, -k), (0, k), (-d, -d), (d, -d), (-d, d), (d, d)))
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w:.0f}" height="{h:.0f}">'
-            f'<g font-family="{family}" font-size="{size:.1f}">{copies}'
-            f'<text x="{x:.1f}" y="{y:.1f}" fill="{fill}">{text}</text></g></svg>')
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w:.0f}" height="{h:.0f}">{copies}'
+            f'<text x="{x:.1f}" y="{y:.1f}" {font} fill="{fill}">{text}</text></svg>')
