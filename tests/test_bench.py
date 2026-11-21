@@ -78,7 +78,7 @@ def test_showcase_scenes_and_their_camera_paths():
     from contravia import showcase
 
     scenes = showcase.load()
-    assert set(scenes) == {"malecon", "obispo", "loma"}
+    assert set(scenes) == {"malecon", "obispo", "loma", "neptuno"}
     for s in scenes.values():
         assert len(s["when"].split()) == 2  # a fixed date: the light must not change with the day of the run
         assert len(s["at"]) == 2 and len(s["path"]) >= 2 and all(len(p) == 6 for p in s["path"])
@@ -101,7 +101,7 @@ def test_showcase_runs_each_scene_and_saves_a_shot(city, tmp_path):
         out = showcase.run(engine, game, showcase.load(), seconds=0.2, wait=5.0, shots=tmp_path, tag="t")
     finally:
         game._shutdown()
-    assert set(out) == {"malecon", "obispo", "loma"}
+    assert set(out) == {"malecon", "obispo", "loma", "neptuno"}
     for name, r in out.items():
         assert r["frames"] >= 1 and r["p50_ms"] > 0 and "gpu_ms" in r
         assert (tmp_path / f"t-{name}.jpg").exists() and r["shot"].endswith(f"t-{name}.jpg")
