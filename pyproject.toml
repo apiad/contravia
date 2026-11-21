@@ -3,6 +3,8 @@ name = "contravia"
 version = "0.1.0"
 description = "An open-world driving game in a procedural, real-size Havana, built on manifoldx."
 requires-python = ">=3.14"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE", "LICENSES/*.txt"]
 dependencies = ["numpy", "scipy", "shapely", "pillow", "manifold-gfx[desktop,svg,audio]", "euterpe"]
 
 classifiers = [

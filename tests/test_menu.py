@@ -633,3 +633,106 @@ def test_from_the_drive_s_map_a_point_sets_the_gps_and_the_camera_flies_back_to_
     assert game.gps.to is None and "Quitar ruta" not in [label for label, _, _ in menu.screens["pause"].items()]
     game.streamer.close()
     game.detail.close()
+
+
+def _to_credits(menu):
+    """From whatever screen shows, open Opciones, choose its last row (Créditos y licencias) and press Enter."""
+    menu.show("options")
+    options = menu.screens["options"]
+    options.select(len(options.rows()) - 1)
+    menu.press("Enter")
+
+
+def test_credits_open_from_the_options_and_escape_goes_back(city_npz, tmp_path, monkeypatch):
+    import manifoldx as mx
+
+    from contravia.credits import SECTIONS
+    from contravia.game import Game
+    from contravia.menu import Menu
+    from contravia.world import World
+
+    monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path))
+    engine = mx.Engine("menu", width=64, height=48)
+    game = Game(engine, World.load(str(city_npz)), clock=Clock(at=parse_at("Tue 10:00")))
+    menu = Menu(engine, game, FreeDrive.from_flags(), Options.load())
+    engine.render_frame(supersample=1)
+    _to_credits(menu)
+    assert menu.current == "credits"
+    shown = {t.text for t in menu.screens["credits"].texts}
+    assert all(title.upper() in shown for title, _ in SECTIONS)
+    menu.press("Escape")
+    assert menu.current == "options"
+    game.streamer.close()
+    game.detail.close()
+
+
+def test_credits_from_the_pause_return_to_the_pause(city_npz, tmp_path, monkeypatch):
+    import manifoldx as mx
+
+    from contravia.game import Game
+    from contravia.menu import Menu
+    from contravia.world import World
+
+    monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path))
+    engine = mx.Engine("menu", width=64, height=48)
+    game = Game(engine, World.load(str(city_npz)), clock=Clock(at=parse_at("Tue 10:00")))
+    menu = Menu(engine, game, FreeDrive.from_flags(), Options.load())
+    engine.render_frame(supersample=1)
+    menu.press("Enter")  # Modo libre, where the main menu starts
+    menu.press("Enter")  # Arrancar
+    _lift(engine, game)
+    engine.render_frame(supersample=1)
+    menu.press("Escape")
+    assert menu.current == "pause"
+    _to_credits(menu)
+    assert menu.current == "credits"
+    menu.press("Escape")
+    menu.press("Escape")
+    assert menu.current == "pause" and game.mode == "paused"
+    game.streamer.close()
+    game.detail.close()
+
+
+def test_the_credits_row_is_never_saved(tmp_path, monkeypatch):
+    import json
+
+    monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path))
+    opts = Options.load()
+    assert opts.rows[-1].key == "credits"
+    opts.save()
+    saved = json.loads((tmp_path / "settings.json").read_text())
+    assert "credits" not in saved and "tune_quality" not in saved
+    (tmp_path / "settings.json").write_text(json.dumps({"units": "mph"}))
+    assert Options.load()["units"].value == "mph"
+
+
+def test_the_credits_sit_on_a_dark_backing(city_npz, tmp_path):
+    from PIL import Image
+
+    out = tmp_path / "credits.png"
+    env = {**os.environ, "CONTRAVIA_CONFIG": str(tmp_path)}
+    subprocess.run([sys.executable, "-m", "contravia.cli", "play", "--data", str(city_npz), "--screen", "credits",
+                    "--shot", str(out), "--frames", "10"], check=True, timeout=600, env=env)
+    img = np.asarray(Image.open(out).convert("L"), int)
+    box = img[200:420, 520:640]  # right of the options' dark band, where the longest credits run
+    assert np.median(box) < 70  # mostly backing, so the light letters read
+
+
+def test_every_option_row_fits_above_the_hints(city_npz, tmp_path, monkeypatch):
+    import manifoldx as mx
+
+    from contravia import ui
+    from contravia.game import Game
+    from contravia.menu import Menu, OptionsScreen
+    from contravia.world import World
+
+    monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path))
+    engine = mx.Engine("menu", width=64, height=48)
+    game = Game(engine, World.load(str(city_npz)), clock=Clock(at=parse_at("Tue 10:00")))
+    menu = Menu(engine, game, FreeDrive.from_flags(), Options.load())
+    menu.show("options")
+    rows = len(menu.screens["options"].rows())
+    per = OptionsScreen.per_column or rows
+    assert 130 + 54 * per + 66 <= ui.DESIGN_H - 44  # rows, then the help lines, above the hints bar
+    game.streamer.close()
+    game.detail.close()
