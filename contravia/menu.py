@@ -438,6 +438,7 @@ class FreeScreen(RowsScreen):
         return [card, caption, start, label]
 
     def changed(self):
+        self.menu.open_place()
         if not hasattr(self, "card_name"):
             return
         name, district, poster = self.menu.free.place()
@@ -1329,6 +1330,7 @@ class Menu:
         self.undo, self.saved, self.note = [], False, ""
         self.designs = garage.load_designs()
         self.refresh_vehicles()
+        self.open_place()
         engine.on("shutdown")(lambda _=None: self.builder.close())
         game.apply_options(options)
         self._first = screen
@@ -1448,6 +1450,12 @@ class Menu:
         if self._size != (self.engine.w, self.engine.h):
             self.show(self.current)
         self.screens[self.current].tick(min(dt, 0.1))
+
+    def open_place(self) -> None:
+        """Start reading the province of the free drive's place, so that its start does not wait for it."""
+        at = self.free.start()["at"]
+        if at is not None:
+            self.game.city.open_soon(*at)
 
     def start_free(self) -> None:
         """Drive with the free drive's rows, started under the loading curtain."""
