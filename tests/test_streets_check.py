@@ -4,7 +4,8 @@ import numpy as np
 import pytest
 
 from contravia import streets_check
-from contravia.streets_check import Check, Levels, count, lattice
+from contravia.mesh import lattice
+from contravia.streets_check import Check, Levels, count
 from contravia.citydata import CityData
 from contravia.prepare import WIDTHS
 from contravia.streets import add_to
@@ -157,3 +158,21 @@ def test_the_two_carriageways_of_a_bridge_are_one_deck_with_no_parapet_between_t
     mid = (walls[:, 0:2] + walls[:, 2:4]) / 2
     on_deck = (np.abs(mid[:, 0]) < 30) & (walls[:, 5] > 5.0)       # parapets, not the piers under the deck
     assert on_deck.any() and (np.abs(mid[on_deck, 1]) > 5.0).all()  # only along the deck's two outer edges
+
+
+def test_streets_laid_on_rough_ground_are_raised_clear_of_every_crease_of_it():
+    from contravia.streets import build, mesh
+    from tests.graphs import make_graph
+
+    rng = np.random.default_rng(3)
+    rough = Terrain(rng.uniform(20.0, 23.0, (61, 61)).astype(np.float32), (-900.0, -900.0), (30.0, 30.0))
+    j = [(-300, 0), (0, 0), (300, 0), (0, -300), (0, 300), (250, 280)]
+    pairs = [(0, 1), (1, 2), (3, 1), (1, 4), (4, 5), (5, 2)]
+    a = dict(make_graph(j, [e for f, t in pairs for e in ((f, t), (t, f))]).a)
+    keep = {}
+    mesh(*build(a, WIDTHS), rough, keep)
+    assert keep["raised"].vals.max() > 0.05                 # some crease stood over the streets as first laid
+    city = CityData.from_features(np.zeros((0, 5)), [], np.zeros(0), [], np.zeros(0), np.zeros((0, 2)), rough)
+    city.a.update(a)
+    add_to(city, WIDTHS)
+    assert _kinds(city).get("ground", 0) == 0

@@ -117,3 +117,22 @@ def triangulate(ring: np.ndarray) -> np.ndarray:
     if not tris:
         raise ValueError("the ring left no triangle")
     return np.array(tris, np.int64)
+
+
+def lattice(tris: np.ndarray, step: float) -> tuple[np.ndarray, np.ndarray]:
+    """Points on the (T, 3, D) triangles, step apart at most and on their corners and edges too: (P, D) points
+    and the (P,) triangle each lies on."""
+    tris = np.asarray(tris, float)
+    if not len(tris):
+        return np.zeros((0, tris.shape[-1])), np.zeros(0, np.int64)
+    edge = np.linalg.norm(tris - np.roll(tris, 1, axis=1), axis=2).max(axis=1)
+    cuts = np.clip(np.ceil(edge / step), 1, 32).astype(int)
+    pts, own = [], []
+    for k in np.unique(cuts).tolist():
+        a, b = np.meshgrid(np.arange(k + 1), np.arange(k + 1), indexing="ij")
+        on = a + b <= k
+        w = np.stack([a[on], b[on], k - a[on] - b[on]], axis=1) / k
+        which = np.flatnonzero(cuts == k)
+        pts.append(np.einsum("wc,tcd->twd", w, tris[which]).reshape(-1, tris.shape[-1]))
+        own.append(np.repeat(which, len(w)))
+    return np.concatenate(pts), np.concatenate(own)

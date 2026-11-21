@@ -57,6 +57,9 @@ CLEAR = 0.2  # metres: an edge of the road this far above the ground gets a skir
 MARK = 0.15  # metres: half the width of a painted line
 MARK_LIFT = 0.02  # metres above the asphalt
 GRADE = 0.08  # the steepest a ramp onto a bridge or down into a tunnel climbs, 8 %
+OVER = 0.03  # metres a ground street stands over the drawn ground at the least, everywhere on its surface
+SUNK = 0.3  # metres under the ground past which a street is in a cut (structures.BELOW), not to be raised
+PROBE = 2.0  # metres between the points of a street's triangles where the ground under it is measured
 CARRY = 0.3  # metres: a ramp still this far from a street's own height at its far end goes on through the junction
 ACROSS = 0.7  # the least cosine between a street and the one a ramp goes straight on to through a junction
 APART = 3.0  # metres: two levels' ribbons that overlap closer than this in height are no crossing, and are cut apart
@@ -1030,6 +1033,61 @@ def _junction_plane(poly, terrain):
     return plane
 
 
+class _Raised:
+    """How much the ground streets are raised so the drawn ground never stands over them: metres per vertex of
+    the ground's grid (rules.ground: N vertices per cell side), straight between them over the grid's two
+    triangles per square, as the ground itself is drawn. A street's heights follow the ground at its kerbs and
+    its centre, a sample every SAMPLE metres; between them the grid's creases can stand over the asphalt. Every
+    ground triangle that does lifts its three vertices here by what it stands over plus OVER, so all of it
+    comes under, and the streets stay one surface since the lift is a height over the plane."""
+
+    def __init__(self):
+        self.keys, self.vals = np.zeros(0, np.int64), np.zeros(0)
+
+    @staticmethod
+    def _grid(xz):
+        from contravia.rules.ground import N
+
+        f = np.asarray(xz, float).reshape(-1, 2) / (CELL / (N - 1))
+        c = np.floor(f).astype(np.int64)
+        return c, f - c
+
+    @staticmethod
+    def _key(c, r):
+        return (c << 32) | (r & 0xFFFFFFFF)
+
+    def __call__(self, xz) -> np.ndarray:
+        """The lift at points xz (P, 2)."""
+        xz = np.asarray(xz, float).reshape(-1, 2)
+        if not len(self.keys):
+            return np.zeros(len(xz))
+        c, t = self._grid(xz)
+
+        def at(dc, dr):
+            k = self._key(c[:, 0] + dc, c[:, 1] + dr)
+            n = np.minimum(np.searchsorted(self.keys, k), len(self.keys) - 1)
+            return np.where(self.keys[n] == k, self.vals[n], 0.0)
+
+        v00, v01, v10, v11 = at(0, 0), at(1, 0), at(0, 1), at(1, 1)
+        tx, tz = t[:, 0], t[:, 1]
+        return np.where(tx + tz <= 1, v00 + tx * (v01 - v00) + tz * (v10 - v00),
+                        v11 + (1 - tx) * (v10 - v11) + (1 - tz) * (v01 - v11))
+
+    def add(self, xz, need) -> None:
+        """Lift the ground triangle under each point xz (P, 2) by need (P,) metres more, at the least."""
+        if not len(xz):
+            return
+        c, t = self._grid(xz)
+        lower = t.sum(axis=1) <= 1
+        corners = np.where(lower[:, None, None], [[0, 0], [1, 0], [0, 1]], [[1, 1], [0, 1], [1, 0]])
+        k = self._key(c[:, None, 0] + corners[:, :, 0], c[:, None, 1] + corners[:, :, 1]).ravel()
+        keys, back = np.unique(np.concatenate([self.keys, k]), return_inverse=True)
+        vals = np.zeros(len(keys))
+        np.maximum.at(vals, back[: len(self.keys)], self.vals)
+        np.maximum.at(vals, back[len(self.keys):], np.repeat(self(xz) + need, 3))
+        self.keys, self.vals = keys, vals
+
+
 class _Drawn:
     """The ground as the cells draw it (contravia.rules.ground.drawn), with a Terrain's height()."""
 
@@ -1576,7 +1634,16 @@ def mesh(ribbons, owner, axes, rings, rnode, chains, terrain, keep=None):
     nr = len(ribbons)
     lines = [LineString(q) for q in axes]
 
+    raised = _Raised()  # filled once the pieces are cut (_clear_ground)
+
+    def level(k):
+        """Whether piece k is on a bridge or in a tunnel, which the ground is not drawn against."""
+        return chains[owner[k]].layer if k < nr else isinstance(rnode[k - nr], tuple)
+
     def y_of(k, xz):
+        return y_laid(k, xz) + (0.0 if level(k) else raised(xz))
+
+    def y_laid(k, xz):
         if k >= nr:
             n = rnode[k - nr]
             return planes[n](xz) if n in planes else np.full(len(xz), hj[n])
@@ -1611,10 +1678,15 @@ def mesh(ribbons, owner, axes, rings, rnode, chains, terrain, keep=None):
         return np.stack([t[..., 0], y, t[..., 1]], axis=-1), np.concatenate(keys), poly
 
     cut = pmap(cut_cells, range(len(pieces_)), chunk=64)
+    # the pieces laid on the ground: not a ribbon a ramp took off it, nor a junction a ramp set the height of
+    laid = [k for k in range(len(pieces_)) if not level(k) and (k not in moved if k < nr else rnode[k - nr] in planes)]
+    raised = _clear_ground(cut, [k for k in range(len(pieces_)) if not level(k)], laid, terrain)
+    if keep is not None:
+        keep["raised"] = raised
     tree = built_tree(pieces_)
 
     def skirt(k):
-        if (chains[owner[k]].layer if k < nr else isinstance(rnode[k - nr], tuple)):
+        if level(k):
             return np.zeros((0, 2, 3))
         ring = shapely.get_coordinates(cut[k][2].exterior)
         a, b = ring[:-1], ring[1:]
@@ -1638,6 +1710,39 @@ def mesh(ribbons, owner, axes, rings, rnode, chains, terrain, keep=None):
     edges = np.concatenate(edges).reshape(-1, 2, 3).astype(np.float32)
     ekeys = np.floor(edges[:, :, [0, 2]].mean(axis=1) / CELL).astype(np.int64)
     return tris, tkeys, edges, ekeys, lines, mkeys
+
+
+def _clear_ground(cut: list, flat: list, laid: list, terrain, rounds: int = 3) -> _Raised:
+    """Raise the triangles of the ground pieces (cut[k][0] for k in flat, in place) wherever the drawn ground
+    would stand over those laid on it, and return the lift (_Raised). The ground is measured only under the
+    pieces in laid: a ramp goes under the ground on purpose, and takes the lift of the streets round it only so
+    that it still meets them. A point more than SUNK under the ground is in a cut, where the ground is left
+    out, and stays. A lift is straight between the ground grid's vertices and a street's triangle between its
+    own corners, so a triangle across a crease can be left a little short: the pass runs again on what it has
+    raised, rounds times at most."""
+    from contravia.mesh import lattice
+    from contravia.rules.ground import drawn
+
+    raised = _Raised()
+    todo = [k for k in laid if len(cut[k][0])]
+    laid = {k: cut[k][0][:, :, 1].copy() for k in flat if len(cut[k][0])}
+
+    def short(k):
+        pts, _ = lattice(cut[k][0], PROBE)
+        need = drawn(terrain, pts[:, 0], pts[:, 2]) - pts[:, 1] + OVER
+        on = (need > 0) & (need <= SUNK + OVER)
+        return pts[on][:, [0, 2]], need[on]
+
+    for _ in range(rounds):
+        found = [(k, *r) for k, r in zip(todo, pmap(short, todo, chunk=64)) if len(r[1])]
+        if not found:
+            break
+        raised.add(np.concatenate([f[1] for f in found]), np.concatenate([f[2] for f in found]))
+        for k in laid:
+            t = cut[k][0]
+            t[:, :, 1] = laid[k] + raised(t[:, :, [0, 2]].reshape(-1, 2)).reshape(-1, 3)
+        todo = [f[0] for f in found]
+    return raised
 
 
 def add_to(city, widths) -> dict:
