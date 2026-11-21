@@ -168,3 +168,31 @@ def test_a_tree_leaving_while_it_fades_in_fades_out_from_what_shows(monkeypatch)
     _flush(engine)
     assert not engine.store._alive[ents].any() and not forest._fading
     forest.close()
+
+
+def test_configure_moves_the_lod_distances_and_foliage():
+    import manifoldx as mx
+
+    from contravia import forest
+    from contravia.quality import PRESETS
+    from contravia.rules import foliage
+
+    f = Forest(mx.Engine("forest-q", width=64, height=48), city=None, landmarks=None)
+    f.configure(PRESETS["bajo"])
+    assert forest.LOD_AT == (35.0, 90.0)
+    assert forest.levels(np.array([50.0]))[0] == 1  # LOD 1 at 50 m under Bajo; 0 under Alto
+    assert not foliage.near(np.array([2.0])).any()  # no small leaves at all
+    assert not foliage.near(np.array([2.0]), np.array([True])).any()  # not even held from before
+    f.configure(PRESETS["alto"])
+    assert forest.levels(np.array([50.0]))[0] == 0 and foliage.near(np.array([2.0])).all()
+
+
+def test_graveyard_configure_moves_its_lod_distances():
+    import manifoldx as mx
+
+    from contravia import graveyard
+    from contravia.quality import PRESETS
+
+    g = graveyard.Graveyard(mx.Engine("graves-q", width=64, height=48), city=None, landmarks=None)
+    g.configure(PRESETS["ultra"])
+    assert graveyard.LOD_AT == (70.0, 200.0) and graveyard.levels(np.array([100.0]))[0] == 1
