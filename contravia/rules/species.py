@@ -66,10 +66,12 @@ class _Mesh:
 
     def tri(self, a, b, c, role, rgb=(1.0, 1.0, 1.0), shade=1.0, outward=None):
         a, b, c = (np.asarray(v, float) for v in (a, b, c))
-        n = np.cross(b - a, c - a)
-        if np.linalg.norm(n) < 1e-12:
+        (u0, u1, u2), (v0, v1, v2) = (b - a).tolist(), (c - a).tolist()
+        n = np.array([u1 * v2 - u2 * v1, u2 * v0 - u0 * v2, u0 * v1 - u1 * v0])  # np.cross's products, without its cost
+        size = np.linalg.norm(n)
+        if size < 1e-12:
             return
-        n /= np.linalg.norm(n)
+        n /= size
         if outward is not None and np.dot(n, (a + b + c) / 3 - outward) < 0:
             n, b, c = -n, c, b
         for v in (a, b, c):
