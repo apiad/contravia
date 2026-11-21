@@ -23,7 +23,7 @@ from contravia.citydata import CityData
 # another province's steps take these times scaled by the size of its source.
 STEPS = (("map", "Leer el mapa", 1.0), ("buildings", "Edificios", 14.0), ("streets", "Calles y puentes", 48.0),
          ("walks", "Aceras", 25.0))
-ISLAND = ("island", "Resumen de la isla", 60.0)  # the index and the summaries over every province, at the end
+ISLAND = ("island", "Resumen de la isla", 70.0)  # the index, the summaries and the GPS route graph, at the end
 DONE_LABEL = "Listo"
 CITY = "cuba"  # the folder of built provinces in the home
 FORMAT = 7  # the built city's format: a city of another format is built again (2: street names and barrios, 3: widths from lanes, 4: medians, 5: no OSM tree points, 6: parks, 7: the whole island, by province)
@@ -224,6 +224,10 @@ class Build:
             if (self.source / name).exists():
                 shutil.copyfile(self.source / name, self.out / name)
         island = index(self.out)
+        from contravia.gps import RouteGraph
+        from contravia.world import World
+
+        RouteGraph.for_world(World.load(self.out))  # the GPS's routing graph, beside the index
         self._ref_spent += ISLAND[2]
         self._spent += time.perf_counter() - start
         self._ref_done += ISLAND[2]

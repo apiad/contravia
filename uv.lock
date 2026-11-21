@@ -182,6 +182,7 @@ dependencies = [
     { name = "manifold-gfx", extra = ["audio", "desktop", "svg"] },
     { name = "numpy" },
     { name = "pillow" },
+    { name = "scipy" },
     { name = "shapely" },
 ]
 
@@ -206,6 +207,7 @@ requires-dist = [
     { name = "manifold-gfx", extras = ["desktop", "svg", "audio"], git = "https://github.com/gia-uh/manifoldx?branch=main" },
     { name = "numpy" },
     { name = "pillow" },
+    { name = "scipy" },
     { name = "shapely" },
 ]
 

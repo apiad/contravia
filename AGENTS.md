@@ -172,6 +172,11 @@ shore's grid (`rules.shore.vegetated`). The
   them and re-imports the audio modules in them. `contravia/regions.toml` may set a place's `audio.biome` or
   `audio.music`. `contravia play --mute` plays nothing, `--audio-out drive.wav` records the mix with a WAV per bus;
   `engine.state.audio` reports voices, levels, CPU and underruns, and `contravia bench` adds them to its line.
+- The GPS (`contravia/gps.py`, spec `docs/superpowers/specs/2026-11-20-gps-design.html`) routes from anywhere to
+  anywhere on the island over one routing graph, the 16 provinces' graphs joined where they share an OSM node, kept
+  in `route.npz` beside `index.npz` (about 42 MB). It is built by the first run, by `contravia route`, or on the
+  router's thread the first time a route is asked, and again when a province file is newer or `gps.ROUTE_VERSION`
+  changes. `contravia route --from LAT,LON --to LAT,LON` prints a route's steps in Spanish, its length and time.
 - A script of your own that builds `Game` (custom shots, probes) must run its code under
   `if __name__ == "__main__":`: the streamer starts worker processes with spawn, which re-imports the script and
   fails with "start a new process before the current process has finished its bootstrapping phase".
