@@ -3,9 +3,10 @@ a change (docs/superpowers/specs/2026-11-20-map-v2-design.html, section 04).
 
     uv run python bench/map_flight.py [--frames 900] [--out times.json]
 
-The camera goes from the whole island to Oriente, down to Santiago at 5 km and back up over the centre, with the
+Two passes of the flight; the second, with the far views cached, is reported. The camera goes from the whole island to Oriente, down to Santiago at 5 km and back up over the centre, with the
 height eased on a log scale. Each frame is timed around engine.render_frame (with its read back, about the same
-every frame), so the numbers compare runs on one machine, not the windowed game's frame time.
+every frame), as wall time and as the main thread's own CPU time: the CPU time is the work a frame does on the
+main thread, and holds steady on a loaded machine where the wall time does not.
 """
 
 import argparse
@@ -61,19 +62,22 @@ def main() -> None:
     game.atmosphere.prepare(wait=True)
     for _ in range(30):  # the island settles before the clock starts
         engine.render_frame(supersample=1, dt=1 / 60)
-    times = []
-    for n in range(args.frames):
-        x, z, h = path(n / (args.frames - 1))
-        game.map = mapview.MapCam(x, z, h, 0.0)
-        t0 = time.perf_counter()
-        engine.render_frame(supersample=1, dt=1 / 60)
-        times.append((time.perf_counter() - t0) * 1000)
-    a = np.array(times)
+    for warm in (True, False):  # the first pass builds and caches the far views; the second is the one timed
+        times, cpu = [], []
+        for n in range(args.frames):
+            x, z, h = path(n / (args.frames - 1))
+            game.map = mapview.MapCam(x, z, h, 0.0)
+            t0, c0 = time.perf_counter(), time.thread_time()
+            engine.render_frame(supersample=1, dt=1 / 60)
+            times.append((time.perf_counter() - t0) * 1000)
+            cpu.append((time.thread_time() - c0) * 1000)
+    a, c = np.array(times), np.array(cpu)
     report = {"frames": len(a), "median_ms": round(float(np.median(a)), 1), "p95_ms": round(float(np.percentile(a, 95)), 1),
-              "worst_ms": round(float(a.max()), 1), "over_33ms": int((a > 33).sum()), "over_100ms": int((a > 100).sum())}
+              "worst_ms": round(float(a.max()), 1), "over_33ms": int((a > 33).sum()),
+              "cpu_median_ms": round(float(np.median(c)), 1), "cpu_p95_ms": round(float(np.percentile(c, 95)), 1)}
     print(json.dumps(report))
     if args.out:
-        json.dump({"report": report, "times": times}, open(args.out, "w"))
+        json.dump({"report": report, "times": times, "cpu": cpu}, open(args.out, "w"))
     for s in (game.streamer, game.detail, game.forest, game.grass, game.graveyard):
         s.close()
 

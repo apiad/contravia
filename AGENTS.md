@@ -77,6 +77,14 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
 - In the map the camera stretches heights (`mapview.exaggeration`: 1 up to 10 km of height, 20 at 1 000 km, through
   manifoldx's `Camera.vertical_scale`), the summaries mix in height tints from the city stage up and shade the
   slope as stretched at their level (`rules/cover.py`): a stylised relief atlas, not a photo.
+- The map's v2 (spec `docs/superpowers/specs/2026-11-20-map-v2-design.html`): the camera follows a target
+  (`mapview.follow`; the wheel zooms toward the pointer, a drag glides on), cities and towns from OSM
+  (`contravia/towns.json`, written by `contravia towns <pbf>`) show as medallions and named dots
+  (`emblems.py` lays them out, `emblemlayer.py` draws them as GUI panels attached only while used), and the roads
+  are manifoldx's `engine.lines` over the relief (`maproads.py`: the root summary's main roads and the drawn far
+  views' streets; far meshes keep their roads only to `summary.ROAD_LEVELS`). `manifoldx emit map
+  '{"x":..,"z":..,"h":..}'` opens the map there and `engine.state.map` reports its camera and line counts;
+  `bench/map_flight.py` flies a fixed path offscreen and prints wall and main-thread CPU per frame.
 - `contravia prepare` also builds the road graph traffic drives on (g_* arrays); data from before layer 2 plays with no traffic.
 - `contravia prepare` then builds the street surface from that graph (`contravia/streets.py`): avenues' two carriageways
   joined, junctions merged and rounded, each junction on the plane that fits the ground under it and each street

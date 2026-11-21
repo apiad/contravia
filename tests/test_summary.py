@@ -179,3 +179,20 @@ def test_clip_cuts_a_quad_to_a_triangle():
         assert area[row == k].sum() == pytest.approx(1.5)
     t, row = _clip(quad[:1], np.array([[[5.0, 5.0], [6.0, 5.0], [5.0, 6.0]]]))
     assert not len(t)
+
+
+def test_far_roofs_lean_to_one_tone_so_a_city_is_no_checkerboard():
+    from contravia.rules.cover import TONES
+    from contravia.summary import ROOF_MIX
+
+    houses, ids, roads = _street_city()
+    cells = [(0, 0, Cell(roads=roads, buildings=houses, building_ids=ids, trees=np.zeros((0, 2), np.float32)))]
+    s = dict(summarize(cells, 1, 0, 0, (0, 0)))
+    n = len(s["block_roof"])
+    s["block_roof"] = np.where(np.arange(n)[:, None] % 2, (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)).astype(np.float32)
+    m = summary_mesh(s, 1, 0, 0, (0, 0))
+    roofs = m.colors[(np.abs(m.normals[:, 1]) > 0.5) & (m.positions[:, 1] > 1)][:, :3]
+    tone = np.asarray(TONES[50])
+    assert 0 < ROOF_MIX < 1
+    assert np.abs(roofs - tone).max() <= (1 - ROOF_MIX) * 1.0 + 1e-3  # pulled toward the tone by ROOF_MIX
+    assert np.ptp(roofs[:, 0]) <= (1 - ROOF_MIX) * 1.0 + 1e-3  # red and blue roofs differ by 1 - ROOF_MIX at most

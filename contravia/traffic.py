@@ -509,6 +509,7 @@ class TrafficLayer:
         self._rng = np.random.default_rng(seed + 1)
         self.debt = 0.0  # vehicles owed to the flow by rounding (never handed over as a negative count)
         self._at, self._backlog = None, False  # where the circle was last worked out, and whether edges wait
+        self._asked = 0  # edges asked of the flow whose vehicles have not come back yet
         self._owned_idx = np.zeros(0, np.int64)
 
     # Messages run in the flow's thread.
@@ -603,6 +604,7 @@ class TrafficLayer:
         while self.inbox:
             msg = self.inbox.popleft()
             if msg[0] == "enter":
+                self._asked -= len(msg[1])
                 self._enter(*msg[1:])
             else:
                 self._arrive(*msg[1:])
@@ -640,6 +642,7 @@ class TrafficLayer:
             d = np.hypot(*(self.centre[entering] - (x, z)).T)
             entering = entering[np.argsort(d)][: self.MAX_ENTER]
             self.owned[entering] = True
+            self._asked += len(entering)
             self.runner.submit(self._hand_over(entering))
         self._owned_idx = np.flatnonzero(self.owned)
 
@@ -741,6 +744,11 @@ class TrafficLayer:
             segs += [(corners[k], corners[(k + 1) % 4]) for k in range(4)]
             vel += [(c * self.cars.v[i], s * self.cars.v[i])] * 4
         return np.array(segs, float).reshape(-1, 2, 2), np.array(vel, float).reshape(-1, 2)
+
+    def unplaced(self) -> int:
+        """Edges near the player not placed yet: those asked of the flow and not answered, and one while the
+        circle is not worked out or has edges left to ask for."""
+        return self._asked + int(self._at is None or self._backlog)
 
     def stats(self) -> dict:
         return {"cars": len(self.cars), "edges": int(self.owned.sum()), **self.counts}
