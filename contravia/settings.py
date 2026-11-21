@@ -1,5 +1,5 @@
 """What the player chooses in the menus: the free drive's start (place, time, day, weather, traffic, clock
-speed) and the options kept between runs (view distance, rain on screen, units, minimap).
+speed) and the options kept between runs (graphics quality, rain on screen, units, minimap).
 
 Each row is a Choice: a label and a ring of (text, value) options that the left and right keys turn. The free
 drive's rows hold what `contravia play` takes on its command line (--at, --time, --sky, --with-traffic,
@@ -37,7 +37,8 @@ WEATHER = (("Como hoy", None), ("Sol", "clear"), ("Algunas nubes", "partly"), ("
 WEATHER_ICON = {None: "sol", "clear": "sol", "partly": "nubes", "overcast": "nubes", "rain": "lluvia",
                 "storm": "tormenta"}
 WARPS = (1.0, 10.0, 60.0)
-VIEW = (("Cerca", (16.0, 64.0)), ("Media", (12.0, 48.0)), ("Lejos", (8.0, 32.0)))  # the streamer's tau range
+QUALITY = (("Bajo", "bajo"), ("Medio", "medio"), ("Alto", "alto"), ("Ultra", "ultra"),
+           ("Personalizado", "personalizado"))  # contravia/quality.py's presets the player may choose
 
 
 @dataclass
@@ -171,14 +172,18 @@ class Options:
 
     rows: list[Choice] = field(default_factory=list)
     locked_assists: tuple = ()  # assists the game has not given the player yet: off at any level
+    quality_base: str = "alto"  # the preset Personalizado started from
+    quality_knobs: dict = field(default_factory=dict)  # the knobs Personalizado turned, by name
 
     @classmethod
     def load(cls) -> Options:
         """The options as last saved, or the defaults; a value the file holds that no row knows is ignored."""
         rows = [
-            Choice("view", "Distancia de vista", list(VIEW), 1,
-                   help="Hasta dónde se dibuja la ciudad con detalle. Más lejos se ve mejor el horizonte, "
-                        "pero pide más a la tarjeta de video."),
+            Choice("quality", "Calidad gráfica", list(QUALITY), 2,
+                   help="Bajo para laptops, Ultra para tarjetas de gama alta; Personalizado si ajustas cada cosa."),
+            Choice("tune_quality", "Ajustar…", [("", None)],
+                   help="Cada ajuste de la calidad gráfica por separado: detalle, distancia, árboles, hierba, "
+                        "sombras y más."),
             Choice("rain", "Lluvia en pantalla", [("Sí", True), ("No", False)],
                    help="Las gotas que caen alrededor del carro cuando llueve."),
             Choice("units", "Unidades", [("km/h", "kmh"), ("mph", "mph")],
@@ -201,7 +206,30 @@ class Options:
         if "help" not in saved and "realism" in saved:  # saved before the levels
             opts["help"].pick(level_from_realism(saved["realism"]))
         opts.locked_assists = tuple(saved.get("locked_assists", ()))
+        if saved.get("quality") == "personalizado":
+            opts.customise(saved.get("quality_base", "alto"), saved.get("quality_knobs") or {})
         return opts
+
+    def quality(self) -> tuple:
+        """The chosen graphics quality as (name, contravia.quality.Quality)."""
+        from contravia.quality import PRESETS
+
+        name = self["quality"].value
+        if name != "personalizado":
+            return name, PRESETS[name]
+        return name, PRESETS[self.quality_base].changed(**self.quality_knobs)
+
+    def customise(self, base: str, knobs: dict) -> None:
+        """Choose Personalizado: base's preset with these knobs turned; knobs it refuses leave base alone."""
+        from contravia.quality import PRESETS
+
+        base = base if base in PRESETS else "alto"
+        try:
+            knobs = PRESETS[base].changed(**knobs).diff(PRESETS[base])
+        except (ValueError, TypeError):
+            knobs = {}
+        self.quality_base, self.quality_knobs = base, knobs
+        self["quality"].pick("personalizado" if knobs else base)
 
     def __getitem__(self, key: str) -> Choice:
         return next(r for r in self.rows if r.key == key)
@@ -210,5 +238,7 @@ class Options:
         """Write the chosen values to settings.json in the configuration folder."""
         path = config_dir() / "settings.json"
         path.parent.mkdir(parents=True, exist_ok=True)
-        values = {r.key: r.value for r in self.rows}
+        values = {r.key: r.value for r in self.rows if r.key != "tune_quality"}
+        if values["quality"] == "personalizado":
+            values.update(quality_base=self.quality_base, quality_knobs=self.quality_knobs)
         path.write_text(json.dumps({**values, "locked_assists": list(self.locked_assists)}, indent=1))

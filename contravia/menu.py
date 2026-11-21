@@ -25,7 +25,7 @@ from contravia import album, collect, emblemlayer, garage, mapview, nearby, plac
 from contravia.driving_help import next_level
 from contravia.hud import DAY_NAMES
 from contravia.rules import designs, fleet
-from contravia.settings import WEATHER_ICON, FreeDrive, Options
+from contravia.settings import WEATHER_ICON, Choice, FreeDrive, Options
 
 CLEAR = {"padding": 0, "bg": "#00000000"}
 SLIDE = 8.0  # seconds each poster panel stays behind the main menu
@@ -318,6 +318,7 @@ class RowsScreen(Screen):
 
     title = ""
     hints: ClassVar[list] = [("↑↓", "Ajuste"), ("←→", "Cambiar"), ("ESC", "Volver")]
+    per_column = 0  # rows in a column before the next starts to its right; 0 keeps them all in one
 
     def rows(self):
         return []
@@ -348,9 +349,12 @@ class RowsScreen(Screen):
             r.mark = mark
             self.frames.append(r)
             rows.append(r)
-        self.panels.append(Panel(rows, anchor="top-left", offset=(60, 130), style_overrides={**CLEAR, "gap": 6}))
+        n = self.per_column or len(rows)
+        for c in range(0, len(rows), n):
+            self.panels.append(Panel(rows[c:c + n], anchor="top-left", offset=(60 + 514 * (c // n), 130),
+                                     style_overrides={**CLEAR, "gap": 6}))
         self.help = [_text("", ui.BOLD, 15, ui.PAPER) for _ in range(3)]
-        self.panels.append(Panel(self.help, anchor="top-left", offset=(62, 130 + 54 * len(rows) + 12),
+        self.panels.append(Panel(self.help, anchor="top-left", offset=(62, 130 + 54 * min(n, len(rows)) + 12),
                                  style_overrides={**CLEAR, "gap": 0, "width": 490, "height": 66}))
         self.panels += self.extra(width)
         self.panels.append(_hints(width, self.hints))
@@ -478,11 +482,72 @@ class OptionsScreen(RowsScreen):
 
     def changed(self):
         if hasattr(self, "values"):
-            self.menu.game.apply_options(self.menu.options)
+            row = self.rows()[self.index]
+            if row.key == "quality" and row.value != "personalizado":
+                self.menu.options.quality_base, self.menu.options.quality_knobs = row.value, {}
+            self.menu.game.apply_options(self.menu.options, quality=row.key == "quality")
+
+    def enter(self):
+        if self.rows()[self.index].key == "tune_quality":
+            self.menu.show("quality")
+        else:
+            self.key("right")
 
     def back(self):
         self.menu.options.save()
         self.menu.show("pause" if self.menu.game.mode == "paused" else "main")
+
+
+def _knob_text(v) -> str:
+    """A knob's value as the Personalizado screen writes it: numbers without trailing zeros, Sí or No."""
+    if isinstance(v, bool):
+        return "Sí" if v else "No"
+    if isinstance(v, tuple):
+        return " · ".join(_knob_text(x) for x in v)
+    return f"{v:g}" if isinstance(v, float) else str(v)
+
+
+class QualityScreen(RowsScreen):
+    """Personalizado: every knob of contravia/quality.py on its own row, over the values the presets use. Turning
+    one makes the quality Personalizado, from the preset it was, and applies it at once; Escape saves it."""
+
+    title = "Calidad gráfica"
+    hints: ClassVar[list] = [("↑↓", "Ajuste"), ("←→", "Cambiar"), ("ESC", "Guardar y volver")]
+    per_column = 7
+
+    def rows(self):
+        if not hasattr(self, "_rows"):
+            from contravia.quality import KNOBS, NAMES, PRESETS, ladder
+
+            o = self.menu.options
+            _, q = o.quality()
+            base = o["quality"].value if o["quality"].value != "personalizado" else o.quality_base
+            self._rows = []
+            for knob, label in KNOBS.items():
+                # each value is named by the preset in use when it has it, else by the first preset that uses it;
+                # the help line gives the numbers
+                named = [(NAMES[base if getattr(PRESETS[base], knob) == v
+                                else next(k for k, p in PRESETS.items() if getattr(p, knob) == v)], v)
+                         for v in ladder(knob)]
+                row = Choice(knob, label, named,
+                             help=f"{label}: " + "; ".join(f"{n} {_knob_text(v)}" for n, v in named) + ".")
+                row.pick(getattr(q, knob))
+                self._rows.append(row)
+        return self._rows
+
+    def background(self, width):
+        return OptionsScreen.background(self, width)
+
+    def changed(self):
+        if hasattr(self, "values"):
+            o = self.menu.options
+            base = o["quality"].value if o["quality"].value != "personalizado" else o.quality_base
+            o.customise(base, {r.key: r.value for r in self.rows()})
+            self.menu.game.apply_options(o, quality=True)
+
+    def back(self):
+        self.menu.options.save()
+        self.menu.show("options")
 
 
 class PhotoScreen(Screen):
@@ -1276,7 +1341,8 @@ class DesignScreen(RowsScreen):
         self.menu.turn_vehicle(dt)
 
 
-SCREENS = {"main": MainScreen, "free": FreeScreen, "options": OptionsScreen, "pause": PauseScreen,
+SCREENS = {"main": MainScreen, "free": FreeScreen, "options": OptionsScreen, "quality": QualityScreen,
+           "pause": PauseScreen,
            "photo": PhotoScreen, "aim": AimScreen, "card": CardScreen, "map": MapScreen, "album": AlbumScreen, "province": ProvinceScreen, "garage": GarageScreen, "design": DesignScreen}
 KEY_NAMES = set(KEYS) | {"l"}  # L, while driving, turns the driving help to its next level
 

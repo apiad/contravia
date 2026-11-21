@@ -677,10 +677,12 @@ class Game:
         self.mode = "menu"
         self.clock.pause()
 
-    def apply_options(self, options) -> None:
-        """The options screen's choices: view distance, rain on screen, units and minimap."""
-        self.tau_range = options["view"].value
-        self.streamer.tau = min(max(self.streamer.tau, self.tau_range[0]), self.tau_range[1])
+    def apply_options(self, options, quality: bool = False) -> None:
+        """The options screen's choices: graphics quality, rain on screen, units and minimap. The saved quality
+        does not replace one a --quality flag or an emitted change pinned, unless quality says the player just
+        chose it."""
+        if quality or not self.engine.state.quality.get("pinned"):
+            self.set_quality(*options.quality())
         self.rain_on = options["rain"].value
         self.help_level, self.locked_assists = options["help"].value, options.locked_assists
         self.hud.configure(options["units"].value, options["minimap"].value)
@@ -1394,7 +1396,7 @@ def _main(data, builders, at, shot, frames, size, traffic, when, warp, sky, pipe
     game.sound = Sound.start(engine.state, options, backend="file" if audio_out else "null" if mute or shot else "device",
                              path=audio_out)
     game.sound.attach(game)
-    menu = Menu(engine, game, free, options, screen=screen if screen in ("main", "free", "options") else None)
+    menu = Menu(engine, game, free, options, screen=screen if screen in ("main", "free", "options", "quality") else None)
     if screen in ("pause", "photo", "map"):
         engine.on("startup")(lambda _=None: (menu.pause(), screen != "pause" and menu.show(screen)))
     if screen in ("album", "province"):  # over the pause; the province of --place, or La Habana
