@@ -423,3 +423,40 @@ def test_a_bridge_over_two_streets_does_not_come_down_between_them():
     assert s.height(x, np.full_like(x, 1.0)).min() > BRIDGE_CLEAR - 0.1
     y = _roll(city, t, [j[0], j[3]])
     assert np.abs(np.diff(y)).max() <= GRADE * 0.5 + 0.03
+
+
+def _valley(depth, wall=100.0, half=250.0):
+    """A plateau 100 m up cut by a valley along z, `depth` m deep at x = 0, its walls rising evenly to the
+    plateau over `wall` metres up to x = ±half: on a 10 m grid, like a relief too coarse for a gorge."""
+    x = np.arange(-3000.0, 3001.0, 10.0)
+    h = 100.0 - depth * np.clip((half - np.abs(x)) / wall, 0.0, 1.0)
+    return Terrain(np.tile(h.astype(np.float32), (len(x), 1)), (-3000.0, -3000.0), (10.0, 10.0))
+
+
+def _steepest(y, over=10.0, step=0.5):
+    """The steepest grade a wheel's heights y, taken every step metres, hold over `over` metres."""
+    n = int(over / step)
+    return float(np.abs(y[n:] - y[:-n]).max() / over)
+
+
+def test_a_bridge_over_a_valley_holds_its_ends_up_so_its_street_comes_down_at_the_ramp_grade():
+    """The bridge's ends stand on the valley's walls, 24 m under the plateau, and the street reaches each down
+    a 24 % wall. The ends stay up, and the street comes down to them on a fill at the ramp's grade."""
+    j = [(-900, 0), (-150, 0), (150, 0), (900, 0)]
+    t = _valley(60.0, wall=250.0)
+    city, _, _ = _city(t, _graph(j, [(0, 1), (1, 2), (2, 3)], {(1, 2): 1}))
+    y = _roll(city, t, j)
+    assert _steepest(y) < GRADE + 0.02
+    assert np.abs(np.diff(y)).max() < 0.15
+    x = np.arange(0.0, 1800.0, 0.5) - 900
+    deck = y[(x > -140) & (x < 140)]
+    assert deck.min() > 85.0 and np.ptp(deck) < 1.0                 # held up, and level between two even ends
+
+
+def test_a_bridge_over_a_shallow_dip_keeps_its_ends_on_the_ground():
+    j = [(-900, 0), (-150, 0), (150, 0), (900, 0)]
+    t = _valley(8.0, wall=40.0, half=170.0)                         # 8 m deep, its walls 20 % steep
+    city, _, _ = _city(t, _graph(j, [(0, 1), (1, 2), (2, 3)], {(1, 2): 1}))
+    y = _roll(city, t, j)
+    x = np.arange(0.0, 1800.0, 0.5) - 900
+    assert abs(float(y[np.argmin(np.abs(x + 150))]) - 96.0) < 0.5   # the wall's own height there

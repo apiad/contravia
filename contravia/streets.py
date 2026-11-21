@@ -67,6 +67,7 @@ TUNNEL_DEPTH = 8.0  # metres of a tunnel under the ground: its headroom, roof an
 END_FREE = 8.0  # metres at each end of a bridge where the ground street it leaves from lies under it
 SEA_DEPTH = 14.0  # metres under sea level where a tunnel runs beneath the sea
 AT_END = 1.0  # metres: a ground street leaves from a bridge's or tunnel's end when its own end is this near
+VALLEY = 10.0  # metres the ground drops under the line between a bridge's ends for the bridge to hold them up
 DASH, DASH_GAP = 3.0, 6.0  # metres of paint and of gap along a dashed centre line, and of each painted piece
 PAINTED = {c for k in ("motorway", "trunk", "primary", "secondary", "tertiary") for c in (k, f"{k}_link")}
 
@@ -1118,7 +1119,9 @@ def heights(ribbons, owner, axes, rings, rnode, chains, terrain, moved=None):
         ks = [k for k in range(len(axes)) if layer[k] == L]
         for k in ks:
             room = (np.inf, np.inf) if L > 0 else (near.free(axes[k][0]), near.free(axes[k][-1]))
-            out[k] = structure_profile(axes[k], chains[owner[k]].w, L, terrain, y_lower, room)
+            w = chains[owner[k]].w
+            held = _hold_ends(axes[k], w, terrain, near, out, tilts) if L > 0 else (None, None)
+            out[k] = structure_profile(axes[k], w, L, terrain, y_lower, room, held)
             tilts[k] = np.zeros(len(out[k][0]))
         if L < 0:
             _share_twins(ks, axes, out)
@@ -1163,7 +1166,38 @@ def heights(ribbons, owner, axes, rings, rnode, chains, terrain, moved=None):
     return hj, out, tilts, planes
 
 
-def structure_profile(axis, width, layer, terrain, y_lower, room=(np.inf, np.inf)):
+def _hold_ends(axis, width, terrain, near, out, tilts):
+    """The heights a bridge over a valley holds its two ends at: (None, None) for a bridge whose ground never
+    drops VALLEY under the line between its ends, and None for an end no single street leaves from.
+
+    A relief too coarse for a gorge lays the gorge's walls under the bridge's ends, and the street that
+    reaches an end comes down that wall. Such an end stands as high as its street can come down to at GRADE
+    from its far end, and the street takes that slope where the ground falls faster: a fill, level across
+    where it left the ground (out, tilts)."""
+    q = densify(axis, BRIDGE_STEP)
+    s = arclen(q)
+    g = _level(terrain, q, np.full(len(q), width / 2))
+    if (g[0] + (g[-1] - g[0]) * s / max(s[-1], 1e-9) - g).max() < VALLEY:
+        return None, None
+    held = []
+    for point in (axis[0], axis[-1]):
+        nodes, streets = near.at(point)
+        y = None
+        for k, at_start in [] if nodes else streets:  # a junction on the ground there keeps its plane
+            sk, h = out[k]
+            f = h.copy()
+            for i in range(len(sk) - 2, -1, -1) if at_start else range(1, len(sk)):
+                j = i + 1 if at_start else i - 1  # the sample farther from the bridge
+                f[i] = max(h[i], f[j] - GRADE * abs(sk[j] - sk[i]))
+            out[k] = (sk, f)
+            tilts[k] = tilts[k] * (1 - np.clip((f - h) / 0.3, 0, 1))
+            end = float(f[0 if at_start else -1])
+            y = end if y is None else max(y, end)
+        held.append(y)
+    return tuple(held)
+
+
+def structure_profile(axis, width, layer, terrain, y_lower, room=(np.inf, np.inf), held=(None, None)):
     """(arclengths, heights) of a bridge (layer > 0) or a tunnel (layer < 0) along its centreline.
 
     A bridge never dips below the straight line between its ends nor below the ground, and stands
@@ -1176,13 +1210,15 @@ def structure_profile(axis, width, layer, terrain, y_lower, room=(np.inf, np.inf
     room is how many metres of street each end of a tunnel has to ramp down on before a junction (_Ends.free):
     a mouth sits no deeper than that street can reach at GRADE, and the tunnel goes on down inside, so the
     ramp does not sink a junction and the streets round it. What a tunnel has to pass under still decides:
-    BRIDGE_CLEAR under a street crossing over it, SEA_DEPTH under the sea."""
+    BRIDGE_CLEAR under a street crossing over it, SEA_DEPTH under the sea. held is the height each end of a
+    bridge stands at when that is over the ground there (_hold_ends), None for the ground's."""
     from contravia.rules.ground import SEA
 
     q = densify(axis, BRIDGE_STEP if layer > 0 else SAMPLE)
     s = arclen(q)
     g = _level(terrain, q, np.full(len(q), width / 2))
-    lin = g[0] + (g[-1] - g[0]) * s / max(s[-1], 1e-9)
+    y0, y1 = (g[i] if y is None else max(float(g[i]), y) for i, y in ((0, held[0]), (-1, held[1])))
+    lin = y0 + (y1 - y0) * s / max(s[-1], 1e-9)
     d = np.abs(s[:, None] - s[None, :])
     if layer > 0:
         under = y_lower(q)
