@@ -7,7 +7,7 @@ from contravia.camera import chase, seen_from
 from contravia.car import CarState, settle
 from contravia.citydata import CityData
 from contravia.prepare import WIDTHS
-from contravia.streets import BRIDGE_CLEAR, GRADE, build, mesh
+from contravia.streets import BRIDGE_CLEAR, GRADE, _apart, build, mesh
 from contravia.structures import DRY, ROOF
 from contravia.structures import build as dress
 from contravia.surface import Surface
@@ -70,7 +70,7 @@ def test_the_avenue_ramps_up_to_the_bridge_no_steeper_than_its_grade():
     s = Surface(city, t)
     x = np.arange(-260.0, -45.0, 5.0)
     y = s.height(x, np.zeros_like(x))
-    assert y[-1] > 2.5                                 # it has climbed to the bridge's end, which climbs on itself
+    assert y[-1] > 2.0                                 # 10 m before the bridge's end, which climbs on itself
     assert (np.diff(y) / 5.0 <= GRADE + 0.02).all()    # and never steeper than the grade
     assert y[0] < 0.5                                  # far away it is on the ground
 
@@ -301,3 +301,125 @@ def test_a_street_tilted_with_a_hillside_gets_no_walls_and_no_cut():
                                         {n: y for n, y in keep["hj"].items() if n not in keep["planes"]},
                                         keep["tilts"])
     assert not len(walls) and not len(cuts)
+
+
+def _graph(j, pairs, layers):
+    """Two-way streets between the points j along pairs, on the level layers gives each pair (0 when absent)."""
+    edges = [e for f, t in pairs for e in ((f, t), (t, f))]
+    a = dict(make_graph(j, edges).a)
+    a["g_layer"] = np.array([layers.get((min(f, t), max(f, t)), 0) for f, t in edges], np.int8)
+    return a
+
+
+def _plateau():
+    """Flat ground 20 m up: over the sea's level, where a tunnel is only as deep as the ground asks."""
+    t = Terrain.flat()
+    return Terrain(np.full((2, 2), 20.0, np.float32), t.origin, t.step)
+
+
+def _roll(city, t, path, side=1.7, step=0.5):
+    """The heights a wheel takes every step metres along path, side metres to its right, each from the last."""
+    s = Surface(city, t)
+    p = np.asarray(path, float)
+    d = np.r_[0.0, np.cumsum(np.hypot(*np.diff(p, axis=0).T))]
+    at = np.arange(0.0, d[-1], step)
+    q = np.c_[np.interp(at, d, p[:, 0]), np.interp(at, d, p[:, 1])]
+    u = np.gradient(q, axis=0)
+    u /= np.maximum(np.hypot(*u.T), 1e-9)[:, None]
+    q = q + np.c_[-u[:, 1], u[:, 0]] * side
+    y, near = [], None
+    for x, z in q:
+        near = float(s.height(x, z, near=near)[0])
+        y.append(near)
+    return np.array(y)
+
+
+def test_a_bridge_whose_street_goes_on_at_an_angle_leaves_no_crack_to_fall_through():
+    """The squared ends of a bridge and of the street it goes on into meet at an angle: the sliver between them
+    is road, on either side."""
+    j = [(-300, 0), (-40, 0), (40, 0), (300, 90), (0, -300), (0, 300)]
+    t = Terrain.flat()
+    city, _, _ = _city(t, _graph(j, [(0, 1), (1, 2), (2, 3), (4, 5)], {(1, 2): 1}))
+    for side in (-2.5, 2.5):
+        y = _roll(city, t, [j[0], j[1], j[2], j[3]], side)
+        assert np.abs(np.diff(y)).max() < 0.15
+        assert y.max() > BRIDGE_CLEAR - 0.5 and y.min() > -0.1     # over the bridge, never through to the ground
+
+
+def test_bridges_that_meet_on_a_viaduct_arrive_at_one_height():
+    """Each bridge's profile is solved alone: the one over the street comes to the fork 3 m up, the two after it
+    at the ground's height. The fork takes one height and all three meet it."""
+    j = [(-300, 0), (-60, 0), (0, 0), (60, 0), (300, 0), (40, 60), (100, 300), (-30, -300), (-30, 300)]
+    pairs = [(0, 1), (1, 2), (2, 3), (3, 4), (2, 5), (5, 6), (7, 8)]
+    t = Terrain.flat()
+    city, _, _ = _city(t, _graph(j, pairs, {(1, 2): 1, (2, 3): 1, (2, 5): 1}))
+    for path in ([j[0], j[1], j[2], j[3], j[4]], [j[0], j[1], j[2], j[5], j[6]]):
+        y = _roll(city, t, path)
+        assert np.abs(np.diff(y)).max() < 0.15
+        assert y.max() > BRIDGE_CLEAR - 0.5
+
+
+def test_a_ramp_goes_on_through_a_street_too_short_for_it_and_the_junction_after():
+    """14 m after the junction where a bridge's ramp passes, a side street has a junction of its own: the 3 m
+    the ramp lifted the first cannot be lost on the piece between them, so the ramp goes on through the second."""
+    j = [(-300, 0), (-40, 0), (40, 0), (60, 0), (300, 0), (0, -300), (0, 300), (60, 14), (60, 300), (300, 14)]
+    pairs = [(0, 1), (1, 2), (2, 3), (3, 4), (5, 6), (3, 7), (7, 8), (7, 9)]
+    t = Terrain.flat()
+    city, _, _ = _city(t, _graph(j, pairs, {(1, 2): 1}))
+    y = _roll(city, t, [j[2], j[3], j[7], j[8]])
+    assert np.abs(np.diff(y)).max() < 0.15
+    assert y[0] > 3.0 and y[-1] < 0.2                              # from the bridge's end down to the ground
+
+
+def test_a_short_tunnel_between_two_junctions_stays_shallow_and_sinks_neither():
+    """A tunnel 30 m long with a junction 12 m from each mouth has no street to ramp 8 m down on: its mouths
+    sit as deep as those 12 m reach, it goes on down inside, and the junctions stay on the ground."""
+    j = [(-200, 0), (-27, 0), (-15, 0), (15, 0), (27, 0), (200, 0), (-27, -200), (-27, 200), (27, -200), (27, 200)]
+    pairs = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (6, 1), (1, 7), (8, 4), (4, 9)]
+    t = _plateau()
+    city, _, _ = _city(t, _graph(j, pairs, {(2, 3): -1}))
+    y = _roll(city, t, [j[0], j[5]])
+    assert np.abs(np.diff(y)).max() <= GRADE * 0.5 + 0.03          # never steeper than the grade
+    assert -3.0 < y.min() - 20.0 < -0.5                            # it does go down, as far as it has room to
+    s = Surface(city, t)
+    at = s.height(np.array([-27.0, 27.0, -27.0, 27.0]), np.array([0.0, 0.0, 40.0, -40.0]))
+    assert np.abs(at - 20.0).max() < 0.2                           # the junctions and their streets: on the ground
+
+
+def test_the_street_between_two_tunnels_runs_at_their_depth():
+    """40 m of open street between two tunnels cannot climb to the ground and back: it stays down, an open cut."""
+    j = [(-500, 0), (-250, 0), (-20, 0), (20, 0), (250, 0), (500, 0)]
+    t = Terrain.flat()
+    city, _, _ = _city(t, _graph(j, [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)], {(1, 2): -1, (3, 4): -1}))
+    y = _roll(city, t, [j[0], j[5]])
+    assert np.abs(np.diff(y)).max() <= GRADE * 0.5 + 0.03
+    assert Surface(city, t).height(0.0, 0.0, near=-8.0)[0] < -6.0
+
+
+def test_two_levels_side_by_side_at_nearly_one_height_are_cut_apart_and_a_crossing_is_not():
+    """The open approach of one carriageway beside the other's tunnel overlaps it 1.5 m higher: each keeps its
+    side. A street crossing 8 m over the tunnel stays whole."""
+    from shapely.geometry import LineString
+
+    axes = [np.array([[0.0, 0.0], [100.0, 0.0]]), np.array([[0.0, 5.0], [100.0, 5.0]]),
+            np.array([[50.0, -40.0], [50.0, 40.0]])]
+    ribbons = [LineString(q).buffer(4.0, cap_style="flat") for q in axes]
+    prof = [(np.array([0.0, 100.0]), np.array([-4.0, -4.0])), (np.array([0.0, 100.0]), np.array([-2.5, -2.5])),
+            (np.array([0.0, 80.0]), np.array([4.0, 4.0]))]
+    tube, ramp, over = _apart(ribbons, axes, [-1, 0, 0], prof)
+    assert tube.intersection(ramp).area < 0.01
+    assert abs(tube.union(ramp).area - ribbons[0].union(ribbons[1]).area) < 0.5     # nothing lost between them
+    assert over.equals(ribbons[2]) and tube.intersection(over).area > 50.0
+
+
+def test_a_bridge_over_two_streets_does_not_come_down_between_them():
+    """A viaduct over two streets 150 m apart is one deck at their clearance, not two humps with the ground
+    between them."""
+    j = [(-400, 0), (-150, 0), (150, 0), (400, 0), (-75, -300), (-75, 300), (75, -300), (75, 300)]
+    t = Terrain.flat()
+    city, _, _ = _city(t, _graph(j, [(0, 1), (1, 2), (2, 3), (4, 5), (6, 7)], {(1, 2): 1}))
+    s = Surface(city, t)
+    x = np.arange(-75.0, 76.0, 5.0)
+    assert s.height(x, np.full_like(x, 1.0)).min() > BRIDGE_CLEAR - 0.1
+    y = _roll(city, t, [j[0], j[3]])
+    assert np.abs(np.diff(y)).max() <= GRADE * 0.5 + 0.03
