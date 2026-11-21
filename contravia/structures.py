@@ -32,6 +32,7 @@ DECK = 1.0  # metres of bridge deck under the asphalt
 PARAPET = 1.1  # metres of parapet above a bridge's edge
 PIER = 0.6  # half the side of a square pier
 PIER_EVERY = 24.0  # metres between piers
+PIER_FOOT = 50.0  # metres a pier goes on under the relief: down to the bed of any river carved under it (water.py)
 ROOF = 5.5  # metres of headroom in a covered tunnel
 COVER = 1.5  # metres of ground over a roof before a tunnel is covered rather than open
 BELOW = 0.3  # metres: a street this far under the ground beside it runs between walls
@@ -270,7 +271,7 @@ def _bridge(out, q, s, y, left, right, terrain, lower_tree):
         n = np.array([-d[1], d[0]])
         ring = np.array([c + d + n, c - d + n, c - d - n, c + d - n])
         r2 = np.roll(ring, -1, axis=0)
-        lo, hi = np.full(4, base - 0.5), np.full(4, top)
+        lo, hi = np.full(4, base - PIER_FOOT), np.full(4, top)
         out.quads(_xyz(ring, lo), _xyz(r2, lo), _xyz(r2, hi), _xyz(ring, hi), CONCRETE)
         out.wall(ring, r2, lo, hi)
 

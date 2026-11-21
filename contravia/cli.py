@@ -82,6 +82,12 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--out", default="data/cuba", help="the folder holding coast.src and the provinces, whose relief "
                    "it reads; causeways.src is written beside it")
 
+    p = sub.add_parser("water", help="write the inland water (OSM rivers, canals, streams, lakes and reservoirs, "
+                       "each at a level from the relief) into a built island or the sources, beside coast.src")
+    p.add_argument("pbf")
+    p.add_argument("--out", default="data/cuba", help="the folder holding the provinces, whose relief it reads; "
+                   "water.src is written beside them")
+
     p = sub.add_parser("regions", help="write the OSM polygons contravia/regions.toml names (by tag or OSM id, every "
                        "landuse=cemetery too) into a built island or the sources, beside coast.src")
     p.add_argument("pbf")
@@ -233,6 +239,12 @@ def main(argv: list[str] | None = None) -> None:
         from contravia import causeway
 
         print(json.dumps(causeway.write(args.pbf, args.out), ensure_ascii=False))
+    elif args.command == "water":
+        import json
+
+        from contravia import water
+
+        print(json.dumps(water.write(args.pbf, args.out), ensure_ascii=False))
     elif args.command == "regions":
         import json
         from pathlib import Path
