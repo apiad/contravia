@@ -403,6 +403,25 @@ class Game:
         self.gps.clear()
         self.engine.state.gps_to = None
 
+    def _show_route(self, help) -> None:
+        """The GPS panel from the guide: the next step and what is left, or «Llegaste» or «No hay ruta» for a
+        moment; «Ruta nueva» as a note when a route comes in."""
+        from contravia.gps import say
+        from contravia.hud import route_left
+
+        g = self.gps
+        if g.route is not None and g.route is not getattr(self, "_route_noted", None):
+            self._route_noted = g.route
+            self.hud.note("Ruta nueva")
+        if g.route is not None and g.step is not None:
+            far, what = say(g.step, g.to_step, self.address[0] or None)
+            left = route_left(g.left_s, g.left_m, self.clock.now(), help.wanted if help else None, self.hud.units)
+            self.hud.set_route(far, what, left, g.step.kind, g.step.angle)
+        elif g.message and g.message != "Ruta nueva":
+            self.hud.set_route("", g.message, "", "arrive" if g.message.startswith("Llegaste") else "straight", 0.0)
+        else:
+            self.hud.set_route("", "", "", "", 0.0)
+
     def _follow_route(self) -> None:
         """Move the guide along with the car, from this frame's place on the road, and report it in state.gps."""
         g, rg, p = self.gps, self.gps.router.rg, self.place
@@ -995,6 +1014,7 @@ class Game:
             help = getattr(self, "help", None)
             self.hud.set_pilot(pilot_line(help.wanted, help.exit[1] if help.exit else None, self.hud.units)
                                if help else "")
+            self._show_route(help)
             self._find_area(now)
             self._find_spot(now)
             self.hud.set_spot(self.spot.title if self.spot else "")
