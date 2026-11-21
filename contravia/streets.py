@@ -749,6 +749,8 @@ def build(a, widths, walls=()):
         out[4] += [r if layer == 0 else (layer, r) for r in rnode]
         out[5] += chains
     out[0] = _split_twins(out[0], out[2], [k for k, o in enumerate(out[1]) if out[5][o].layer < 0])
+    for L in sorted({c.layer for c in out[5] if c.layer > 0}):  # and a bridge's two carriageways, level by level
+        out[0] = _split_twins(out[0], out[2], [k for k, o in enumerate(out[1]) if out[5][o].layer == L])
     return tuple(out)
 
 
@@ -772,7 +774,8 @@ def _flatten_layers(edges):
 def _split_twins(ribbons, axes, tubes):
     """The ribbons with each two tunnels side by side (a tunnel's two carriageways) cut apart halfway between
     their centrelines, where contravia.structures puts the edge of their shared box: overlapping, a wheel near
-    the middle would stand on the other carriageway's road, which is higher or lower near the mouths."""
+    the middle would stand on the other carriageway's road, which is higher or lower near the mouths. The two
+    carriageways of a bridge are cut apart the same way, and structures builds them as one deck."""
     ribbons = list(ribbons)
     for i, k in enumerate(tubes):
         for k2 in tubes[i + 1:]:
@@ -1123,8 +1126,7 @@ def heights(ribbons, owner, axes, rings, rnode, chains, terrain, moved=None):
             held = _hold_ends(axes[k], w, terrain, near, hj, out, tilts, planes) if L > 0 else (None, None)
             out[k] = structure_profile(axes[k], w, L, terrain, y_lower, room, held)
             tilts[k] = np.zeros(len(out[k][0]))
-        if L < 0:
-            _share_twins(ks, axes, out)
+        _share_twins(ks, axes, out, up=L > 0)
 
         def ground_at(point, up=L > 0):
             """The height of the ground street or junction a bridge's or tunnel's end at point leaves from, and
@@ -1269,18 +1271,22 @@ def _arch(s, h):
     return np.interp(s, s[hull], h[hull])
 
 
-def _share_twins(tubes, axes, out):
+def _share_twins(tubes, axes, out, up=False):
     """Two tunnels side by side, closer than structures.TWIN (the two carriageways of one tunnel, which
     structures builds as one box), run at one depth: each takes the lower of the two where they are side by side,
-    then climbs from it no steeper than GRADE, so the box has one floor and one roof."""
+    then climbs from it no steeper than GRADE, so the box has one floor and one roof. With up, they are the two
+    carriageways of a bridge: each takes the higher of the two and comes down from it no steeper than GRADE, so
+    the deck is one."""
     from contravia.structures import TWIN
 
     if len(tubes) < 2:
         return
+    sign = -1.0 if up else 1.0  # a bridge's heights are shared upside down
     lines = {k: LineString(axes[k]) for k in tubes}
     first = {k: out[k] for k in tubes}
     for k in tubes:
         s, h = first[k]
+        h = sign * h
         pts = shapely.points(np.c_[[lines[k].interpolate(v).coords[0] for v in s]])
         low = h.copy()
         for j in tubes:
@@ -1289,10 +1295,10 @@ def _share_twins(tubes, axes, out):
             near = shapely.distance(pts, lines[j]) < TWIN
             if near.any():
                 s2, h2 = first[j]
-                other = np.interp(shapely.line_locate_point(lines[j], pts[near]), s2, h2)
+                other = sign * np.interp(shapely.line_locate_point(lines[j], pts[near]), s2, h2)
                 low[near] = np.minimum(low[near], other)
         if (low < h).any():
-            out[k] = (s, np.minimum(h, (low[None, :] + GRADE * np.abs(s[:, None] - s[None, :])).min(axis=1)))
+            out[k] = (s, sign * np.minimum(h, (low[None, :] + GRADE * np.abs(s[:, None] - s[None, :])).min(axis=1)))
 
 
 class _Ends:

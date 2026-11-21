@@ -94,7 +94,8 @@ def build(ribbons, owner, axes, chains, prof, terrain, lower_tree=None, rings=()
 
     sea = relief(terrain)
     tubes = [k for k in range(len(axes)) if chains[owner[k]].layer < 0]
-    lines = {k: shapely.LineString(axes[k]) for k in tubes}
+    decks = [k for k in range(len(axes)) if chains[owner[k]].layer > 0]
+    lines = {k: shapely.LineString(axes[k]) for k in tubes + decks}
 
     def ribbon(k):
         out = _Out()
@@ -110,12 +111,16 @@ def build(ribbons, owner, axes, chains, prof, terrain, lower_tree=None, rings=()
         twin = None
         if e.layer < 0:
             twin = _twin(q, [lines[j] for j in tubes if j != k], [prof[j] for j in tubes if j != k], e.w)
+        elif e.layer > 0:  # the other carriageway of the same bridge: one deck, no parapet between them
+            beside = [j for j in decks if j != k and chains[owner[j]].layer == e.layer]
+            twin = _twin(q, [lines[j] for j in beside], [prof[j] for j in beside], e.w,
+                         [(e.w + chains[owner[j]].w) / 2 + 2 * WALL_PAD for j in beside])
         left, right = offset(q, half)
         if twin is not None:
             left, _ = offset(q, twin["left"])
             _, right = offset(q, twin["right"])
         if e.layer > 0:
-            _bridge(out, q, sq, y, left, right, terrain, lower_tree)
+            _bridge(out, q, sq, y, left, right, terrain, lower_tree, twin)
         gl, gr = terrain.height(left[:, 0], left[:, 1]), terrain.height(right[:, 0], right[:, 1])
         ground = np.maximum(gl, gr)
         tilt = np.interp(sq, s0, tilts[k]) * half if tilts is not None else 0.0
@@ -152,9 +157,11 @@ def build(ribbons, owner, axes, chains, prof, terrain, lower_tree=None, rings=()
     return _pack(out)
 
 
-def _twin(q, others, oprof, w):
+def _twin(q, others, oprof, w, reach=None):
     """Where another tunnel runs beside this one, closer than TWIN: the half widths of each side out to halfway
-    between them (or the usual), whether each side is shared, and the other's road height there."""
+    between them (or the usual), whether each side is shared, and the other's road height there. reach gives,
+    for each of the others, another distance than TWIN: a bridge's carriageways are one deck only where their
+    asphalt touches, since nothing but air lies between two decks apart."""
     half = w / 2 + WALL_PAD
     n = len(q)
     out = {"left": np.full(n, half), "right": np.full(n, half), "shared_l": np.zeros(n, bool),
@@ -164,9 +171,9 @@ def _twin(q, others, oprof, w):
     pts = shapely.points(q)
     d = q[np.minimum(np.arange(n) + 1, n - 1)] - q[np.maximum(np.arange(n) - 1, 0)]
     nl = np.stack([-d[:, 1], d[:, 0]], 1) / np.maximum(np.hypot(*d.T), 1e-9)[:, None]  # unit normal to the left
-    for line, (s2, h2) in zip(others, oprof):
+    for n2, (line, (s2, h2)) in enumerate(zip(others, oprof)):
         dist = shapely.distance(pts, line)
-        near = dist < TWIN
+        near = dist < (TWIN if reach is None else reach[n2])
         if not near.any():
             continue
         at = shapely.line_locate_point(line, pts)
@@ -250,12 +257,13 @@ def _coping(g, y, sea):
     return np.maximum(top, SHORE) if sea else top
 
 
-def _bridge(out, q, s, y, left, right, terrain, lower_tree):
+def _bridge(out, q, s, y, left, right, terrain, lower_tree, twin=None):
     a, b = slice(None, -1), slice(1, None)
-    for side in (left, right):
-        out.quads(_xyz(side[a], y[a] - DECK), _xyz(side[b], y[b] - DECK), _xyz(side[b], y[b] + PARAPET),
-                  _xyz(side[a], y[a] + PARAPET), CONCRETE)
-        out.wall(side[a], side[b], y[a] - 0.5, y[a] + PARAPET)
+    for side, key in ((left, "l"), (right, "r")):
+        own = slice(None) if twin is None else ~(twin["shared_" + key][a] & twin["shared_" + key][b])
+        out.quads(_xyz(side[a][own], y[a][own] - DECK), _xyz(side[b][own], y[b][own] - DECK),
+                  _xyz(side[b][own], y[b][own] + PARAPET), _xyz(side[a][own], y[a][own] + PARAPET), CONCRETE)
+        out.wall(side[a][own], side[b][own], y[a][own] - 0.5, y[a][own] + PARAPET)
     out.quads(_xyz(left[a], y[a] - DECK), _xyz(left[b], y[b] - DECK), _xyz(right[b], y[b] - DECK),
               _xyz(right[a], y[a] - DECK), SHADE)
     for p in np.arange(PIER_EVERY / 2, s[-1] - PIER_EVERY / 4, PIER_EVERY):
@@ -276,11 +284,29 @@ def _bridge(out, q, s, y, left, right, terrain, lower_tree):
         out.wall(ring, r2, lo, hi)
 
 
+def _reached(seed: np.ndarray, allowed: np.ndarray) -> np.ndarray:
+    """The allowed stretches of a line of segments that touch a seed segment, without the seeds."""
+    out = seed.copy()
+    for order in (range(1, len(out)), range(len(out) - 2, -1, -1)):
+        step = 1 if order.step == 1 else -1
+        for i in order:
+            out[i] |= allowed[i] & out[i - step]
+    return out & ~seed
+
+
 def _below(out, q, y, left, right, gl, gr, covered, sea, twin, kerbs):
     a, b = slice(None, -1), slice(1, None)
     under = np.maximum(gl, gr) - BELOW > y
     seg = under[a] | under[b]
     cov = covered[a] & covered[b]
+    # on its way down to the walls the street is already under the ground beside it, by less than BELOW: the
+    # ground is left out there too, or it would lie on the asphalt, and a low face holds it back on each side
+    low = np.maximum(gl, gr) > y
+    lip = _reached(seg, low[a] | low[b])
+    for side, g in ((left, gl), (right, gr)):
+        top = np.maximum(g, y - 0.2)
+        out.quads(_xyz(side[a][lip], y[a][lip] - 0.2), _xyz(side[b][lip], y[b][lip] - 0.2),
+                  _xyz(side[b][lip], top[b][lip]), _xyz(side[a][lip], top[a][lip]), CONCRETE)
     tops = {}
     for side, g, key in ((left, gl, "l"), (right, gr, "r")):
         top = tops[key] = np.where(covered, y + ROOF, _coping(g, y, sea))
@@ -309,7 +335,7 @@ def _below(out, q, y, left, right, gl, gr, covered, sea, twin, kerbs):
                       _xyz(right[j:j + 1], [g]), _xyz(left[j:j + 1], [g]), CONCRETE)
     # the ground is left out over an open cut, and over a roof that stands above it (it would cross the tunnel)
     poke = y + ROOF > np.minimum(gl, gr) - BELOW
-    opened = seg & (~cov | poke[a] | poke[b])
+    opened = (seg & (~cov | poke[a] | poke[b])) | lip
     quad = lambda m: np.concatenate([np.stack([left[a][m], left[b][m], right[b][m]], 1),
                                      np.stack([left[a][m], right[b][m], right[a][m]], 1)])
     if opened.any():
