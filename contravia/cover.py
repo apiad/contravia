@@ -10,6 +10,7 @@ nodes made inside a leaf while playing. The colours are rules (contravia/rules/c
 """
 
 import math
+import os
 import pickle
 from compression import zstd
 from pathlib import Path
@@ -112,7 +113,8 @@ def _download(url: str, path: Path, fetch=None) -> bool:
     import urllib.request
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    part = path.with_name(path.name + ".part")  # a cut download never passes for a tile
+    # a cut download never passes for a tile, and provinces built at once may fetch the same one
+    part = path.with_name(f"{path.name}.{os.getpid()}.part")
     try:
         if fetch is not None:
             fetch(url, part)
