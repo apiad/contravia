@@ -70,12 +70,12 @@ class Game:
     """One drive: the engine, the streamed city, the car and the camera."""
 
     def __init__(self, engine, city: World, at: tuple[float, float] = (0.0, 0.0), traffic=None, clock=None,
-                 sky=None, with_traffic: bool = False):
+                 sky=None, with_traffic: bool = False, builders=None):
         from manifoldx.modeling.assets.car import spawn_car
         from manifoldx.streaming import QuadStreamer, Streamer
 
         from contravia.atmosphere import Atmosphere
-        from contravia.cells import build_detail, build_node, warm
+        from contravia.cells import build_detail, build_node
         from contravia.clock import Clock
         from contravia.weather import SkyConfig, Weather
 
@@ -103,15 +103,17 @@ class Game:
 
         # detail: the cells' asphalt and ground (surfaces DETAIL_ASPHALT and DETAIL_GROUND) get wear, grain and
         # tufts from noise in the shader up close; the summaries' surfaces are 0 and stay flat.
+        # builders: the two streamers' worker processes, from start_builders; made here when not given.
+        quad, ring = builders or start_builders()
         self.streamer = QuadStreamer(engine, CELL, city.tree.origin, LEVELS, city.exists, build_node,
-                                     error=lambda L: CELL * 2**L / 16, workers="process", tau=TAU[0],
-                                     builders=max(1, min(3, (os.cpu_count() or 2) - 1)), warm=warm,
+                                     error=lambda L: CELL * 2**L / 16, workers=quad, tau=TAU[0],
+                                     focus_radius=NEAR_NODES,  # what the curtain waits for builds first
                                      crossfade=0.3,  # a level of detail fades into the next, it never pops
                                      material=StandardMaterial("#ffffff", roughness=0.9, vertex_colors=True,
                                                                faded=True, detail=True))
         # The detail ring: cornices, balconies, sills and roof tanks in the 3 x 3 cells around the car, drawn over
         # the massing (rules/detail.py). It narrows to the car's own cell when the frame time pushes tau to its top.
-        self.detail = Streamer(engine, CELL, build_detail, radius=1, ready_radius=2, workers="process", warm=warm)
+        self.detail = Streamer(engine, CELL, build_detail, radius=1, ready_radius=2, workers=ring)
         # The trees of the cells drawn in full: rows per cell, drawn as instances by level of detail (forest.py).
         self.forest = Forest(engine, city, self.walls.landmarks)
         # The grass on the green near the camera: instanced patches of blades that sway in the shader (grass.py).
@@ -1268,13 +1270,39 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     With screen "map", height (metres) puts the map's camera that high over `at`, turned yaw degrees from north,
     and the car stays at the Capitolio: `at` may be far from any road.
     """
+    os.environ["HAVANA_DATA"] = os.path.abspath(data)
+    builders = start_builders()  # first: they load the world while this process does and the menu shows
+    try:
+        _main(data, builders, at, shot, frames, size, traffic, when, warp, sky, pipelined, with_traffic, screen,
+              height, yaw, place)
+    except BaseException:
+        for b in builders:  # a start that failed (a broken save under contravia dev) leaves no builder behind
+            b.close()
+        raise
+
+
+def start_builders() -> tuple:
+    """The streamers' worker processes, started now and warming up (contravia/cells.py's warm: the world, its
+    landmarks, the regions, the parks lookup) while the caller goes on: three for the quadtree (one less than
+    the cores, at least one) and one for the detail ring. HAVANA_DATA must name the world first. Game takes
+    them and its shutdown stops them."""
+    from manifoldx.streaming import Builders
+
+    from contravia.cells import warm
+
+    return (Builders(max(1, min(3, (os.cpu_count() or 2) - 1)), "process", warm=warm),
+            Builders(1, "process", warm=warm))
+
+
+def _main(data, builders, at, shot, frames, size, traffic, when, warp, sky, pipelined, with_traffic, screen,
+          height, yaw, place) -> None:
+    """main's body, with the builders already started."""
     import manifoldx as mx
 
     from contravia.clock import Clock, parse_at
     from contravia.rules.traffic import load_config
     from contravia.weather import load_sky_config
 
-    os.environ["HAVANA_DATA"] = os.path.abspath(data)
     engine = mx.Engine("contravia", width=size[0], height=size[1], pipelined=pipelined)
     # Under contravia dev, saving the region rules or rebuilding a side file reloads like a source save.
     # hasattr: a dev session started on a manifoldx without engine.watch keeps reloading until restarted.
@@ -1285,7 +1313,7 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     sky_config = load_sky_config(sky) if sky else None
     look = screen == "map" and height  # then `at` is where the map looks; the car waits at the Capitolio
     game = Game(engine, World.load(data), at=(0.0, 0.0) if look else at, traffic=load_config(traffic) if traffic else None,
-                clock=clock, sky=sky_config, with_traffic=with_traffic or bool(traffic))
+                clock=clock, sky=sky_config, with_traffic=with_traffic or bool(traffic), builders=builders)
     screen = screen or ("drive" if shot else "main")
     if look:
         from contravia import mapview
