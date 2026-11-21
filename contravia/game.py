@@ -107,6 +107,14 @@ class Game:
 
         # detail: the cells' asphalt and ground (surfaces DETAIL_ASPHALT and DETAIL_GROUND) get wear, grain and
         # tufts from noise in the shader up close; the summaries' surfaces are 0 and stay flat.
+        from manifoldx.textures import texture_array
+
+        from contravia import hlod
+
+        # baked: the level-1 summaries carry an image of their cells, drawn on their ground and roofs through a
+        # layer of this array each (contravia/hlod.py); `manifoldx emit hlod on=0` shows their own colours.
+        baked = texture_array(engine, hlod.LAYERS, hlod.SIZE)  # made on the GPU once the engine has a device
+        self.hlod = True
         # builders: the two streamers' worker processes, from start_builders; made here when not given.
         quad, ring = builders or start_builders()
         self.streamer = QuadStreamer(engine, CELL, city.tree.origin, LEVELS, city.exists, build_node,
@@ -114,7 +122,7 @@ class Game:
                                      focus_radius=NEAR_NODES,  # what the curtain waits for builds first
                                      crossfade=0.3,  # a level of detail fades into the next, it never pops
                                      material=StandardMaterial("#ffffff", roughness=0.9, vertex_colors=True,
-                                                               faded=True, detail=True))
+                                                               faded=True, detail=True, baked=baked))
         # The detail ring: cornices, balconies, sills and roof tanks in the 3 x 3 cells around the car, drawn over
         # the massing (rules/detail.py). It narrows to the car's own cell when the frame time pushes tau to its top.
         self.detail = Streamer(engine, CELL, build_detail, radius=1, ready_radius=2, workers=ring)
@@ -203,6 +211,7 @@ class Game:
         engine.on("close")(self.close_street)
         engine.on("sky_config")(self.configure_sky)
         engine.on("weather")(self.force_weather)
+        engine.on("hlod")(self.set_hlod)
         engine.on("shutdown")(self._shutdown)
 
     def _start_traffic(self, config, on: bool) -> None:
@@ -231,6 +240,21 @@ class Game:
         self.layer = TrafficLayer(graph, self.runner, tables=tables)
         self.fleet = Fleet(self.engine)
         self.runner.start()
+
+    def set_hlod(self, payload=None) -> None:
+        """`manifoldx emit hlod on=0|1`: draw the level-1 summaries with the image of their cells (1, the
+        default) or with their own colours (0), to compare in place."""
+        self.hlod = bool(int((payload or {}).get("on", 1)))
+        self._show_hlod()
+
+    def _show_hlod(self) -> None:
+        """Each drawn level-1 node shows its layer, or none (-1) while hlod is off."""
+        layers = getattr(self.streamer, "_layers", None)
+        baked = self.engine.store._components.get("Baked")
+        if not layers or baked is None:
+            return
+        idx = np.fromiter(layers.keys(), int, len(layers))
+        baked[idx, 0] = np.fromiter(layers.values(), float, len(layers)) if self.hlod else -1.0
 
     def configure_traffic(self, changes: dict) -> None:
         """Change demand settings while playing; refused settings leave the old ones and say why in state."""
@@ -1416,6 +1440,7 @@ class Game:
             # going down to the map's crosshair, the detail ring builds the cells there from the flight's start
             self.detail.focus(*(self.flight.dest if self.flight is not None and self.flight.dest
                                 else (self.car.x, self.car.z)))
+        self._show_hlod()
         o = self.city.tree.origin
         full = {(o[0] + a, o[1] + b) for L, a, b in self.streamer.drawn() if L == 0}
         self.forest.update(full, self.eye)

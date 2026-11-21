@@ -9,7 +9,7 @@ clears are left out; the landmarks themselves are drawn once by the game, not pe
 
 import os
 
-from contravia import cemetery, regions
+from contravia import cemetery, hlod, regions
 from contravia.clearance import boxes, roads_around, streets_around
 from contravia.geo import CELL
 from contravia.landmarks import Landmarks, cached
@@ -112,7 +112,10 @@ def build_node(L: int, a: int, b: int):
     i, j = w.tree.origin[0] + (a << L), w.tree.origin[1] + (b << L)
     if L == 0:
         return build(i, j)
-    return summary_mesh(w.summary(L, a, b), L, a, b, w.tree.origin, w.terrain, _pantheons(L, i, j))
+    mesh = summary_mesh(w.summary(L, a, b), L, a, b, w.tree.origin, w.terrain, _pantheons(L, i, j))
+    if L == hlod.LEVEL:  # an image of its cells, drawn on its ground and roofs (contravia/hlod.py)
+        return hlod.baked(mesh, hlod.node_cells(build_node, w.exists, L, a, b), CELL * 2**L)
+    return mesh
 
 
 def _pantheons(L: int, i: int, j: int):

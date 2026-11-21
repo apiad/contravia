@@ -317,7 +317,7 @@ wheels = [
 [[package]]
 name = "manifold-gfx"
 version = "0.10.0"
-source = { git = "https://github.com/gia-uh/manifoldx?branch=main#1fcc7243c21d7f77d4e6b76442a16e2c8dbc040d" }
+source = { git = "https://github.com/gia-uh/manifoldx?branch=main#8703bb3dface19fe8e8af042204f16fa19c0515a" }
 dependencies = [
     { name = "numpy" },
     { name = "rendercanvas" },
