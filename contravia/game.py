@@ -137,6 +137,8 @@ class Game:
         self.shadow = self._spawn_shadow()
         self.arrows = self._spawn_arrows()
         self._arrow_yaw, self._arrow_step, self._arrow_pulse = None, None, 1.0
+        self._band = self._band_for = self._band_job = None  # the GPS band's entity, (route, metres) it was laid
+        # for, and the thread laying the next one: [result] once in
         self.model = kept(engine.state, "player car", "CarParams()", _player_car)
         self.handles = spawn_car(engine, self.model)
         self.family, self.driven, self.help_level, self.locked_assists = "moderno", None, DEFAULT, ()
@@ -404,6 +406,82 @@ class Game:
             arrow.transform.rot = arrow_rotation(self._arrow_yaw, (self.eye[0] - self.car.x, self.eye[2] - self.car.z))
             grow = 1.0 + 0.25 * (1.0 - self._arrow_pulse)
             arrow.transform.scale = (grow, grow, grow)
+
+    def _lay_band(self) -> None:
+        """Keep the GPS band on the route's next BAND_AHEAD metres in this province: laid on a thread for a new
+        route and every BAND_EVERY metres driven, swapped in whole, and the minimap told; gone with the route."""
+        from contravia.gps import BAND_AHEAD, BAND_EVERY, band_mesh, band_width
+        from contravia.traffic import lane_geometry
+
+        g, rg = self.gps, self.gps.router.rg
+        if self._band_job is not None and self._band_job[1]:
+            mesh, self._band_job = self._band_job[1][0], None
+            self._drop_band()
+            if mesh is not None:
+                self._band = self._spawn_band(mesh)
+            self.hud.redraw_minimap()
+        if g.route is None or rg is None:
+            if self._band is not None:
+                self._drop_band()
+                self.hud.redraw_minimap()
+            self._band_for = None
+            return
+        fresh = self._band_for is None or self._band_for[0] is not g.route
+        if self._band_job is not None or not (fresh or g.done_m - self._band_for[1] >= BAND_EVERY):
+            return
+        k = self.city.names.index(self.city.focused)
+        graph, edges, left = self.city.graph, [], BAND_AHEAD
+        for j, e in enumerate(g.route.edges[g.k:].tolist()):
+            p, local = rg.local(e)
+            if p != k or left <= 0:
+                break
+            edges.append(local)
+            left -= float(rg.length[e]) - (g.s if j == 0 else 0.0)
+        self._band_for = (g.route, g.done_m)
+        if not edges:
+            self._band_job = (None, [None])
+            return
+        last = edges[-1]
+        s1 = float(graph.a["g_len"][last]) + min(left, 0.0)
+        if rg.island(k, last) == g.route.edges[-1]:
+            s1 = min(s1, g.route.s1)
+        turns = [(st.at - g.done_m, float(np.sign(st.angle))) for st in g.steps
+                 if st.kind in ("turn", "slight") and st.at > g.done_m]
+        twoway, lane_w = lane_geometry(graph.a) if not hasattr(self, "_lanes_for") or self._lanes_for[0] is not graph \
+            else self._lanes_for[1]
+        self._lanes_for = (graph, (twoway, lane_w))
+        e0 = edges[0]
+        width = band_width(float(lane_w[e0]), float(lane_w[e0] * graph.a["g_lanes"][e0]), self.car.speed)
+        job = (None, [])
+        self._band_job = job
+
+        def work(s0=g.s):
+            try:
+                job[1].append(band_mesh(graph, edges, s0, s1, turns, width, self.surface.height))
+            except Exception:  # a band is a guide, never a crash: say why, and the next lay tries again
+                import traceback
+
+                traceback.print_exc()
+                job[1].append(None)
+
+        threading.Thread(target=work, name="gps-band", daemon=True).start()
+
+    def _spawn_band(self, m):
+        from manifoldx.components import Material, Mesh, Transform
+        from manifoldx.resources import StandardMaterial
+
+        from contravia.gps import BAND_OPACITY
+
+        return self.engine.spawn(Mesh({"positions": m.positions, "normals": m.normals, "colors": m.colors,
+                                       "indices": m.indices}),
+                                 Material(StandardMaterial("#ffffff", roughness=0.8, vertex_colors=True,
+                                                           opacity=BAND_OPACITY)),
+                                 Transform(pos=(0.0, 0.0, 0.0)))
+
+    def _drop_band(self) -> None:
+        if self._band is not None:
+            self._band.destroy()
+            self._band = None
 
     def _spawn_shadow(self):
         """A dark ellipse straight under the car on the bare ground, not on the road: where the road stands
@@ -1109,6 +1187,7 @@ class Game:
         self.shadow.transform.pos = (self.car.x, ground + SHADOW_LIFT, self.car.z)
         self.shadow.transform.rot = (0.0, float(np.sin(half)), 0.0, float(np.cos(half)))
         self._place_arrow()
+        self._lay_band()
         captured = self.mode == "drive" and not self.camera_override  # the mouse turns the camera while driving
         if inp.pointer_captured != captured:
             inp.capture_pointer(captured)

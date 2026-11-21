@@ -277,3 +277,22 @@ def test_the_gps_panel_shows_while_a_route_is_set_and_hides_the_pilot_line():
     assert hud.route_panel not in engine.gui._panels
     hud.set_pilot("40 km/h · recto")
     assert hud.pilot_panel in engine.gui._panels
+
+
+def test_a_new_gps_band_renders_the_minimap_again_on_the_next_frame():
+    import numpy as np
+
+    from contravia.hud import MINIMAP_EVERY, Hud
+
+    engine = _Engine()
+    renders = []
+    engine.refresh_texture = renders.append
+    hud = Hud(engine)
+    engine.started[0]()
+    car = CarState(0, 0, 0, 0.0)
+    for _ in range(MINIMAP_EVERY + 2):
+        hud.update(car, np.zeros(3))
+    before = len(renders)
+    hud.redraw_minimap()
+    hud.update(car, np.zeros(3))
+    assert len(renders) == before + 1

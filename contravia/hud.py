@@ -474,6 +474,10 @@ class Hud:
         self.engine.refresh_texture(self.texture)
         self._place_marks(car)
 
+    def redraw_minimap(self) -> None:
+        """Render the minimap on the next update, whatever the car did: the scene it shows changed (the GPS band)."""
+        self._drawn = None
+
     def set_places(self, places, has) -> None:
         """The collectible places the minimap marks, and has(id), whether one is photographed."""
         self.places, self.has = places, has

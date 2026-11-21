@@ -373,3 +373,50 @@ def test_the_arrow_points_along_its_yaw_and_leans_its_top_toward_the_camera(yaw)
     assert ground @ np.array([np.cos(yaw), np.sin(yaw)]) > 0.75  # the tilt foreshortens it, never turns it away
     assert top[1] == pytest.approx(np.cos(ARROW_TILT), abs=1e-6)
     assert top[[0, 2]] @ to_camera == pytest.approx(np.sin(ARROW_TILT), abs=1e-6)
+
+
+def test_the_band_is_most_of_a_lane_in_town_and_widens_for_the_fast_minimap():
+    from contravia.gps import band_width
+    from contravia.hud import MINIMAP_SIZE, MINIMAP_SPAN, minimap_target
+
+    assert band_width(3.3, 6.6, 0.0) == pytest.approx(2.64)
+    per_px = 2 * minimap_target(30.0) * MINIMAP_SPAN / MINIMAP_SIZE
+    assert band_width(3.3, 20.0, 30.0) == pytest.approx(2.5 * per_px)
+    assert band_width(3.3, 6.6, 40.0) == pytest.approx(6.6)
+
+
+def test_before_a_left_turn_the_band_moves_to_the_leftmost_lane_and_stays_right_before_a_right():
+    from contravia.gps import band_targets
+
+    along = np.arange(0.0, 300.0, 2.0)
+    right, left = np.full(len(along), 4.95), np.full(len(along), 1.65)
+    t = band_targets(along, [(200.0, -1)], right, left)
+    assert np.allclose(t[along <= 120.0], 4.95) and np.allclose(t[(along >= 150.0) & (along <= 200.0)], 1.65)
+    assert np.allclose(t[along > 200.0], 4.95)
+    assert np.allclose(band_targets(along, [(200.0, 1)], right, left), 4.95)
+
+
+def test_the_band_lies_on_its_lane_5_cm_over_the_road():
+    from contravia.gps import band_mesh
+    from contravia.traffic import lane_geometry
+
+    g = grid(3, lanes=2)
+    g.a["g_poly_y"] = np.full(len(g.a["g_poly"]), 2.0, np.float32)
+    twoway, lane_w = lane_geometry(g.a)
+    e = edge(g, 0, 1)
+    m = band_mesh(g, [e], 10.0, 90.0, [], 0.8 * lane_w[e])
+    p = m.positions.astype(float)
+    half = 2 * lane_w[e]  # two lanes right of the centreline
+    assert p[:, 2].min() >= -0.1 and p[:, 2].max() <= half + 0.1  # heading east, right is +z
+    assert np.allclose(p[:, 1], 2.05, atol=1e-4)
+    assert 10.0 - 0.1 <= p[:, 0].min() and p[:, 0].max() <= 90.0 + 0.1
+
+
+def test_the_band_s_faces_wind_as_the_shadow_s():
+    from contravia.gps import band_mesh
+
+    g = grid(3)
+    m = band_mesh(g, [edge(g, 0, 1), edge(g, 1, 4)], 10.0, 50.0, [(90.0, 1)], 2.0)
+    p, i = m.positions.astype(float), m.indices.reshape(-1, 3)
+    geo = np.cross(p[i[:, 1]] - p[i[:, 0]], p[i[:, 2]] - p[i[:, 0]])
+    assert np.all((geo * m.normals[i[:, 0]]).sum(1) > 0)

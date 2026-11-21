@@ -692,3 +692,80 @@ def arrow_rotation(yaw: float, to_camera) -> tuple[float, float, float, float]:
     q = (w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2, w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
          w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2, w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2)
     return tuple(float(v) for v in q)
+
+
+BAND_AHEAD, BAND_EVERY = 1500.0, 200.0  # metres of route the band covers, and driven before it is laid again
+BAND_LIFT, BAND_STEP = 0.05, 2.0  # metres over the road, and between its rows
+BAND_LANE = 0.8  # of a lane's width, at town speeds
+BAND_PX = 2.5  # minimap pixels it keeps at least
+TURN_LANE, TURN_BLEND = 80.0, 30.0  # metres before a turn where the band moves to its lane, and over how many
+CHEVRON = 6.0  # metres between chevrons
+BAND_OPACITY = 0.6
+
+
+def band_width(lane_w: float, carriageway: float, speed: float) -> float:
+    """Metres across the band: BAND_LANE of a lane, or BAND_PX of the minimap at this speed, never wider than the
+    carriageway."""
+    from contravia.hud import MINIMAP_SIZE, MINIMAP_SPAN, minimap_target
+
+    per_px = 2 * minimap_target(speed) * MINIMAP_SPAN / MINIMAP_SIZE
+    return float(min(carriageway, max(BAND_LANE * lane_w, BAND_PX * per_px)))
+
+
+def band_targets(along: np.ndarray, turns, right: np.ndarray, left: np.ndarray) -> np.ndarray:
+    """Metres right of the centreline the band runs at, at each sample `along` metres: the rightmost lane (right),
+    and the leftmost (left) from TURN_LANE before a left turn (at, side < 0), blended in over TURN_BLEND."""
+    out = np.asarray(right, float).copy()
+    for at, side in turns:
+        if side >= 0:
+            continue
+        w = np.clip((along - (at - TURN_LANE)) / TURN_BLEND, 0, 1) * (along <= at)
+        out = out * (1 - w) + np.asarray(left, float) * w
+    return out
+
+
+def band_mesh(graph: Graph, edges, s0: float, s1: float, turns, width: float, height=None):
+    """The band over these edges of one province's graph, from s0 along the first to s1 along the last: three
+    vertices across each BAND_STEP row, yellow with darker chevrons pointing along the way, BAND_LIFT over the
+    road. turns: (metres from the band's start, side) of the turns it leads to. height(x, z, near) gives the drawn
+    road's height (the game's Surface, which the wheels stand on); without it, the graph's g_poly_y."""
+    from contravia.mesh import MeshBuilder
+    from contravia.traffic import lane_geometry, lane_offsets
+    from contravia.ui import INK, YELLOW
+
+    a = graph.a
+    twoway, lane_w = lane_geometry(a)
+    es, ss, right, left, along = [], [], [], [], []
+    done = 0.0
+    for k, e in enumerate(edges):
+        lo = s0 if k == 0 else 0.0
+        hi = s1 if k == len(edges) - 1 else float(a["g_len"][e])
+        s = np.r_[np.arange(lo, hi, BAND_STEP), hi]
+        offs = lane_offsets(int(a["g_lanes"][e]), float(lane_w[e]), bool(twoway[e]))
+        es.append(np.full(len(s), e)), ss.append(s), along.append(done + s - lo)
+        right.append(np.full(len(s), offs[0])), left.append(np.full(len(s), offs[-1]))
+        done += hi - lo
+    es, ss, along = np.concatenate(es), np.concatenate(ss), np.concatenate(along)
+    off = band_targets(along, turns, np.concatenate(right), np.concatenate(left))
+    x, z, h = graph.points(es, ss, off)
+    y = graph.heights(es, ss)
+    r = np.stack([-np.sin(h), np.cos(h)], 1)  # right of travel
+    cols = (-width / 2, 0.0, width / 2)
+    pos = np.stack([np.c_[x + r[:, 0] * c, y, z + r[:, 1] * c] for c in cols], 1).reshape(-1, 3)
+    if height is not None:
+        pos[:, 1] = np.asarray(height(pos[:, 0], pos[:, 2], near=pos[:, 1]), float)
+    pos[:, 1] += BAND_LIFT
+    rgb = lambda c: np.array([int(c[i:i + 2], 16) / 255 for i in (1, 3, 5)])  # noqa: E731
+    yellow, dark = rgb(YELLOW), rgb(YELLOW) * 0.45 + rgb(INK) * 0.55
+    side = (along % CHEVRON) < 1.0
+    centre = ((along - 1.5) % CHEVRON) < 1.0  # a row later than the sides: a chevron pointing ahead
+    colours = np.where(np.stack([side, centre, side], 1).reshape(-1, 1), dark, yellow)
+    n = len(along)
+    tris = []
+    for i in range(n - 1):
+        for c in (0, 1):
+            p, q = 3 * i + c, 3 * (i + 1) + c
+            tris += [(p, p + 1, q), (p + 1, q + 1, q)]
+    mb = MeshBuilder()
+    mb.add(pos, [(0.0, 1.0, 0.0)] * len(pos), [tuple(v) for v in colours], tris)
+    return mb.to_meshdata(0.0, 0.0)
