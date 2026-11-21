@@ -117,7 +117,11 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   streets they leave from ramp to them at 8 %. The ends of one bridge or tunnel agree at its own junctions and with
   the ground they leave from; a ramp too long for its street goes on through the junction after it (16 % on the
   streets that turn off there); a tunnel's mouth is no deeper than the street before the next junction lets a ramp
-  reach, unless a street or the sea is over it; a deck does not come down between two streets it clears. `contravia/structures.py` dresses them (decks, parapets, piers, tunnel
+  reach, unless a street or the sea is over it; a deck does not come down between two streets it clears. A bridge over a
+  valley, where the ground drops `streets.VALLEY` (10 m) under the line between its ends, holds its ends up
+  (`streets._hold_ends`): each stands as high as the street it leaves from can come down to at 8 % from its far
+  end, and that street runs on a fill where the ground falls faster, since a 90 m relief lays a gorge's walls
+  under the bridge's ends. `contravia/structures.py` dresses them (decks, parapets, piers, tunnel
   walls, roofs and lamps, open cuts with the ground left out over them); a wheel stands on the surface level with
   it (`Surface.height(..., near=)`) and a wall stops the car only at its own heights.
 - `contravia prepare` then lays the pavements (`contravia/walks.py`): a road-network face built over more than 30 %
