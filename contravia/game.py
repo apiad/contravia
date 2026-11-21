@@ -1740,7 +1740,7 @@ def _main(data, builders, at, shot, frames, size, traffic, when, warp, sky, pipe
     game.sound = Sound.start(engine.state, options, backend="file" if audio_out else "null" if mute or shot else "device",
                              path=audio_out)
     game.sound.attach(game)
-    menu = Menu(engine, game, free, options, screen=screen if screen in ("main", "free", "options", "quality") else None)
+    menu = Menu(engine, game, free, options, screen=screen if screen in ("main", "free", "options", "quality", "credits") else None)
     if screen in ("pause", "photo", "map"):
         engine.on("startup")(lambda _=None: (menu.pause(), screen != "pause" and menu.show(screen)))
     if screen in ("album", "province"):  # over the pause; the province of --place, or La Habana

@@ -490,8 +490,11 @@ class OptionsScreen(RowsScreen):
             self.menu.game.apply_options(self.menu.options, quality=row.key == "quality")
 
     def enter(self):
-        if self.rows()[self.index].key == "tune_quality":
+        key = self.rows()[self.index].key
+        if key == "tune_quality":
             self.menu.show("quality")
+        elif key == "credits":
+            self.menu.show("credits")
         else:
             self.key("right")
 
@@ -554,6 +557,39 @@ class QualityScreen(RowsScreen):
     def back(self):
         self.menu.options.save()
         self.menu.show("options")
+
+
+class CreditsScreen(Screen):
+    """«Créditos y licencias»: who made the game, the attributions its data asks for, and the licence of each layer
+    (contravia/credits.py). Escape goes back to the options."""
+
+    WRAP = 96  # characters per line before a credit wraps
+
+    def build(self, width):
+        import textwrap
+
+        from manifoldx.gui import Panel
+
+        from contravia.credits import SECTIONS
+
+        self.panels = OptionsScreen.background(self, width)
+        self.panels.append(Panel([_text("CRÉDITOS Y LICENCIAS", ui.TITLE, 50, ui.PAPER)], anchor="top-left",
+                                 offset=(60, 40), style_overrides=CLEAR))
+        self.texts = []
+        column = []
+        for title, lines in SECTIONS:
+            self.texts.append(_text(title.upper(), ui.TITLE, 17, ui.YELLOW))
+            column.append(Panel([self.texts[-1]], style_overrides={**CLEAR, "padding": "8 0 0 0"}))
+            for line in lines:
+                for part in textwrap.wrap(line, self.WRAP):
+                    self.texts.append(_text(part, ui.BOLD, 14, ui.PAPER))
+                    column.append(self.texts[-1])
+        self.panels.append(Panel(column, anchor="top-left", offset=(60, 120), style_overrides={**CLEAR, "gap": 3}))
+        self.panels.append(_hints(width, [("ESC", "Volver")]))
+
+    def key(self, k):
+        if k == "back":
+            self.menu.show("options")
 
 
 class PhotoScreen(Screen):
@@ -1380,7 +1416,8 @@ class DesignScreen(RowsScreen):
 
 SCREENS = {"main": MainScreen, "free": FreeScreen, "options": OptionsScreen, "quality": QualityScreen,
            "pause": PauseScreen,
-           "photo": PhotoScreen, "aim": AimScreen, "card": CardScreen, "map": MapScreen, "album": AlbumScreen, "province": ProvinceScreen, "garage": GarageScreen, "design": DesignScreen}
+           "photo": PhotoScreen, "aim": AimScreen, "card": CardScreen, "map": MapScreen, "album": AlbumScreen, "province": ProvinceScreen, "garage": GarageScreen, "design": DesignScreen,
+           "credits": CreditsScreen}
 KEY_NAMES = set(KEYS) | {"l"}  # L, while driving, turns the driving help to its next level
 
 

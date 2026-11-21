@@ -134,7 +134,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--place", help="a collectible place's id (contravia/places.json): start on the street nearest it; "
                    "--screen aim aims at it and --screen card photographs it")
     p.add_argument("--screen", choices=["main", "free", "options", "quality", "pause", "photo", "map", "garage", "design", "drive",
-                                        "aim", "card", "album", "province"],
+                                        "aim", "card", "album", "province", "credits"],
                    help="open on this menu screen, or drive at once; main for a window, drive for --shot")
     p.add_argument("--quality", choices=["bajo", "medio", "alto", "ultra", "cine"],
                    help="play at this graphics preset (contravia/quality.py) instead of the saved one, for this run")

@@ -166,6 +166,9 @@ VOLUMES = (  # the sound's rows: key, label, default (0 to 10), help
 )
 
 
+ACTIONS = {"tune_quality", "credits"}  # rows that open a screen and hold no value to save
+
+
 @dataclass
 class Options:
     """The options screen's rows, saved between runs."""
@@ -193,6 +196,8 @@ class Options:
             Choice("help", "Ayuda al manejo", [(name, k) for k, (name, _) in enumerate(LEVELS)], DEFAULT,
                    help="Cuánto te ayuda el carro. " + "; ".join(f"{name}: {what}" for name, what in LEVELS) + "."),
             *(Choice(key, label, [(str(k), k) for k in range(11)], default, help=text) for key, label, default, text in VOLUMES),
+            Choice("credits", "Créditos y licencias", [("", None)],
+                   help="Quién hizo el juego, de dónde salen sus datos y con qué licencias se comparte."),
         ]
         opts = cls(rows)
         path = config_dir() / "settings.json"
@@ -238,7 +243,7 @@ class Options:
         """Write the chosen values to settings.json in the configuration folder."""
         path = config_dir() / "settings.json"
         path.parent.mkdir(parents=True, exist_ok=True)
-        values = {r.key: r.value for r in self.rows if r.key != "tune_quality"}
+        values = {r.key: r.value for r in self.rows if r.key not in ACTIONS}
         if values["quality"] == "personalizado":
             values.update(quality_base=self.quality_base, quality_knobs=self.quality_knobs)
         path.write_text(json.dumps({**values, "locked_assists": list(self.locked_assists)}, indent=1))
