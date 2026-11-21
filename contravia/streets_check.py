@@ -25,8 +25,13 @@ tested against every level, tunnels too. Each cell is tested against the streets
 thing is filed under the cell of its middle. Every count must be 0.
 """
 
+import hashlib
 import json
+import pickle
+import sys
 from collections import Counter
+from dataclasses import fields
+from pathlib import Path
 
 import numpy as np
 import shapely
@@ -57,6 +62,14 @@ WALK_EDGE = WALK_SIMPLIFY + KERB * BEVEL + 0.02  # metres a pavement and its bev
 KINDS = ("ground", "water", "step", "steep", "building", "landmark", "park", "tree", "cemetery", "tomb", "parapet",
          "structure", "walk", "motif")
 _NONE = shapely.Polygon()
+KEPT = "streets-check.kept"  # the last run's findings by cell, beside index.npz
+KEPT_VERSION = 1
+AROUND = 2  # cells round a cell whose data its findings may read (the check itself reads one): its fingerprint
+# what the fingerprint of the island holds besides each province's relief: the files every cell reads
+ISLAND = ("coast.src", "shore.src", "cover.src", "causeways.src", "water.src", "regions.src", "landmarks.pkl")
+# the modules that build the data: their work is in each cell's arrays, so a change to them is seen there
+BUILDERS = ("contravia.streets", "contravia.walks", "contravia.structures", "contravia.medians", "contravia.prepare",
+            "contravia.source", "contravia.cli")
 
 
 class Levels:
@@ -91,6 +104,30 @@ class Check:
         self.city, self.landmarks, self.shore = city, cached(city), shore_of(city)
         self._streets: dict = {}  # cell -> (all street triangles, those in the open, its medians' footprints)
         self._inner: dict = {}  # cell -> (the streets' inside there at every level, in the open)
+        self._digests: dict = {}  # cell -> the digest of its data
+
+    def digest(self, i: int, j: int) -> bytes:
+        """A digest of everything cell (i, j) holds, as the island gives it."""
+        def make(i, j):
+            h = hashlib.blake2b(digest_size=16)
+            c = self.city.cell(i, j)
+            for f in fields(c):
+                v = getattr(c, f.name)
+                for part in v if isinstance(v, list | tuple) else (v,):
+                    h.update(b"-" if part is None else np.ascontiguousarray(part).tobytes()
+                             if isinstance(part, np.ndarray) else repr(part).encode())
+                h.update(f.name.encode())
+            return h.digest()
+        return self._held(self._digests, (i, j), make)
+
+    def fingerprint(self, i: int, j: int) -> bytes:
+        """What cell (i, j)'s findings were computed from: the data of the cells AROUND it. Two runs that give a
+        cell the same fingerprint, on the same island (island_stamp) with the same code, find the same."""
+        h = hashlib.blake2b(digest_size=16)
+        for di in range(-AROUND, AROUND + 1):
+            for dj in range(-AROUND, AROUND + 1):
+                h.update(self.digest(i + di, j + dj))
+        return h.digest()
 
     def _held(self, cache: dict, key, make):
         if key not in cache:
@@ -281,18 +318,92 @@ def count(city, cells=None) -> tuple[Counter, list]:
     return counts, found
 
 
+def island_stamp(folder) -> bytes:
+    """A digest of what every cell of the island in folder reads besides its own data: each province's relief and
+    the files of ISLAND."""
+    h = hashlib.blake2b(digest_size=16)
+    folder = Path(folder)
+    for path in sorted(folder.glob("*.npz")):
+        if path.name == "index.npz":
+            continue
+        with np.load(path) as f:
+            for key in ("heights", "heights_origin", "heights_step"):
+                if key in f.files:
+                    h.update(np.ascontiguousarray(f[key]).tobytes())
+        h.update(path.name.encode())
+    for name in ISLAND:
+        h.update((folder / name).read_bytes() if (folder / name).exists() else b"-")
+        h.update(name.encode())
+    return h.digest()
+
+
+def code_stamp(modules) -> str:
+    """A digest of the sources of modules: the code a run's findings came from."""
+    import importlib.util
+
+    h = hashlib.blake2b(digest_size=16)
+    for name in sorted(modules):
+        spec = importlib.util.find_spec(name)
+        h.update(Path(spec.origin).read_bytes() if spec is not None and spec.origin else b"-")
+        h.update(name.encode())
+    return h.hexdigest()
+
+
+def load_kept(folder, island: bytes) -> dict:
+    """{cell: (fingerprint, findings)} of the last run in folder, or {} when there is none, the island's relief or
+    files changed since, or any module that run loaded did."""
+    path = Path(folder) / KEPT
+    if not path.exists():
+        return {}
+    try:
+        kept = pickle.loads(path.read_bytes())
+    except (pickle.UnpicklingError, EOFError, AttributeError, ValueError):
+        return {}
+    if (kept.get("version") != KEPT_VERSION or kept.get("island") != island
+            or kept.get("code") != code_stamp(kept.get("modules", ()))):
+        return {}
+    return kept["cells"]
+
+
+def save_kept(folder, island: bytes, modules, cells: dict) -> None:
+    path = Path(folder) / KEPT
+    part = path.with_name(path.name + ".part")
+    part.write_bytes(pickle.dumps({"version": KEPT_VERSION, "island": island, "modules": sorted(modules),
+                                   "code": code_stamp(modules), "cells": cells}))
+    part.replace(path)
+
+
+def loaded() -> list[str]:
+    """The game's modules this process has loaded, less the BUILDERS: the code its findings depend on."""
+    return sorted(m for m in sys.modules if m.split(".")[0] == "contravia" and m not in BUILDERS)
+
+
 _check: Check | None = None
+_kept: dict = {}
 
 
-def _start(data: str) -> None:
-    global _check
+def _start(data: str, kept: dict | None = None) -> None:
+    global _check, _kept
     from contravia.world import World
 
-    _check = Check(World.load(data))
+    _check, _kept = Check(World.load(data)), kept or {}
 
 
-def _run(cells: list) -> list:
-    return [f for i, j in cells for f in _check.cell(i, j)]
+def _run(cells: list) -> tuple[list, dict, list]:
+    """(findings, what to keep for the cells checked again, the modules loaded) over cells: a cell whose
+    fingerprint is the kept one gives its kept findings."""
+    found, fresh = [], {}
+    for i, j in cells:
+        if not len(_check._around(i, j, 0)):
+            continue
+        mark = _check.fingerprint(i, j)
+        old = _kept.get((i, j))
+        if old is not None and old[0] == mark:
+            found += old[1]
+            continue
+        fresh[(i, j)] = (mark, _check.cell(i, j))
+        found += fresh[(i, j)][1]
+    return found, fresh, loaded()
 
 
 def cells_of(world, province: str | None = None, around: tuple | None = None) -> list:
@@ -308,21 +419,35 @@ def cells_of(world, province: str | None = None, around: tuple | None = None) ->
 
 
 def main(data: str, province: str | None = None, around: tuple | None = None, jobs: int = 1,
-         out: str | None = None) -> int:
+         out: str | None = None, fresh: bool = False) -> int:
     """Print the counts and the worst of each kind, write every finding to out as JSON; the exit status is 1
-    when any count is above 0."""
+    when any count is above 0. An island in a folder keeps each cell's findings with the fingerprint of its data
+    (KEPT): the next run checks again only the cells whose data changed, all of them when the island's relief or
+    files or the code did, or with fresh."""
     from concurrent.futures import ProcessPoolExecutor
 
     from contravia.world import World
 
-    cells = cells_of(World.load(data), province, around)
+    world = World.load(data)
+    cells = cells_of(world, province, around)
+    island = island_stamp(world.folder) if world.folder is not None else None
+    kept = {} if island is None or fresh else load_kept(world.folder, island)
     rows = max(1, len(cells) // (jobs * 16) or 1)
     chunks = [cells[k:k + rows] for k in range(0, len(cells), rows)]
-    with ProcessPoolExecutor(jobs, initializer=_start, initargs=(data,)) as pool:
-        found = [f for part in pool.map(_run, chunks) for f in part]
+    found, again, modules = [], {}, set()
+    with ProcessPoolExecutor(jobs, initializer=_start, initargs=(data, kept)) as pool:
+        for part, new, mods in pool.map(_run, chunks):
+            found += part
+            again.update(new)
+            modules.update(mods)
+    served = sum(c in kept and c not in again for c in cells)
+    if island is not None:
+        if fresh:  # the cells not asked for keep what an earlier run found, when it still holds
+            kept = load_kept(world.folder, island)
+        save_kept(world.folder, island, modules, {**kept, **again})
     counts = Counter({k: 0 for k in KINDS})
     counts.update(f[0] for f in found)
-    print(f"{len(cells)} cells")
+    print(f"{len(cells)} cells, {len(again)} checked, {served} kept from the last run")
     for kind in KINDS:
         worst = max((f for f in found if f[0] == kind), key=lambda f: f[3], default=None)
         where = "" if worst is None else "  worst {:.2f} at {:.5f},{:.5f}".format(
