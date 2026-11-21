@@ -157,7 +157,7 @@ class Atmosphere:
         self._tasks = {}
         self.env_key = None
         self._fallback = "day"
-        self.shadow = (SHADOW_EXTENT, SHADOW_RES, 1)  # half side (m), map size, PCF radius: quality.py's shadow
+        self.shadow = (SHADOW_EXTENT, SHADOW_RES, 1, 1)  # reach (m), map size, PCF radius, cascades: quality.py's
         engine.fog_enabled = True
 
     def configure(self, q) -> None:
@@ -204,10 +204,13 @@ class Atmosphere:
             # the disk at full glare for a sun well up, dimmer for a low sun, a faint one for the moon
             e.set_post(sky=Sky(zenith=lk.zenith, horizon=lk.horizon, sun_intensity=24.0 * min(1.0, lk.light_intensity / 1.5)))
         if lk.shadows:
-            extent, res, pcf = self.shadow
-            target = snap_target(eye, lk.light_dir, extent, res)
-            e.enable_shadows(target=target, extent=extent, resolution=res, near=0.01, far=600.0,
-                             bias=0.002, pcf_radius=pcf, auto_fit=False)
+            reach, res, pcf, cascades = self.shadow
+            if cascades > 1:  # manifoldx fits each cascade to the camera's view; no box to place
+                e.enable_shadows(resolution=res, pcf_radius=pcf, cascades=cascades, shadow_distance=reach)
+            else:
+                target = snap_target(eye, lk.light_dir, reach, res)
+                e.enable_shadows(target=target, extent=reach, resolution=res, near=0.01, far=600.0,
+                                 bias=0.002, pcf_radius=pcf, auto_fit=False)
         else:
             e._shadow_config = None  # manifoldx has no public switch to turn shadows off
 

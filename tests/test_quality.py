@@ -13,7 +13,7 @@ def test_alto_is_todays_game():
     assert q.tau == game.TAU and q.far == game.FAR and q.fog_clear == atmosphere.FOG_CLEAR
     assert q.tree_lod == forest.LOD_AT and q.foliage_near == foliage.NEAR and q.grave_lod == graveyard.LOD_AT
     assert q.grass == (grass.NEAR, grass.FAR, *grass.BLADES)
-    assert q.shadow == (atmosphere.SHADOW_EXTENT, atmosphere.SHADOW_RES, 1)
+    assert q.shadow == (200.0, atmosphere.SHADOW_RES, 1, 3)  # cascades, since manifoldx has them
     assert q.rain_pool == rain.POOL and q.minimap == (hud.MINIMAP_SIZE, hud.MINIMAP_EVERY)
     assert q.target_ms == game.TARGET_MS and q.detail_radius == 1 and q.traffic_radius == 400.0
 

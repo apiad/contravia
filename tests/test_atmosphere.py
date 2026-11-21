@@ -87,4 +87,4 @@ def test_configure_sets_the_shadow_map_and_the_clear_fog():
     atmo.configure(PRESETS["alto"])
     atmo.apply(look(Body(60.0, 180, 0, 0), NO_MOON, CLEAR, SkyConfig()), (0.0, 0.0, 0.0))
     c = engine._shadow_config
-    assert (c["extent"], c["resolution"], c["pcf_radius"]) == (150.0, 2048, 1)
+    assert (c["shadow_distance"], c["resolution"], c["pcf_radius"], c["cascades"]) == (200.0, 2048, 1, 3)
