@@ -176,6 +176,11 @@ def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: st
     game = Game(engine, city, clock=Clock(at=parse_at(when)), with_traffic=True)
     game.tune = False  # a fixed tau, so runs compare
     game.help_level = 3  # the four chassis assists, no road assist: the autopilot steers like a keyboard
+    from contravia.audio import Sound
+    from contravia.settings import Options
+
+    game.sound = Sound.start(engine.state, Options.load(), backend="null")  # the whole sound, played to nothing
+    game.sound.attach(game)
     game.atmosphere.prepare(wait=True)
     frame_ms, waits, wait_start = [], [], None
     traffic_ms, cars, sky_ms, physics_ms = [], [], [], []
@@ -223,6 +228,8 @@ def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: st
     result["sky"] = {"sky_ms_mean": round(float(np.mean(sky_ms)), 2) if sky_ms else 0,
                      "sky_ms_p95": round(float(np.percentile(sky_ms, 95)), 2) if sky_ms else 0,
                      "weather": engine.state.sky.get("weather"), "shadows": engine.state.sky.get("shadows")}
+    result["audio"] = game.sound.usage()
+    game.sound.close()
     HISTORY.parent.mkdir(exist_ok=True)
     with HISTORY.open("a") as f:
         f.write(json.dumps(result, ensure_ascii=False) + "\n")

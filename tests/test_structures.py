@@ -15,6 +15,10 @@ from contravia.terrain import Terrain
 from tests.graphs import make_graph
 
 
+# what the walls' pool hands back in these tests: a cell never built ahead, so it is built when asked for
+_NOT_BUILT = type("F", (), {"cancel": lambda s: True, "done": lambda s: False, "__bool__": lambda s: False})()
+
+
 def _arrays():
     """An avenue east-west on a bridge over a street north-south at the origin, and further south a street
     east-west through a tunnel between x = -100 and 100."""
@@ -97,7 +101,7 @@ def test_in_a_tunnel_the_camera_stays_under_the_roof_and_the_walls_hold_the_car(
     w = Walls.__new__(Walls)
     w.city, w._cache, w._pending, w._joined = city, {}, {}, None
     w._build = lambda i, j: (np.zeros((0, 2, 2)), np.zeros((0, 2, 2)))
-    w._pool = type("P", (), {"submit": lambda *a: None})()
+    w._pool = type("P", (), {"submit": lambda *a: _NOT_BUILT})()
     inside = w.near(0.0, 600.0, y)
     outside = w.near(0.0, 600.0, 0.15)
     def here(ws):
@@ -199,7 +203,7 @@ def _drive_along(city, t, x0, x1, z, speed=16.0):
     w = Walls.__new__(Walls)
     w.city, w._cache, w._pending, w._joined = city, {}, {}, None
     w._build = lambda i, j: (np.zeros((0, 2, 2)), np.zeros((0, 2, 2)))
-    w._pool = type("P", (), {"submit": lambda *a: None})()
+    w._pool = type("P", (), {"submit": lambda *a: _NOT_BUILT})()
     s = Surface(city, t)
     east = x1 > x0
     d = Driven(handling.spec_for(fleet.moderno(), "moderno"),
@@ -234,6 +238,33 @@ def test_a_car_drives_into_and_out_of_a_tunnel_both_ways_without_touching_a_wall
         assert step < 0.05                       # and no wheel steps more than a few cm in a frame
         assert low < -6.0                        # it went down into the tunnel
         assert abs(end.x - x1) < 5.0 and abs(end.y) < 0.5   # and came back up on the far side
+
+
+def test_the_two_carriageways_of_one_tunnel_run_at_one_depth():
+    """At a river mouth the ground can dip under the sea's level below one carriageway and not below the other, a
+    few metres away; the two still share one box, so they run at one depth: the deeper of the two."""
+    from contravia.streets import SEA_DEPTH
+
+    heights = np.full((300, 300), 2.0)
+    heights[148:150, 145:155] = 0.0  # x in [-50, 50), z in [-20, -10]: under the carriageway at z = -14 only
+    t = Terrain(heights, (-1500, -1500), (10, 10))
+    j = [(-400, -14), (-100, -14), (100, -14), (400, -14), (400, -6), (100, -6), (-100, -6), (-400, -6)]
+    edges = [(0, 1), (1, 2), (2, 3), (4, 5), (5, 6), (6, 7)]
+    a = dict(make_graph(j, edges).a)
+    a["g_layer"] = np.array([-1 if (f, t_) in ((1, 2), (5, 6)) else 0 for f, t_ in edges], np.int8)
+    _, (ribbons, owner, axes, _, _, chains), _ = _city(t, a)
+    keep = {}
+    mesh(*build(a, WIDTHS), t, keep)
+    tubes = [k for k in range(len(axes)) if chains[owner[k]].layer < 0]
+    assert len(tubes) == 2
+    x = np.linspace(-90.0, 90.0, 37)
+    ys = []
+    for k in tubes:
+        s, h = keep["prof"][k]
+        along = np.abs(x - axes[k][0, 0])  # both axes run straight along x
+        ys.append(np.interp(along, s, h))
+    assert min(ys[0].min(), ys[1].min()) < -SEA_DEPTH + 0.5       # under the sea's level it runs deep
+    assert np.abs(ys[0] - ys[1]).max() < 0.05                      # and both carriageways run at that depth
 
 
 def test_a_street_tilted_with_a_hillside_gets_no_walls_and_no_cut():

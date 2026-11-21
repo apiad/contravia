@@ -57,3 +57,16 @@ def test_accent_parts_exist_where_a_season_paints_them():
     for s, day in (("flamboyan", date(2026, 6, 15)), ("almendro", date(2026, 1, 15))):
         for lod in range(LODS - (s == "almendro")):  # the far almendro is one green crown
             assert "accent" in meshes(s, lod, season(s, day).crown)
+
+
+def test_a_triangle_faces_along_the_normalised_cross_product_of_its_edges():
+    from contravia.rules.species import _Mesh
+
+    rng = np.random.default_rng(3)
+    m = _Mesh()
+    for a, b, c in rng.normal(0, 5, (300, 3, 3)):
+        m.tri(a, b, c, LEAF)
+    for k in range(300):
+        a, b, c = m.pos[3 * k: 3 * k + 3]
+        n = np.cross(b - a, c - a)
+        assert np.array_equal(m.nrm[3 * k], n / np.linalg.norm(n))

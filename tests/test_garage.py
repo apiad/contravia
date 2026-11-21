@@ -140,6 +140,10 @@ def test_the_garaje_browses_designs_saves_and_drives(city_npz, tmp_path, monkeyp
     assert menu.current == "free" and menu.free["vehicle"].text == "Mi ruso 1"
     assert game.model is not menu.default_model and game.photo is None
     menu.press("Enter")  # Arrancar
+    for _ in range(600):  # the drive starts under the loading curtain, which lifts once the start is drawn
+        if game.curtain is None:
+            break
+        engine.render_frame(supersample=1, dt=0.05)
     assert menu.current is None and game.mode == "drive"
     menu.press("Escape")
     for _ in range(2):

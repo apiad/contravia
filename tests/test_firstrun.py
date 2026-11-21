@@ -36,6 +36,7 @@ def test_build_from_source_gives_the_city_build_city_gives(src, tmp_path):
     assert b.done and b.overall == 1.0 and b.label == firstrun.DONE_LABEL
     island = firstrun.built(tmp_path / "home")
     assert island and not (tmp_path / "home" / "build").exists() and (island / "index.npz").exists()
+    assert (island / "route.npz").exists()  # the GPS's routing graph, built with the index
     ref, _ = build_city(*source.load(src / "la-habana.src"))
     for slug in ("la-habana", "artemisa"):
         assert same(ref, CityData.load(island / f"{slug}.npz")) == []

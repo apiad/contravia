@@ -117,10 +117,17 @@ def main(argv: list[str] | None = None) -> None:
                    help="open on this menu screen, or drive at once; main for a window, drive for --shot")
     p.add_argument("--no-pipeline", dest="pipeline", action="store_false",
                    help="run the systems and the render one after the other instead of overlapping them")
+    p.add_argument("--mute", action="store_true", help="play no sound")
+    p.add_argument("--audio-out", help="record the sound to this WAV, with a WAV per bus beside it")
 
     p = sub.add_parser("bench", help="drive the fixed route and record frame times")
     p.add_argument("--data", default="data/cuba")
     p.add_argument("--time", default="Tue 08:00", help='traffic time for the run, as "Tue 08:00"')
+
+    p = sub.add_parser("route", help="print the GPS route between two points of the island: its steps, length and time")
+    p.add_argument("--from", dest="start", required=True, help="LAT,LON where the car starts")
+    p.add_argument("--to", required=True, help="LAT,LON of the destination")
+    p.add_argument("--data", default="data/cuba")
 
     p = sub.add_parser("flowmap", help="draw the flow layer over the province at a time, as a PNG")
     p.add_argument("out")
@@ -255,7 +262,7 @@ def main(argv: list[str] | None = None) -> None:
         play(args.data or _city(), at=args.at, shot=args.shot, frames=args.frames, traffic=args.traffic, when=args.time,
              warp=args.warp, sky=args.sky, pipelined=args.pipeline,
              with_traffic=args.with_traffic, screen=args.screen, height=args.height, yaw=args.yaw,
-             place=args.place)
+             place=args.place, mute=args.mute, audio_out=args.audio_out)
     elif args.command == "dev":
         from manifoldx.cli import main as manifoldx
 
@@ -288,6 +295,12 @@ def main(argv: list[str] | None = None) -> None:
 
         timelapse(args.data, args.out, day=args.day, start=args.start, minutes=args.minutes, step=args.step,
                   sky_file=args.sky)
+    elif args.command == "route":
+        from contravia.gps import main as route
+
+        code = route(args.data, args.start, args.to)
+        if code:
+            raise SystemExit(code)
     elif args.command == "flowmap":
         from contravia.flowmap import main as flowmap
 

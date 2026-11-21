@@ -156,6 +156,15 @@ def config_dir() -> Path:
     return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "contravia"
 
 
+VOLUMES = (  # the sound's rows: key, label, default (0 to 10), help
+    ("vol", "Volumen general", 8, "El volumen de todo el sonido del juego."),
+    ("vol_engine", "Motor", 7, "El motor de tu carro."),
+    ("vol_effects", "Efectos", 7, "Gomas, viento, choques, bocina, lluvia y el tráfico."),
+    ("vol_ambience", "Ambiente", 6, "La ciudad, el campo y la costa alrededor de ti."),
+    ("vol_music", "Música", 5, "La música de fondo, que cambia con el lugar y la hora."),
+)
+
+
 @dataclass
 class Options:
     """The options screen's rows, saved between runs."""
@@ -178,6 +187,7 @@ class Options:
                    help="El mapa redondo arriba a la derecha, que gira con el carro."),
             Choice("help", "Ayuda al manejo", [(name, k) for k, (name, _) in enumerate(LEVELS)], DEFAULT,
                    help="Cuánto te ayuda el carro. " + "; ".join(f"{name}: {what}" for name, what in LEVELS) + "."),
+            *(Choice(key, label, [(str(k), k) for k in range(11)], default, help=text) for key, label, default, text in VOLUMES),
         ]
         opts = cls(rows)
         path = config_dir() / "settings.json"

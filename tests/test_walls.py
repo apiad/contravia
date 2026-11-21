@@ -1,5 +1,6 @@
 import numpy as np
 
+from contravia.geo import CELL
 from contravia.walls import Walls
 
 
@@ -98,3 +99,25 @@ def test_around_keeps_every_segment_within_reach_and_nothing_else():
     t = np.clip(((5.0 - a[:, 0]) * ab[:, 0] + (-4.0 - a[:, 1]) * ab[:, 1]) / (ab * ab).sum(1), 0, 1)
     gap = np.hypot(5.0 - a[:, 0] - ab[:, 0] * t, -4.0 - a[:, 1] - ab[:, 1] * t)
     np.testing.assert_array_equal(kept, walls[gap <= 12.0])
+
+
+def test_a_held_car_has_its_cells_built_on_the_thread_and_nothing_past_them(city):
+    w = Walls(city)
+    assert len(w.near(60.0, 60.0, wait=False)) == 0  # nothing built yet: no walls, and the car is held
+    i, j = int(60.0 // CELL), int(60.0 // CELL)
+    assert set(w._pending) == {(i + a, j + b) for a in (-1, 0, 1) for b in (-1, 0, 1)}
+    for f in list(w._pending.values()):
+        f.result()
+    held = w.near(60.0, 60.0, wait=False)
+    assert len(held) and np.array_equal(held, Walls(city).near(60.0, 60.0))
+    w.close()
+
+
+def test_a_teleport_drops_the_cells_queued_round_the_old_place(city):
+    w = Walls(city)
+    w.near(60.0, 60.0)
+    far = 100 * CELL
+    w.near(far, far)
+    assert all(max(abs(i - 100), abs(j - 100)) <= 2 for i, j in w._pending if not w._pending[(i, j)].running()
+               and not w._pending[(i, j)].done())
+    w.close()
