@@ -430,7 +430,7 @@ def network(J, edges, forced, cache, stops=frozenset()):
                     pts.append(q[1:])
                     b_end = nxt
                 else:
-                    pts.insert(0, q[::-1][1:][::-1])
+                    pts.insert(0, q[::-1][:-1])
                     a_end = nxt
                 node = nxt
         chains.append(Edge(a_end, b_end, np.vstack(pts), e0.w, e0.cls, e0.oneway, e0.paired))

@@ -8,10 +8,10 @@ from contravia.citydata import CityData
 from contravia.geo import CELL
 from contravia.graph import CLASSES
 from contravia.prepare import WIDTHS
-from contravia.streets import LIFT, build, mesh
+from contravia.streets import LIFT, arclen, build, mesh
 from contravia.surface import Surface
 from contravia.terrain import Terrain
-from tests.graphs import four_way
+from tests.graphs import four_way, make_graph
 
 
 def _hill() -> Terrain:
@@ -208,3 +208,14 @@ def test_a_wheel_rolls_over_a_crack_between_two_pieces_but_not_over_a_gap():
         x = np.arange(9.0, 11.5, 0.001)
         y = Surface(city, Terrain.flat()).height(x, np.full(len(x), 3.0))
         assert (y.min() < LIFT / 2) == falls, gap
+
+
+def test_a_street_chained_from_its_middle_edge_runs_once_from_end_to_end():
+    """A street of three edges whose middle edge comes first in the graph is one piece along its whole length:
+    the edge before the middle one is laid out towards it, not back over itself."""
+    j = [(0, 0), (100, 0), (200, 30), (300, 30)]
+    a = make_graph(j, [(1, 2), (0, 1), (2, 3)]).a
+    ribbons, _, axes, _, _, chains = build(a, WIDTHS)
+    assert len(chains) == 1 and len(ribbons) == 1
+    assert abs(arclen(axes[0])[-1] - arclen(np.array(j, float))[-1]) < 5.0  # the corners are rounded
+    assert shapely.Point(50, 0).within(ribbons[0]) and shapely.Point(250, 30).within(ribbons[0])
