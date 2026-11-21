@@ -55,6 +55,7 @@ OCEAN = 30_000_000.0  # metres: the side of the ocean, centred on the Capitolio,
 OCEAN_TILE = 1_000_000.0  # metres: the ocean is laid in squares no larger than this, so clipping stays exact
 MAP_SINK = 2.0  # screen pixels the water sinks below sea level in the map, so the coast never flickers on it
 SHALLOW = (0.16, 0.42, 0.45)
+KERB_KEEP = 40.0  # metres: an arrived route's stop line is kept for the pilot only this close ahead on its street
 ROUTE_KEYS = ("route-casing", "route", "route-mark")  # the GPS route's layers on the map, in drawing order
 ROUTE_PX, MARK_PX = 3.0, 10.0  # the route's width and its end's cross, screen pixels
 ROUTE_FILL = (0.84, 0.05, 0.03, 1.0)  # linear red, the brand's
@@ -517,10 +518,17 @@ class Game:
         if to:
             self.gps.go(to[0], to[1], to[2])
 
-    def gps_to(self, x: float, z: float, title: str | None = None) -> None:
-        """Guide the car to (x, z), named title when it is a place."""
+    def gps_to(self, x: float, z: float, title: str | None = None) -> str | None:
+        """Guide the car to (x, z), named title when it is a place; the error when no street is near it."""
+        from contravia.gps import ROAD_NEAR
+
+        found = self.walls.nearest_road(x, z)
+        if found is None or math.hypot(found[0] - x, found[1] - z) > ROAD_NEAR:
+            return "Aquí no hay calle cerca"
         self.gps.go(x, z, title)
         self.engine.state.gps_to = [float(x), float(z), title]
+        self._pilot_stop = None
+        return None
 
     def _gps_event(self, p: dict) -> None:
         if "lat" in p:
@@ -533,6 +541,7 @@ class Game:
         """Drop the GPS destination and its route."""
         self.gps.clear()
         self.engine.state.gps_to = None
+        self._pilot_stop = None
 
     def _show_route(self, help) -> None:
         """The GPS panel from the guide: the next step and what is left, or «Llegaste» or «No hay ruta» for a
@@ -677,10 +686,17 @@ class Game:
         takes the straightest exit until the focus moves) and the destination as a stop line, kept until it has
         stopped there even after the guide arrived."""
         g, rg, h = self.gps, self.gps.router.rg, self.help
-        if h.arrived:
+        level, locked = getattr(self, "help_level", DEFAULT), getattr(self, "locked_assists", ())
+        if h.arrived or "pilot" not in road_assists(level, locked):  # below level 0 the driver steers
             self._pilot_stop = None
-        if g.route is None or rg is None:
-            h.route_next, h.stop_at = None, getattr(self, "_pilot_stop", None)
+        if "pilot" not in road_assists(level, locked):
+            h.route_next = h.stop_at = None
+            return
+        if g.route is None or rg is None:  # arrived, or no route: keep the stop only while it lies just ahead
+            stop, p = getattr(self, "_pilot_stop", None), self.place
+            if stop is not None and (p is None or p.edge != stop[0] or not 0 <= stop[1] - p.s <= KERB_KEEP):
+                stop = self._pilot_stop = None
+            h.route_next, h.stop_at = None, stop
             return
         k = self.city.names.index(self.city.focused)
 

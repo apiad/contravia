@@ -7,6 +7,8 @@ docs/superpowers/specs/2026-11-20-gps-design.html).
 
 from __future__ import annotations
 
+import os
+import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -147,16 +149,25 @@ class RouteGraph:
             return cls.from_graphs([world.province(k).graph for k in range(len(world.names))])
         path = Path(folder) / "route.npz"
         if path.exists() and path.stat().st_mtime >= max(Path(p).stat().st_mtime for p in world.paths):
-            with np.load(path) as f:
-                current = int(f["version"]) == ROUTE_VERSION
-            if current:
-                return cls.load(path)
+            try:
+                with np.load(path) as f:
+                    current = int(f["version"]) == ROUTE_VERSION
+                if current:
+                    return cls.load(path)
+            except (OSError, ValueError, KeyError) as e:  # a file cut short (a full disk): build it again
+                print(f"gps: {path} unreadable ({e}); building it again", file=sys.stderr)
         graphs = []
         for p in world.paths:
             with np.load(p) as f:
                 graphs.append(Graph({k: f[k] for k in f.files if k.startswith("g_")}))
         rg = cls.from_graphs(graphs)
-        rg.save(path)
+        tmp = path.with_name("route.tmp.npz")
+        try:  # written aside and moved in whole, so a full disk never leaves a cut file behind
+            rg.save(tmp)
+            os.replace(tmp, path)
+        except OSError as e:
+            tmp.unlink(missing_ok=True)
+            print(f"gps: {path} not saved ({e}); the graph stays in memory", file=sys.stderr)
         return rg
 
     def island(self, k: int, local: int) -> int:
@@ -167,6 +178,14 @@ class RouteGraph:
         """(province, edge in its graph) of an island edge."""
         k = int(np.searchsorted(self.offsets, edge, side="right") - 1)
         return k, int(edge - self.offsets[k])
+
+    def arcs_of(self, e: int) -> np.ndarray:
+        """The indices of the arcs out of edge e, from an index by arc_in built once."""
+        if getattr(self, "_by_in", None) is None:
+            order = np.argsort(self.arc_in, kind="stable")
+            self._by_in = (order, np.searchsorted(self.arc_in[order], np.arange(len(self.length) + 1)))
+        order, start = self._by_in
+        return order[start[e]:start[e + 1]]
 
     def drive(self, edge, metres) -> np.ndarray:
         """Seconds driving `metres` of edge at its speed, a service road taking SERVICE times longer."""
@@ -262,6 +281,7 @@ class Route:
     seconds: float
     to: tuple[float, float] | None = None
     title: str | None = None
+    steps: list | None = None  # its Steps, found on the router's thread
 
     def polyline(self, rg: RouteGraph) -> np.ndarray:
         """The route's points in metres, from the thinned polylines, cut at s0 and s1."""
@@ -329,9 +349,12 @@ class Router:
         self._pending = self._result = None
         self.busy = False
 
-    def ask(self, start: tuple[float, float, float], to: tuple[float, float], title: str | None = None) -> None:
+    def ask(self, start: tuple[float, float, float], to: tuple[float, float], title: str | None = None,
+            at: tuple[int, float] | None = None) -> None:
+        """Ask for a route from a car at start = (x, z, heading) to `to`; at = (island edge, s) when the game
+        located the car on the road, which is where the route then starts."""
         with self._lock:
-            self._pending = (start, to, title)
+            self._pending = (start, to, title, at)
             if self.busy:
                 return
             self.busy = True
@@ -342,14 +365,23 @@ class Router:
             got, self._result = self._result, None
         return got
 
+    @property
+    def waiting(self) -> bool:
+        """Whether an answer is in and not taken yet."""
+        return self._result is not None
+
     def _run(self) -> None:
         while True:
             with self._lock:
                 job, self._pending = self._pending, None
             if job is not None:
-                if self.rg is None:
-                    self.rg = self._factory()
-                got = self._solve(*job)
+                try:
+                    if self.rg is None:
+                        self.rg = self._factory()
+                    got = self._solve(*job)
+                except Exception as e:  # a router that fails answers "none" and stays free, never hangs the GPS
+                    print(f"gps: no route ({type(e).__name__}: {e})", file=sys.stderr)
+                    got = "none"
             with self._lock:
                 if job is not None:
                     self._result = got
@@ -357,14 +389,14 @@ class Router:
                     self.busy = False
                     return
 
-    def _solve(self, start, to, title):
+    def _solve(self, start, to, title, at=None):
         rg = self.rg
-        s = rg.start_at(*start)
+        s = at if at is not None else rg.start_at(*start)
         ends = rg.ends_at(*to)
         r = route(rg, s, ends) if s is not None and ends else None
         if r is None:
             return "none"
-        r.to, r.title = (float(to[0]), float(to[1])), title
+        r.to, r.title, r.steps = (float(to[0]), float(to[1])), title, steps(rg, r)
         return r
 
 
@@ -405,7 +437,8 @@ def roundabouts(rg: RouteGraph) -> np.ndarray:
 
 
 def _arc(rg: RouteGraph, a: int, b: int) -> int:
-    return int(np.flatnonzero((rg.arc_in == a) & (rg.arc_out == b))[0])
+    out = rg.arcs_of(a)
+    return int(out[rg.arc_out[out] == b][0])
 
 
 def steps(rg: RouteGraph, route: Route) -> list[Step]:
@@ -423,7 +456,7 @@ def steps(rg: RouteGraph, route: Route) -> list[Step]:
         if ring[b] and not ring[a]:  # into a roundabout: count the exits until the route leaves it
             here, exits, j = at, 0, k + 1
             while j < len(edges) - 1 and ring[edges[j]]:
-                outs = rg.arc_out[rg.arc_in == edges[j]]
+                outs = rg.arc_out[rg.arcs_of(edges[j])]
                 exits += int(np.sum(~ring[outs]))
                 at += float(rg.length[edges[j]])
                 j += 1
@@ -432,7 +465,8 @@ def steps(rg: RouteGraph, route: Route) -> list[Step]:
                 k = j
                 continue
             at = here
-        others = rg.angle[(rg.arc_in == a) & (rg.arc_out != b)]
+        from_a = rg.arcs_of(a)
+        others = rg.angle[from_a[rg.arc_out[from_a] != b]]
         fork = bool(np.any(np.abs(others) < STRAIGHT)) and names(b) is not None and names(b) != names(a)
         if abs(angle) >= STRAIGHT or fork:
             kind = "straight" if abs(angle) < STRAIGHT else "slight" if abs(angle) < SLIGHT else "turn"
@@ -509,6 +543,7 @@ OFF_ROUTE = 1.0  # seconds on an edge that is neither the route's current one no
 LOST, LOST_M = 3.0, 30.0  # seconds off every road, farther than LOST_M metres from the route: route again
 ARRIVE_ALONG, ARRIVE_NEAR = 15.0, 20.0  # metres before the end along the last edge, or in a straight line
 SAID = 4.0  # seconds «Llegaste» or «No hay ruta» shows
+RETRY = 3.0  # seconds after a reroute found no way before asking again
 NOTE = 1.5  # seconds «Ruta nueva» shows
 
 
@@ -525,7 +560,8 @@ class Guide:
         self.reroutes = 0
         self._t, self._off, self._lost = 0.0, 0.0, 0.0
         self._message, self._message_until = "", 0.0
-        self._asked = False
+        self._asked, self._rerouting, self._retry = False, False, 0.0
+        self._edge, self._edge_s = None, 0.0  # where the car was on the road last frame
 
     @property
     def message(self) -> str:
@@ -538,11 +574,12 @@ class Guide:
     def go(self, x: float, z: float, title: str | None = None) -> None:
         """Set a destination; the route is asked on the next update, from where the car is then."""
         self.to, self.title, self.route, self.steps, self.step = (float(x), float(z)), title, None, [], None
-        self._asked = False
+        self._asked = self._rerouting = False
+        self._retry = 0.0
 
     def clear(self) -> None:
         self.to = self.title = self.route = self.step = None
-        self.steps, self._asked = [], False
+        self.steps, self._asked, self._rerouting = [], False, False
 
     def update(self, edge: int | None, s: float, car, dt: float) -> None:
         """Move along the route: edge is the island edge the car is on (None off the road), s metres along it."""
@@ -551,15 +588,19 @@ class Guide:
             return
         got = self.router.take()
         if got == "none":
-            self.clear()
             self._say("No hay ruta", SAID)
-            return
-        if got is not None:
+            if self.route is None and not self._rerouting:  # the first ask: nowhere to go
+                self.clear()
+                return
+            self.route, self._asked, self._retry = None, False, self._t + RETRY  # off every route: try again soon
+        elif got is not None:
             self.route, self.k, self.s, self._off, self._lost, self._asked = got, 0, got.s0, 0.0, 0.0, False
-            self.steps = steps(self.router.rg, got)
+            self.steps = got.steps if got.steps is not None else steps(self.router.rg, got)
+            self._rerouting = False
             self._say("Ruta nueva", NOTE)
+        self._edge, self._edge_s = edge, s
         if self.route is None:
-            if not self._asked:
+            if not self._asked and self._t >= self._retry:
                 self._ask(car)
             return
         if np.hypot(car.x - self.to[0], car.z - self.to[1]) < ARRIVE_NEAR:
@@ -578,14 +619,15 @@ class Guide:
             self._lost += dt
             if self._lost > LOST and self._far(car) > LOST_M:
                 self._off = OFF_ROUTE + 1.0
-        if self._off > OFF_ROUTE and not self.router.busy:
+        if self._off > OFF_ROUTE and not self.router.busy and not self.router.waiting:
             self.reroutes += 1
-            self._off = 0.0
+            self._off, self._rerouting = 0.0, True
             self._ask(car)
         self._measure()
 
     def _ask(self, car) -> None:
-        self.router.ask((car.x, car.z, car.yaw), self.to, self.title)
+        at = (self._edge, self._edge_s) if self._edge is not None else None
+        self.router.ask((car.x, car.z, car.yaw), self.to, self.title, at)
         self._asked = True
 
     def _arrive(self) -> None:

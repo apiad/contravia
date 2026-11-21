@@ -714,7 +714,10 @@ class MapScreen(Screen):
 
     def _gps(self, x: float, z: float, title) -> None:
         g = self.menu.game
-        g.gps_to(x, z, title)
+        error = g.gps_to(x, z, title)
+        if error:
+            self.note.text = error
+            return
         g.back_to_car()
         self.menu.show(None)
 
