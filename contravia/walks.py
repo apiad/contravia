@@ -166,7 +166,9 @@ def _cell_boxes(cells: np.ndarray) -> np.ndarray:
 
 def _pieces(geoms: np.ndarray, land: np.ndarray, boxes: np.ndarray):
     """Every geometry cut by the land of each cell it touches: (pieces, the geometry's index, the cell's index),
-    polygons only."""
+    polygons only. A cell's land can come out of its differences with one shell inside another (one cell of
+    Holguín), which the cut fails on: its shells are joined first."""
+    land = shapely.make_valid(land, method="structure", keep_collapsed=False)
     gi, ci = shapely.STRtree(boxes).query(geoms)
     cut = _chunked(shapely.intersection, geoms[gi], land[ci])
     parts, k = shapely.get_parts(cut, return_index=True)
