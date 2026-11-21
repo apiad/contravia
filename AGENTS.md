@@ -236,6 +236,16 @@ shore's grid (`rules.shore.vegetated`). The
   on them; the Malecón leaves out its wall pieces across the coast road. `contravia walls-check` counts what would
   stand inside a road over all of Havana and must read 0 (about 3 minutes; it needs `data/`, so it is not a rift
   rule; tests/test_walls.py checks the same rule on the fixture city).
+- Every street is clean (`contravia/streets_check.py`): `contravia streets-check [--province X] [--around X,Z,R]
+  [--out findings.json]` walks a built island's cells and counts, on the street surface the cells draw, the ground
+  or water standing over it, steps and steep triangles in it, the walls the car hits inside it by source (the
+  segments `walls.parts` gives the car), bridge and tunnel walls across it at the car's height, and bridge
+  dressing, pavements and park motifs drawn in the 3.5 m over the asphalt. Every count must read 0; a province
+  takes about 6 minutes on 6 processes, and it needs `data/`, so it is not a rift rule. What keeps them clean: a
+  bridge's two carriageways are one deck (`streets._split_twins`, `_share_twins`), a cut starts where its street
+  first dips under the ground (`structures._below`), a street laid on the ground is raised clear of every crease
+  of the drawn ground (`streets._clear_ground`), no trunk reaches the streets round its cell
+  (`rules.trees.off_trunks`), and no verge is laid across a street that climbs off the ground (`walks._free_edges`).
 - Collectible places (spec `docs/superpowers/specs/2026-11-19-collectible-places-design.html`): `contravia/places.json`
   is written outside the repo from EcuRed and OSM and reviewed by hand; replace it whole, never edit it here.
   `contravia/collect.py` loads it into world metres by cell, finds the places near a point and judges how a camera

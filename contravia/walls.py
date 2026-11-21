@@ -39,6 +39,24 @@ def around(walls, x: float, z: float, reach: float) -> np.ndarray:
     return walls[np.hypot(rx - ab[:, 0] * t, rz - ab[:, 1] * t) <= reach]
 
 
+def parts(city, landmarks, i: int, j: int) -> dict[str, np.ndarray]:
+    """What the car hits in cell (i, j), by where it comes from, each as (W, 2, 2) wall segments: the boxes of
+    its buildings and filler houses, the landmarks' walls, the parks' motifs, the trees' trunks, a cemetery's
+    wall and pantheons, and its raised tombs, which are the low walls. Walls joins them, and contravia
+    streets-check (contravia/streets_check.py) reads the same ones, so it counts exactly what stops the car."""
+    c = regions.current().parks(landmarks.keep(i, j, city.cell(i, j)))
+    near = roads_around(city, i, j)
+    streets = streets_around(city, i, j)
+    rings = [_edges(ring) for ring, *_ in boxes(c, near, streets)]
+    grown = trees.cell_trees(i, j, c, city.terrain, near, trees.arrays_of(city, i, j),
+                             yard_trees(city, i, j, landmarks), shore_of(city), streets)
+    tall, low = cemetery.walls(cemetery.yard(city, i, j, landmarks))
+    out = {"building": np.concatenate(rings) if rings else [], "landmark": landmarks.walls(i, j),
+           "park": [] if c.park_walls is None else c.park_walls[:, :4], "tree": trees.trunks(grown),
+           "cemetery": tall, "tomb": low}
+    return {k: np.asarray(w, np.float32).reshape(-1, 2, 2) for k, w in out.items()}
+
+
 class Walls:
     """Wall segments by cell, cached, and road points for respawns and teleports."""
 
@@ -56,15 +74,9 @@ class Walls:
         self._open = np.flatnonzero(~self.landmarks.blocked)  # the segments the car may be put on
 
     def _build(self, i: int, j: int) -> tuple[np.ndarray, np.ndarray]:
-        c = regions.current().parks(self.landmarks.keep(i, j, self.city.cell(i, j)))
-        near = roads_around(self.city, i, j)
-        rings = [ring for ring, *_ in boxes(c, near, streets_around(self.city, i, j))]
-        parks = [] if c.park_walls is None else [np.asarray(c.park_walls[:, :4], np.float32).reshape(-1, 2, 2)]
-        grown = trees.cell_trees(i, j, c, self.city.terrain, near, trees.arrays_of(self.city, i, j),
-                                 yard_trees(self.city, i, j, self.landmarks), shore_of(self.city))
-        tall, low = cemetery.walls(cemetery.yard(self.city, i, j, self.landmarks))
-        walls = [_edges(r) for r in rings] + [self.landmarks.walls(i, j)] + parks + [trees.trunks(grown), tall]
-        return np.concatenate([np.asarray(w, np.float32).reshape(-1, 2, 2) for w in walls]), low
+        p = parts(self.city, self.landmarks, i, j)
+        low = p.pop("tomb")
+        return np.concatenate(list(p.values())), low
 
     def _cell(self, i: int, j: int) -> tuple[np.ndarray, np.ndarray]:
         if (i, j) not in self._cache:

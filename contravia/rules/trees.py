@@ -22,6 +22,7 @@ WILD_CLEAR = 3.0  # metres between a wild tree and a road's edge
 
 
 CLEAR = 1.0  # metres between a tree's trunk and the drawn street
+TRUNK_CLEAR = 0.3  # metres between the square of a trunk the car hits and the drawn street
 _clock = None
 
 
@@ -245,12 +246,38 @@ def grow(xz, terrain, zone: int, arrays=()) -> Trees:
     return Trees(xz, y, species, scale, yaw, shift, unit(seeds, 5))
 
 
-def cell_trees(i: int, j: int, c, terrain, near, arrays=(), yards=None, shore=None) -> Trees:
+def off_trunks(t: Trees, streets) -> Trees:
+    """The trees whose trunk, the square the car hits (trunks) and TRUNK_CLEAR round it, stands off the (T, 3, 2)
+    street triangles: a spot CLEAR off the street can still hold a ceiba whose trunk is wider than that, and the
+    streets of the next cell reach a tree near the cell's edge."""
+    if streets is None or not len(streets) or not len(t):
+        return t
+    import shapely
+
+    from contravia.rules.species import SPECIES, TRUNK_R
+
+    r = np.array([TRUNK_R[s] for s in SPECIES])[t.species] * t.scale + TRUNK_CLEAR
+    squares = shapely.box(t.xz[:, 0] - r, t.xz[:, 1] - r, t.xz[:, 0] + r, t.xz[:, 1] + r)
+    hit, _ = shapely.STRtree(shapely.polygons(np.asarray(streets, float))).query(squares, predicate="intersects")
+    keep = np.ones(len(t), bool)
+    keep[hit] = False
+    return t if keep.all() else Trees(t.xz[keep], t.y[keep], t.species[keep], t.scale[keep], t.yaw[keep],
+                                      t.shift[keep], t.tone[keep])
+
+
+def cell_trees(i: int, j: int, c, terrain, near, arrays=(), yards=None, shore=None, streets=None) -> Trees:
     """Every tree cell (i, j) draws and its car hits: its parks' trees, the trees its green grows, the (N, 2) yard
     trees of its built blocks (contravia.grass.yard_trees, already off the streets and houses) and, on land OSM says
     nothing about, the wild ones; each clear of the streets, with its species and look from grow(). Near the sea,
     with shore (a contravia.shore.Shore), the trees stand on the shore's ground, none stands in the water, and the
-    mangroves of its shore (rules/shore.py) join them."""
+    mangroves of its shore (rules/shore.py) join them. streets are the (T, 3, 2) street triangles round the cell
+    (clearance.streets_around), which no trunk may reach (off_trunks); without them, the cell's own."""
+    if streets is None and c.street_tris is not None:
+        streets = np.asarray(c.street_tris, float)[:, :, [0, 2]]
+    return off_trunks(_cell_trees(i, j, c, terrain, near, arrays, yards, shore), streets)
+
+
+def _cell_trees(i: int, j: int, c, terrain, near, arrays, yards, shore) -> Trees:
     parts = [c.trees[off_streets(c.trees, c.street_tris)]]
     if yards is not None:
         parts.append(yards)

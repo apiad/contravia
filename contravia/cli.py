@@ -194,6 +194,14 @@ def main(argv: list[str] | None = None) -> None:
                                            "all must be 0")
     p.add_argument("--data", default="data/cuba/la-habana.npz")
 
+    p = sub.add_parser("streets-check", help="count what stands on a street, where the ground covers it and "
+                                             "where its surface breaks; all must be 0")
+    p.add_argument("--data", default="data/cuba")
+    p.add_argument("--province", help="check only this province, by name")
+    p.add_argument("--around", help="X,Z,RADIUS in metres: check only the cells that near that point")
+    p.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2), help="processes at once")
+    p.add_argument("--out", help="write every finding to this JSON file")
+
     p = sub.add_parser("timelapse", help="render a day of sky over the Capitolio as a video")
     p.add_argument("out")
     p.add_argument("--data", default="data/cuba")
@@ -315,6 +323,13 @@ def main(argv: list[str] | None = None) -> None:
         from contravia.walls_check import main as walls_check
 
         sys.exit(walls_check(args.data))
+    elif args.command == "streets-check":
+        import sys
+
+        from contravia.streets_check import main as streets_check
+
+        around = tuple(float(v) for v in args.around.split(",")) if args.around else None
+        sys.exit(streets_check(args.data, args.province, around, args.jobs, args.out))
     elif args.command == "climate":
 
         from contravia.climate import main as climate

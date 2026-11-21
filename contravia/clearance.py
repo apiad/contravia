@@ -113,13 +113,13 @@ def roads_around(city, i: int, j: int) -> np.ndarray:
     return np.concatenate([city.cell(i + di, j + dj).roads for di in (-1, 0, 1) for dj in (-1, 0, 1)]).reshape(-1, 5)
 
 
-def cell_streets(city, i: int, j: int) -> np.ndarray:
-    """(T, 3, 2) x, z of the street surface cell (i, j) draws, covered tunnels left out: a street deeper than
-    UNDER under the ground is a tunnel, unless it runs in an open cut, where it is still seen."""
+def open_streets(city, i: int, j: int) -> np.ndarray:
+    """(T, 3, 3) x, y, z of the street surface cell (i, j) draws in the open, covered tunnels left out: a street
+    deeper than UNDER under the ground is a tunnel, unless it runs in an open cut, where it is still seen."""
     c = city.cell(i, j)
     t = c.street_tris
     if t is None or not len(t):
-        return np.zeros((0, 3, 2))
+        return np.zeros((0, 3, 3))
     t = np.asarray(t, float)
     mid = t.mean(axis=1)
     keep = mid[:, 1] > city.terrain.height(mid[:, 0], mid[:, 2]) - UNDER
@@ -129,7 +129,12 @@ def cell_streets(city, i: int, j: int) -> np.ndarray:
         k, _ = shapely.STRtree(shapely.polygons(np.asarray(cuts, float))).query(
             shapely.points(mid[deep][:, [0, 2]]), predicate="intersects")
         keep[deep[k]] = True
-    return t[keep][:, :, [0, 2]]
+    return t[keep]
+
+
+def cell_streets(city, i: int, j: int) -> np.ndarray:
+    """(T, 3, 2) x, z of the street surface cell (i, j) draws, covered tunnels left out (open_streets)."""
+    return open_streets(city, i, j)[:, :, [0, 2]]
 
 
 def streets_around(city, i: int, j: int) -> np.ndarray:
