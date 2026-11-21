@@ -309,7 +309,7 @@ def test_the_map_names_the_place_under_its_crosshair_offers_its_card_and_joins_a
         city_npz, tmp_path, monkeypatch):
     import manifoldx as mx
 
-    from contravia import mapview, placemarks, ui
+    from contravia import mapview, placemarks, towns, ui
     from contravia.clock import Clock, parse_at
     from contravia.game import Game
     from contravia.menu import Menu
@@ -346,13 +346,11 @@ def test_the_map_names_the_place_under_its_crosshair_offers_its_card_and_joins_a
     menu.press("Enter")
     assert menu.current == "map"
 
-    game.map = mapview.MapCam(capitolio.x, capitolio.z, placemarks.CITY_H * 2, 0.0)
-    group = next(m for m in placemarks.on_map(game.places, game.album.has, game.map, screen.width, ui.DESIGN_H)
-                 if capitolio.id in m.ids)
-    game.map = mapview.MapCam(*group.at, placemarks.CITY_H * 2, 0.0)
+    habana = next(t for t in towns.load() if t.name == "La Habana")  # above the city stage, its medallion
+    game.map = mapview.MapCam(habana.x, habana.z, placemarks.CITY_H * 2, 0.0)
     screen.tick(0.0)
-    assert screen.under is not None and len(screen.under.ids) > 1 and " lugares" in screen.note.text
-    menu.press("Enter")  # comes down over the group: the target goes there and the camera glides after it
+    assert screen.under is None and screen.city is not None and screen.note.text.startswith("La Habana")
+    menu.press("Enter")  # comes down over the city: the target goes there and the camera glides after it
     assert screen.target.h < placemarks.CITY_H and menu.current == "map" and screen.choice is None
     for _ in range(90):
         screen.tick(1 / 60)

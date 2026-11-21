@@ -16,11 +16,12 @@ main menu. A later move within the game (the pause, the map's flights) never sho
 While driving, Escape pauses, F aims a camera at a place and L turns the driving help to its next level.
 """
 
+import functools
 import math
 import textwrap
 from typing import ClassVar
 
-from contravia import album, collect, garage, mapview, nearby, placemarks, ui, whereis
+from contravia import album, collect, emblemlayer, garage, mapview, nearby, placemarks, towns, ui, whereis
 from contravia.driving_help import next_level
 from contravia.hud import DAY_NAMES
 from contravia.rules import designs, fleet
@@ -595,6 +596,9 @@ class MapScreen(Screen):
             self.back_to = "pause" if self.menu.current_before == "pause" else "main"
         self.marks, self.under, self.choice, self.picked, self.marks_for = [], None, None, 0, None
         self.target, self.drawn, self.glide = None, None, (0.0, 0.0)  # the camera the input moves; _move
+        g = self.menu.game
+        self.emblems = emblemlayer.EmblemLayer(_towns(), g.places, self._attach, self._detach)
+        self.city = None  # the medallion under the crosshair
         for _ in range(MAP_MARKS):
             image = Image(placemarks.icon("lugar", False, MARK_PX), style_overrides={"width": MARK_PX})
             count = _text("", ui.BOLD, 13, ui.PAPER)
@@ -607,12 +611,28 @@ class MapScreen(Screen):
         self.choice_panel = Panel(self.options, anchor="center", offset=(0, 90),
                                   style_overrides={"gap": 4, "padding": "10 18", "bg": ui.alpha(ui.INK, 0.92)})
         self._build_here()
-        self.panels = [*(m for m, _, _ in self.marks), cross, self.here_panel,
-                       Panel([self.note], anchor="top-left", offset=(44, 40), style_overrides=CLEAR),
-                       _hints(width, [("RUEDA", "Zoom"), ("ARRASTRAR", "Mover"), ("Q E", "Girar"),
-                                      ("ENTER", "Elegir"), ("ESC", "Volver")])]
+        self.top = [cross, self.here_panel, Panel([self.note], anchor="top-left", offset=(44, 40), style_overrides=CLEAR),
+                    _hints(width, [("RUEDA", "Zoom"), ("ARRASTRAR", "Mover"), ("Q E", "Girar"),
+                                   ("ENTER", "Elegir"), ("ESC", "Volver")])]
+        self.panels = [*(m for m, _, _ in self.marks), *self.top]
         self.width = width
         self.menu.game.open_map()
+
+    def _attach(self, panel) -> None:
+        """Put an emblem's panel in the GUI and in this screen's panels, so leaving the screen takes it out."""
+        self.menu.engine.gui.append(panel)
+        self.panels.append(panel)
+
+    def _detach(self, panel) -> None:
+        self.menu.engine.gui.remove(panel)
+        self.panels.remove(panel)
+
+    def _on_top(self) -> None:
+        """Put the crosshair, the panel, the note and the hints back over the emblems."""
+        gui = self.menu.engine.gui
+        for p in self.top:
+            gui.remove(p)
+            gui.append(p)
 
     def _build_here(self) -> None:
         """The panel of what lies under and near the crosshair: a title, a line, a header and a row per place."""
@@ -692,6 +712,10 @@ class MapScreen(Screen):
                 else:
                     self.menu.show(None)
             return
+        if k == "enter" and self.under is None and self.city is not None:  # a city: come down over it
+            x, z = self.city.at
+            self.target = mapview.MapCam(x, z, placemarks.CITY_H / 2, g.map.yaw)
+            return
         if k == "enter" and self.under is not None:
             if len(self.under.ids) > 1:  # a group: come down over it, below the city stage
                 x, z = self.under.at
@@ -718,6 +742,8 @@ class MapScreen(Screen):
             return
         if self.choice is None:
             self._move(dt)
+        if self.emblems.update(g.map, self.width, ui.DESIGN_H, dt):
+            self._on_top()
         self._place_marks()
         self._here()
 
@@ -727,7 +753,9 @@ class MapScreen(Screen):
         if getattr(self, "marks_for", None) == (g.map, self.width):
             return  # the camera did not move: the marks stand
         self.marks_for = (g.map, self.width)
-        marks = placemarks.on_map(g.places, g.album.has, g.map, self.width, ui.DESIGN_H)
+        # From the city stage up the emblems stand for the places (their chips); below, each place has its mark.
+        marks = [] if g.map.h >= placemarks.CITY_H else placemarks.on_map(g.places, g.album.has, g.map, self.width,
+                                                                        ui.DESIGN_H)
         for k, (panel, image, count) in enumerate(self.marks):
             if k >= len(marks):
                 panel.offset = OFF
@@ -740,9 +768,13 @@ class MapScreen(Screen):
             if count.text != number:
                 count.text = number
             panel.offset = (round(m.x - MARK_PX / 2), round(m.y - MARK_PX / 2))
-        was, self.under = self.under, placemarks.under_cross(marks, self.width, ui.DESIGN_H)
+        was = self.under or self.city
+        self.under = placemarks.under_cross(marks, self.width, ui.DESIGN_H)
+        self.city = None if self.under else self.emblems.under(self.width, ui.DESIGN_H)
         if self.under is not None:
             self.note.text = self.under.label
+        elif self.city is not None:
+            self.note.text = self.emblems.label(self.city)
         elif was is not None:
             self.note.text = ""
 
@@ -788,6 +820,12 @@ class MapScreen(Screen):
             t = mapview.MapCam(t.x, t.z, t.h, t.yaw + turn * self.TURN * dt)
         self.target = t
         g.map = self.drawn = mapview.follow(cam, t, dt)
+
+
+@functools.cache
+def _towns():
+    """The map's cities and towns (contravia/towns.py), read once."""
+    return towns.load()
 
 
 TILE_W, TILE_H, TILE_GAP = 205, 92, 12  # a province's tile in the album

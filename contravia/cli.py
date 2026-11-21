@@ -72,6 +72,10 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("pbf")
     p.add_argument("--out", default="data/cuba", help="the built island or data/cuba-src; regions.src is written there")
 
+    p = sub.add_parser("towns", help="write OSM's named cities and towns (place=city|town, with population) into "
+                       "contravia/towns.json, for the map's emblems")
+    p.add_argument("pbf")
+
     p = sub.add_parser("cover", help="write what covers the land (ESA WorldCover 2021) over the coast into a built island or the sources")
     p.add_argument("--out", default="data/cuba", help="the folder holding coast.src; cover.src is written beside it")
     p.add_argument("--cache", default="~/.cache/worldcover", help="where the tiles are downloaded; each is deleted once read")
@@ -205,6 +209,11 @@ def main(argv: list[str] | None = None) -> None:
         shapes, report = regions.read(args.pbf, regions.named())
         report["bytes"] = regions.save(shapes, Path(args.out) / regions.NAME)
         print(json.dumps(report))
+    elif args.command == "towns":
+        from contravia import towns
+
+        rows = towns.read(args.pbf)
+        print(f"{len(rows)} towns, {towns.save(rows)} bytes in {towns.PATH}")
     elif args.command == "cover":
         import json
         from pathlib import Path
