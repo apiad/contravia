@@ -515,6 +515,10 @@ class QualityScreen(RowsScreen):
     hints: ClassVar[list] = [("↑↓", "Ajuste"), ("←→", "Cambiar"), ("ESC", "Guardar y volver")]
     per_column = 7
 
+    def build(self, width):
+        self.__dict__.pop("_rows", None)  # the quality may have changed since the screen last showed
+        super().build(width)
+
     def rows(self):
         if not hasattr(self, "_rows"):
             from contravia.quality import KNOBS, NAMES, PRESETS, ladder

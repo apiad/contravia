@@ -99,6 +99,17 @@ def test_turning_a_knob_makes_the_quality_personalizado_at_once(city_npz, tmp_pa
         assert engine.state.quality["preset"] == "personalizado" and engine.state.quality["rain_pool"] == 3000
         menu.press("Escape")
         assert menu.current == "options" and Options.load().quality()[1].rain_pool == 3000
+        options_screen = menu.screens["options"]
+        options_screen.select([r.key for r in options_screen.rows()].index("quality"))
+        while options["quality"].value != "bajo":
+            menu.press("ArrowRight")  # turn on to Bajo
+        menu.press("ArrowDown")
+        menu.press("Enter")  # Ajustar… again: its rows are Bajo's now
+        screen = menu.screens["quality"]
+        assert screen.rows()[[r.key for r in screen.rows()].index("far")].value == 7000.0
+        screen.select([r.key for r in screen.rows()].index("rain_pool"))
+        menu.press("ArrowRight")  # Bajo's 1000 -> 2000
+        assert options.quality_base == "bajo" and options.quality_knobs == {"rain_pool": 2000}
     finally:
         game._shutdown()
 

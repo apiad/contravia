@@ -198,11 +198,13 @@ class Game:
         # reload under contravia dev keeps the one the old game had.
         kept_q = engine.state.get("quality") if hasattr(engine.state, "get") else None
         if kept_q and kept_q.get("preset"):
-            from dataclasses import fields
+            from dataclasses import fields, replace
 
-            from contravia.quality import Quality
-            q = Quality(**{f.name: (tuple(kept_q[f.name]) if isinstance(kept_q[f.name], list) else kept_q[f.name])
-                           for f in fields(Quality)})
+            from contravia.quality import PRESETS
+            # knobs added since the old game started take its preset's value (Alto's for Personalizado)
+            knobs = {f.name: (tuple(kept_q[f.name]) if isinstance(kept_q[f.name], list) else kept_q[f.name])
+                     for f in fields(PRESETS["alto"]) if f.name in kept_q}
+            q = replace(PRESETS.get(kept_q["preset"], PRESETS["alto"]), **knobs)
             self.set_quality(kept_q["preset"], q, pinned=kept_q.get("pinned", False))
         else:
             from contravia.quality import PRESETS

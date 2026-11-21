@@ -256,3 +256,19 @@ def test_quality_survives_a_reload(city):
         assert engine2.state.quality["preset"] == "ultra" and game2.tau_range == (8.0, 32.0)
     finally:
         game2._shutdown()
+
+
+def test_a_reload_keeps_a_quality_saved_before_a_knob_was_added(city):
+    import manifoldx as mx
+
+    from contravia.game import Game
+    from contravia.world import World
+
+    engine = mx.Engine("q-old", width=64, height=48)
+    old = {"preset": "bajo", "tau": [24.0, 72.0], "far": 7000.0, "error": None, "pinned": True}  # most knobs missing
+    engine.state.quality = old
+    game = Game(engine, World(city))
+    try:
+        assert engine.state.quality["preset"] == "bajo" and game.far == 7000.0 and game.tau_range == (24.0, 72.0)
+    finally:
+        game._shutdown()

@@ -51,3 +51,9 @@ def test_play_takes_a_quality_for_the_run(monkeypatch):
     assert seen["quality"] == "cine"
     with pytest.raises(SystemExit):
         contravia.cli.main(["play", "--data", "data/cuba", "--quality", "maximo"])
+
+
+def test_changed_keeps_the_ladders_own_values():
+    q = Quality().changed(grass=[30.0, 70.0, 90.0, 24.0], minimap=[384.0, 2.0], detail_radius=2.0)
+    assert q.grass == (30.0, 70.0, 90, 24) and isinstance(q.grass[2], int)
+    assert q.minimap == (384, 2) and isinstance(q.minimap[0], int) and type(q.detail_radius) is int

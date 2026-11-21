@@ -42,9 +42,10 @@ class Quality:
             if k not in names or k not in KNOBS:
                 raise ValueError(f"unknown knob {k!r}")
             v = tuple(v) if isinstance(v, list) else v
-            if v not in ladder(k):
-                raise ValueError(f"{k} cannot be {v!r}: it takes {ladder(k)}")
-            knobs[k] = v
+            values = ladder(k)
+            if v not in values:
+                raise ValueError(f"{k} cannot be {v!r}: it takes {values}")
+            knobs[k] = values[values.index(v)]  # the ladder's own value: 90 for 90.0, an int where it is one
         return replace(self, **knobs)
 
     def diff(self, base: Quality) -> dict:
