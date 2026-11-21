@@ -57,3 +57,18 @@ def test_changed_keeps_the_ladders_own_values():
     q = Quality().changed(grass=[30.0, 70.0, 90.0, 24.0], minimap=[384.0, 2.0], detail_radius=2.0)
     assert q.grass == (30.0, 70.0, 90, 24) and isinstance(q.grass[2], int)
     assert q.minimap == (384, 2) and isinstance(q.minimap[0], int) and type(q.detail_radius) is int
+
+
+def test_apply_builds_the_detail_ring_one_past_the_drawn_one():
+    from types import SimpleNamespace as NS
+
+    from contravia.quality import PRESETS, apply
+
+    part = NS(configure=lambda q: None)
+    game = NS(streamer=NS(tau=12.0, material=NS(detail=True)), engine=NS(camera=NS(far=0.0), state=NS()),
+              detail=NS(ready_radius=2), layer=None, forest=part, graveyard=part, grass=part, rain=part,
+              atmosphere=part, hud=NS(configure_quality=lambda q: None))
+    apply(game, PRESETS["ultra"], "ultra")
+    assert game.detail_radius == 2 and game.detail.ready_radius == 3
+    apply(game, PRESETS["bajo"], "bajo")
+    assert game.detail.ready_radius == 2

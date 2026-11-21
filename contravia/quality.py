@@ -127,6 +127,7 @@ def apply(game, q: Quality, name: str, pinned: bool = False) -> None:
     game.streamer.tau = min(max(game.streamer.tau, q.tau[0]), q.tau[1])
     game.far, game.detail_radius, game.target_ms, game.tune = q.far, q.detail_radius, q.target_ms, q.tune
     game.engine.camera.far = q.far
+    game.detail.ready_radius = max(2, q.detail_radius + 1)  # one ring past the drawn one is built ahead
     if game.layer is not None:
         game.layer.radius = q.traffic_radius
     if getattr(game.streamer.material, "detail", None) != q.detail_noise:
