@@ -251,7 +251,7 @@ pre .c{color:var(--faint)} pre .k{color:var(--accent)} pre .s{color:var(--ok)}
 <div class="chrome">
   <span>contravia</span>
   <span class="tab">spec · boats and planes, smallest playable</span>
-  <span class="st"><span class="pill acc">proposed</span><span class="pill">2026-11-21</span><span class="pill">#206 · #207</span></span>
+  <span class="st"><span class="pill acc">approved · step 1 measured</span><span class="pill">2026-11-21</span><span class="pill">#206 · #207</span></span>
 </div>
 
 <div class="wrap">
@@ -264,13 +264,14 @@ pre .c{color:var(--faint)} pre .k{color:var(--accent)} pre .s{color:var(--ok)}
   <a href="#plane">The plane</a>
   <a href="#getting-in">Getting in</a>
   <a href="#delivery">Delivery</a>
+  <a class="sub" href="#air-results">Step 1's results</a>
   <a href="#criteria">What counts as validated</a>
   <a href="#nongoals">Non-goals and open questions</a>
 </nav>
 
 <main>
 <h1>Boats and planes: the smallest version that tells us whether the mechanic works</h1>
-<div class="meta"><span>docs/superpowers/specs/2026-11-21-boats-planes-mvp-design.html</span><span>·</span><span>proposed, nothing built</span></div>
+<div class="meta"><span>docs/superpowers/specs/2026-11-21-boats-planes-mvp-design.html</span><span>·</span><span>approved; step 1 measured</span></div>
 <p class="lede">One launch that floats on the sea, the bay and the rivers, and one small old plane that takes off from José Martí, flies over the island at its real size and lands again. Both are placeholder boxes, entered by a developer command, with physics of about 150 and 250 lines of numpy. The point is to learn two things before building the rest of issues #206 and #207: whether each one is fun to steer, and whether the world holds up when seen from the water and from 1 000 m.</p>
 
 <h2 id="validates"><span class="n">01</span>What this validates</h2>
@@ -287,23 +288,23 @@ pre .c{color:var(--faint)} pre .k{color:var(--accent)} pre .s{color:var(--ok)}
 <div class="stats">
   <div class="stat"><div class="v">0</div><div class="k">lines of boat or aircraft physics in contravia or manifoldx today</div></div>
   <div class="stat"><div class="v">1</div><div class="k">water API ready to float on: Shore.level and Shore.floor</div></div>
-  <div class="stat"><div class="v">0</div><div class="k">recorded frame times above 120 m</div></div>
+  <div class="stat"><div class="v">1.89×</div><div class="k">p95 frame time at 1 000 m over the ground route, measured in step 1</div></div>
   <div class="stat"><div class="v">3</div><div class="k">steps: measure the air, the boat, the plane</div></div>
 </div>
 
 <h2 id="decisions"><span class="n">02</span>Decisions</h2>
-<p><span class="who">maintainer</span> marks a decision the maintainer made. <span class="who q">proposed</span> marks one this spec proposes and nobody has ruled on yet.</p>
+<p><span class="who">maintainer</span> marks a decision the maintainer made or approved with the spec, on 2026-11-21.</p>
 <table class="tbl">
 <thead><tr><th>Question</th><th>Decision</th><th>Why</th></tr></thead>
 <tbody>
 <tr><td>Scope</td><td>The minimum that lets us judge the mechanic: one boat, one plane, one runway, entered by a dev command</td><td class="why"><span class="who">maintainer</span> Asked for the minimal implementation that validates the mechanic.</td></tr>
-<tr><td>Where the physics lives</td><td><code>contravia/boat.py</code> and <code>contravia/plane.py</code>, plain numpy, reusing <code>manifoldx.vehicles.body</code>'s quaternion helpers. Moved into <code>manifoldx.vehicles</code> once the feel is approved</td><td class="why"><span class="who q">proposed</span> Tuning goes faster under <code>contravia dev</code>'s 3 s hot reload than across two repos and a release. The car's physics lives in manifoldx, so the approved models belong there in the end; numpy only, as manifoldx requires.</td></tr>
-<tr><td>Boat model</td><td>Planar rigid body (x, z, yaw) with thrust, quadratic drag 8 times stronger sideways than forward, and a rudder whose turn scales with speed. Heave, pitch and roll are drawn from the water level under four points plus a small swell, not simulated</td><td class="why"><span class="who q">proposed</span> These four terms give drift, coasting and no turn at rest, which is what makes a boat feel unlike a car. Full buoyancy adds code and nothing a player feels on a calm bay.</td></tr>
-<tr><td>Plane model</td><td>6 degrees of freedom: thrust, lift from the angle of attack with a stall past 15°, drag with an induced term, gravity; the stick commands pitch and roll rates scaled by airspeed, and the nose weathervanes into the airflow. Three spring wheels on the ground</td><td class="why"><span class="who q">proposed</span> Banking turns the plane through its lift, and a stall happens on its own when speed falls. Commanded rates instead of moments keep the code short and the plane flyable from a keyboard.</td></tr>
-<tr><td>How it is drawn</td><td>Boxes from manifoldx primitives: a hull with a cabin, a fuselage with a high wing and a tail</td><td class="why"><span class="who q">proposed</span> The mechanic is what we are judging. A modelled launch and a plane go through the asset pipeline after this.</td></tr>
-<tr><td>Interface</td><td>Boat and Plane offer what <code>game.drive</code> already calls on the car: <code>place</code>, <code>step</code> returning a <code>CarState</code>, <code>pose</code>, <code>seen</code>, <code>snapshot</code>, <code>restore</code></td><td class="why"><span class="who q">proposed</span> The HUD, the stats line, the map and hot reload keep working with a few branches in <code>drive</code>, and no new mode.</td></tr>
-<tr><td>Plane keys</td><td>Arrows pitch and roll; W and S move a throttle lever that stays where it is left; A and D the rudder; Space the brakes</td><td class="why"><span class="who q">proposed</span> While driving, WASD repeats the arrows (<code>game.controls</code>), so in the air they are free to split. A throttle that stays put is how a plane is flown.</td></tr>
-<tr><td>Crashes</td><td>A wheel that hits at more than 4 m/s down, a wingtip or the nose under the ground, or the plane in water: the curtain falls and the plane is back on the runway. A grounded boat just stops</td><td class="why"><span class="who q">proposed</span> The same pattern as a car that sinks (<code>contravia/sea.py</code>), and no damage model (#39 is its own issue).</td></tr>
+<tr><td>Where the physics lives</td><td><code>contravia/boat.py</code> and <code>contravia/plane.py</code>, plain numpy, reusing <code>manifoldx.vehicles.body</code>'s quaternion helpers. Moved into <code>manifoldx.vehicles</code> once the feel is approved</td><td class="why"><span class="who">maintainer</span> Tuning goes faster under <code>contravia dev</code>'s 3 s hot reload than across two repos and a release. The car's physics lives in manifoldx, so the approved models belong there in the end; numpy only, as manifoldx requires.</td></tr>
+<tr><td>Boat model</td><td>Planar rigid body (x, z, yaw) with thrust, quadratic drag 8 times stronger sideways than forward, and a rudder whose turn scales with speed. Heave, pitch and roll are drawn from the water level under four points plus a small swell, not simulated</td><td class="why"><span class="who">maintainer</span> These four terms give drift, coasting and no turn at rest, which is what makes a boat feel unlike a car. Full buoyancy adds code and nothing a player feels on a calm bay.</td></tr>
+<tr><td>Plane model</td><td>6 degrees of freedom: thrust, lift from the angle of attack with a stall past 15°, drag with an induced term, gravity; the stick commands pitch and roll rates scaled by airspeed, and the nose weathervanes into the airflow. Three spring wheels on the ground</td><td class="why"><span class="who">maintainer</span> Banking turns the plane through its lift, and a stall happens on its own when speed falls. Commanded rates instead of moments keep the code short and the plane flyable from a keyboard.</td></tr>
+<tr><td>How it is drawn</td><td>Boxes from manifoldx primitives: a hull with a cabin, a fuselage with a high wing and a tail</td><td class="why"><span class="who">maintainer</span> The mechanic is what we are judging. A modelled launch and a plane go through the asset pipeline after this.</td></tr>
+<tr><td>Interface</td><td>Boat and Plane offer what <code>game.drive</code> already calls on the car: <code>place</code>, <code>step</code> returning a <code>CarState</code>, <code>pose</code>, <code>seen</code>, <code>snapshot</code>, <code>restore</code></td><td class="why"><span class="who">maintainer</span> The HUD, the stats line, the map and hot reload keep working with a few branches in <code>drive</code>, and no new mode.</td></tr>
+<tr><td>Plane keys</td><td>Arrows pitch and roll; W and S move a throttle lever that stays where it is left; A and D the rudder; Space the brakes</td><td class="why"><span class="who">maintainer</span> While driving, WASD repeats the arrows (<code>game.controls</code>), so in the air they are free to split. A throttle that stays put is how a plane is flown.</td></tr>
+<tr><td>Crashes</td><td>A wheel that hits at more than 4 m/s down, a wingtip or the nose under the ground, or the plane in water: the curtain falls and the plane is back on the runway. A grounded boat just stops</td><td class="why"><span class="who">maintainer</span> The same pattern as a car that sinks (<code>contravia/sea.py</code>), and no damage model (#39 is its own issue).</td></tr>
 </tbody>
 </table>
 
@@ -375,10 +376,25 @@ manifoldx emit vehicle '{"kind": "car"}'                <span class="c"># back i
 
 <h2 id="delivery"><span class="n">07</span>Delivery</h2>
 <div class="steps">
-  <div class="step"><div class="n"></div><div><h4>Measure the air first (no new code)</h4><p>Run <code>contravia bench</code>'s 300 m flight scene on the GPU machine and the same scene at 1 000 m, and record p50, p95, worst cell wait and holes in view. If the island does not hold up at 1 000 m, the plane's step waits for that fix and the boat goes first regardless.</p></div></div>
+  <div class="step"><div class="n"></div><div><h4>Measure the air first (done, 2026-11-21)</h4><p><code>contravia bench --air 300,1000</code> drives the Havana route, then flies the flight scene's line at each height over the ground at 55 m/s for 60 s, with the vehicle moved under the camera as a flown craft would be. The old scene left the car parked at its start. Results below.</p></div></div>
   <div class="step"><div class="n"></div><div><h4>The boat (#206), one PR</h4><p><code>boat.py</code>, the <code>--vehicle</code> option and the <code>vehicle</code> event, the box mesh, the branches in <code>drive</code>, tests. About 350 lines with tests. The maintainer steers it from the Malecón into the bay and to Regla, and on the Almendares.</p></div></div>
   <div class="step"><div class="n"></div><div><h4>The plane (#207), one PR</h4><p><code>plane.py</code>, <code>Pilot</code> in <code>input.py</code>, <code>chase_air</code>, <code>airfields.json</code>, the crash reset, tests. About 500 lines with tests. The maintainer takes off, flies a circuit and lands.</p></div></div>
 </div>
+<h3 id="air-results">Step 1's results</h3>
+<p>One run on the GPU machine (RTX 3060, 1920 × 1080), on an island built with four branches not yet merged (relief, causeways, the Boyeros median). Good for comparing heights with each other and with the ground on the same island, not as main's absolute numbers.</p>
+<table class="tbl">
+<thead><tr><th>run</th><th>p50 ms</th><th>p95 ms</th><th>p95 / ground</th><th>nodes waiting</th><th>triangles</th></tr></thead>
+<tbody>
+<tr><td>Havana route, on the ground</td><td>77.5</td><td>105.5</td><td>1.0</td><td>worst cell wait 4.6 s</td><td>–</td></tr>
+<tr><td>flight at 300 m, 55 m/s</td><td>122.1</td><td>167.5</td><td>1.59</td><td>1 125 on average, every frame</td><td>4.97 M</td></tr>
+<tr><td>flight at 1 000 m, 55 m/s</td><td>152.3</td><td>199.5</td><td>1.89</td><td>847 on average, every frame</td><td>5.82 M</td></tr>
+</tbody>
+</table>
+<ul>
+  <li>The world holds up to the eye: in the eight shots (every 15 s at each height) the ground is continuous to the haze, with no gap. A node waiting to be built shows as its coarser parent, so the count of waiting nodes means less detail, not holes; but it never falls during the flight, so at 55 m/s the streamer does not catch up.</li>
+  <li>The cost does not pass the criterion of section 08 (p95 at most 1.5 times the ground's): 1.59 at 300 m and 1.89 at 1 000 m. It does not block a prototype; the first remedies to try are leaving out the detail ring, the trees and the grass round a craft high over the ground, and a coarser tau with height.</li>
+  <li>Both heights show pale blue hatched outlines round many fields. Not investigated; to be looked at before anyone judges the view from above.</li>
+</ul>
 <p>Each PR merges on green CI with the maintainer's yes, like any other. The maintainer's verdict on the feel decides whether the model moves into manifoldx as is, gets retuned, or is redone.</p>
 
 <h2 id="criteria"><span class="n">08</span>What counts as validated</h2>
