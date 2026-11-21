@@ -134,7 +134,7 @@ def build(ribbons, owner, axes, chains, prof, a):
     """(tris (T, 3, 3), paint (T,), cell keys (T, 2), walls (W, 6), wall keys (W, 2)) of every median, standing on
     its ribbon's centreline profile prof[k] (arclengths, heights) from contravia.streets.heights."""
     from contravia.streets import arclen, cut, densify, length, tangents
-    from contravia.structures import CONCRETE, KERB_TOP, LAMPS, PAVING, POLE
+    from contravia.structures import BARRIER, KERB_TOP, LAMPS, PAVING, POLE
 
     which = kinds(a, chains)
     tris, paint, walls = [], [], []
@@ -165,7 +165,7 @@ def build(ribbons, owner, axes, chains, prof, a):
         elif kind == "paseo":
             add(_strip(p, y, PASEO_W / 2, PASEO_H), PAVING)
         else:
-            add(_strip(p, y, WALL_W / 2, WALL_H), CONCRETE)
+            add(_strip(p, y, WALL_W / 2, WALL_H), BARRIER)
             t = tangents(p)
             n = np.stack([-t[:, 1], t[:, 0]], axis=1) * (WALL_W / 2)
             for side in (n, -n):
