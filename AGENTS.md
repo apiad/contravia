@@ -54,6 +54,12 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   height within 4 m of anything built. The wheels and the trees stand on the same grid. OSM's features are kept in
   `shore.src` beside `coast.src` (3 MB): `contravia shore <pbf> --out data/cuba` writes it into a built island
   without rebuilding it, and `prepare` and `source` write it with the coast.
+- The coast's land is never sea (`terrain.ashore`): the cleaned relief opens the surface model over 150 m and keeps
+  a sample every 30 or 90 m, so a spit, a cay or a low shore comes out at 0 m, under `rules.ground.SEA`, and the game
+  drew its streets and houses in the water (335 km² of Matanzas). `read_terrain(..., land=)` raises every sample on
+  `coast.src`'s land to `terrain.LAND` (0.6 m, twice SEA: the waterline falls half way to the next sample of sea);
+  `prepare` and `source` pass the coast. `contravia relief --data X.npz` does it to a built province in place; then
+  rebuild its streets and walks, and the island's `causeways` and `water`, which are read on the relief.
 - A car driven into the sea sinks and comes back on the shore (`contravia/sea.py`): over the sea the wheels stand
   on a floor that goes down past the shallows (`Shore.floor`), under 0.7 m of water the car sinks for 2 s and at
   2.6 s stands, stopped, on the nearest dry road within 300 m or else the nearest dry land, facing inland.
