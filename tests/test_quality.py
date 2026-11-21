@@ -37,3 +37,17 @@ def test_changed_refuses_unknown_knobs_and_values():
     with pytest.raises(ValueError, match="rain_pool"):
         Quality().changed(rain_pool=1234)
     assert Quality().changed(rain_pool=1000).diff(Quality()) == {"rain_pool": 1000}
+
+
+def test_play_takes_a_quality_for_the_run(monkeypatch):
+    import contravia.cli
+    import contravia.game
+
+    seen = {}
+    monkeypatch.setattr(contravia.game, "main", lambda *a, **k: seen.update(k))
+    contravia.cli.main(["play", "--data", "data/cuba"])
+    assert seen["quality"] is None
+    contravia.cli.main(["play", "--data", "data/cuba", "--quality", "cine"])
+    assert seen["quality"] == "cine"
+    with pytest.raises(SystemExit):
+        contravia.cli.main(["play", "--data", "data/cuba", "--quality", "maximo"])

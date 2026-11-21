@@ -97,3 +97,41 @@ def ladder(knob: str) -> list:
         if v not in out:
             out.append(v)
     return out
+
+
+def parse(changes: dict, current: Quality) -> tuple[str, Quality]:
+    """What `manifoldx emit quality` asks for: {"preset": "ultra"} is that preset, knobs with values are the
+    current quality with them turned ("personalizado"). A bad name or value raises ValueError; nothing is applied."""
+    changes = dict(changes or {})
+    if "preset" in changes:
+        name = changes.pop("preset")
+        if name not in PRESETS:
+            raise ValueError(f"unknown preset {name!r}: one of {', '.join(PRESETS)}")
+        if changes:
+            raise ValueError("give a preset or knobs, not both")
+        return name, PRESETS[name]
+    if not changes:
+        raise ValueError("nothing to change: give preset=... or a knob")
+    return "personalizado", current.changed(**changes)
+
+
+def apply(game, q: Quality, name: str, pinned: bool = False) -> None:
+    """Put a quality into a running game: the streamer's tau range, the far plane, the detail ring, the tuning
+    target, the traffic's reach, the ground's noise for nodes built from now on, and every module's knobs.
+    pinned keeps it over the saved options (a --quality flag or an emitted change) across a reload."""
+    from manifoldx.resources import StandardMaterial
+
+    game.quality, game.quality_name = q, name
+    game.tau_range = tuple(q.tau)
+    game.streamer.tau = min(max(game.streamer.tau, q.tau[0]), q.tau[1])
+    game.far, game.detail_radius, game.target_ms, game.tune = q.far, q.detail_radius, q.target_ms, q.tune
+    game.engine.camera.far = q.far
+    if game.layer is not None:
+        game.layer.radius = q.traffic_radius
+    if getattr(game.streamer.material, "detail", None) != q.detail_noise:
+        game.streamer.material = StandardMaterial("#ffffff", roughness=0.9, vertex_colors=True, faded=True,
+                                                  detail=q.detail_noise)
+    for part in (game.forest, game.graveyard, game.grass, game.rain, game.atmosphere):
+        part.configure(q)
+    game.hud.configure_quality(q)
+    game.engine.state.quality = {"preset": name, **asdict(q), "error": None, "pinned": pinned}

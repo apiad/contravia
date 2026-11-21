@@ -149,6 +149,9 @@ shore's grid (`rules.shore.vegetated`). The
   pedals (`contravia/input.py`). `contravia play --traffic my.json` changes demand settings
   (`contravia/rules/traffic.py`, only the keys the file names). While playing, `manifoldx emit traffic_config population=3000000` changes settings and
   `manifoldx emit close x=... z=... minutes=40` closes a street; `engine.state.traffic` reports the numbers.
+  `contravia/quality.py` holds the graphics presets (Bajo, Medio, Alto, Ultra, Cine; Alto is the game as it was):
+  `--quality ultra` plays one for a run, `manifoldx emit quality preset=bajo` or `rain_pool=6000` changes it while
+  playing, and `engine.state.quality` reports the preset and every knob.
 - The Garaje (`contravia/menu.py`, drawn as `docs/superpowers/specs/2026-11-18-garaje-design.html` proposes) browses
   every vehicle of `contravia/rules/fleet.py` turning in the street, edits a copy's knobs inside their ranges
   (`contravia/rules/designs.py`: the union over the fleet's eras of that one table, clipped to manifoldx's

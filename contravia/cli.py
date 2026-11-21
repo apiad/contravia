@@ -115,6 +115,8 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--screen", choices=["main", "free", "options", "pause", "photo", "map", "garage", "design", "drive",
                                         "aim", "card", "album", "province"],
                    help="open on this menu screen, or drive at once; main for a window, drive for --shot")
+    p.add_argument("--quality", choices=["bajo", "medio", "alto", "ultra", "cine"],
+                   help="play at this graphics preset (contravia/quality.py) instead of the saved one, for this run")
     p.add_argument("--no-pipeline", dest="pipeline", action="store_false",
                    help="run the systems and the render one after the other instead of overlapping them")
     p.add_argument("--mute", action="store_true", help="play no sound")
@@ -257,7 +259,7 @@ def main(argv: list[str] | None = None) -> None:
         play(args.data or _city(), at=args.at, shot=args.shot, frames=args.frames, traffic=args.traffic, when=args.time,
              warp=args.warp, sky=args.sky, pipelined=args.pipeline,
              with_traffic=args.with_traffic, screen=args.screen, height=args.height, yaw=args.yaw,
-             place=args.place, mute=args.mute, audio_out=args.audio_out)
+             place=args.place, mute=args.mute, audio_out=args.audio_out, quality=args.quality)
     elif args.command == "dev":
         from manifoldx.cli import main as manifoldx
 
