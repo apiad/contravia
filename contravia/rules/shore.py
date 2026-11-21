@@ -316,10 +316,19 @@ def field(shore, i: int, j: int) -> Field:
     bank = shore.causeways.top(x, z) if getattr(shore, "causeways", None) is not None else np.full(x.shape, -np.inf)
     sea = np.maximum(terrain.height(x, z), bank) < SEA
     water = getattr(shore, "water", None)
-    s = inland = None
+    s = inland = made = None
     if water is not None and water.near(i, j):
         wet, level = water.raster(x, z)
         wet &= ~sea & ~np.isfinite(bank)
+        if wet.any() and getattr(shore, "built", None) is not None:
+            # a street, a pavement or a house on ground lower than the water is not under it: the water stops there
+            low = wet & (drawn(terrain, x, z) < level)
+            if low.any():
+                import shapely
+
+                made = built_near(shore.built, i, j, terrain)
+                if made is not None:
+                    wet[low] = ~shapely.contains_xy(made, x[low], z[low])
         if wet.any():
             passes = int(REACH / STEP) + 2
             s = spread(np.where(wet, np.maximum(level - WATER_Y, 0.0), 0.0), wet | sea, passes)
@@ -362,7 +371,7 @@ def field(shore, i: int, j: int) -> Field:
     built = np.full(x.shape, np.inf)
     shaped = near & (d >= 0)
     if shaped.any() and shore.built is not None:
-        geom = built_near(shore.built, i, j, terrain)
+        geom = made if made is not None else built_near(shore.built, i, j, terrain)
         if geom is not None:
             built[shaped] = shapely.distance(geom, shapely.points(x[shaped], z[shaped]))
     k = keep(built)

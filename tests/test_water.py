@@ -194,3 +194,37 @@ def test_what_a_cut_leaves_that_is_no_polygon_is_dropped():
     both = shapely.GeometryCollection([line, shapely.box(0, 0, 4, 4), shapely.box(10, 0, 14, 4)])
     assert water._polygons(line).is_empty
     assert water._polygons(both).area == pytest.approx(32.0)
+
+
+def test_the_water_under_a_bridge_stands_below_its_lower_end():
+    def ground(x, z):  # a flat valley floor at 10 m with the bridge's ends on it at x = 480 and 520
+        return 10.0 + 0.0 * x
+
+    c = line([(500, -200), (500, 200)])
+    bridge = shapely.LineString([(480, 0), (520, 0)])
+    caps = water.bridge_caps([bridge], ground)
+    lv = water.levels([(c, "stream")], ground, caps)[0]
+    under = np.abs(c[:, 1]) <= water.BRIDGE_NEAR
+    assert lv[under].max() == pytest.approx(10.0 - water.UNDER_DECK) and (np.diff(lv) <= 1e-9).all()
+    assert lv[0] == pytest.approx(10.0 - water.CUT)  # upstream of the bridge, the usual cut
+    lake = [(shapely.box(450, -60, 550, 60), "lake")]
+    body, _ = water.build([], lake, [], ground, [bridge])
+    _, level = water.Water(body).raster(np.array([500.0]), np.array([30.0]))
+    assert level[0] == pytest.approx(10.0 - water.UNDER_DECK)
+
+
+def test_ground_with_a_street_on_it_lower_than_the_water_is_not_wet():
+    from types import SimpleNamespace
+
+    from contravia.citydata import Cell
+
+    t = Terrain(np.full((61, 61), 10.0, np.float32), (-3000.0, -3000.0), (100.0, 100.0), fade=0.0)
+    body, _ = water.build([], [(shapely.box(20, 20, 180, 180), "lake")], [], lambda x, z: 12.0 + 0.0 * np.asarray(x))
+    road = np.array([[(90.0, 10.05, 0.0), (110.0, 10.05, 0.0), (110.0, 10.05, 200.0)],
+                     [(90.0, 10.05, 0.0), (110.0, 10.05, 200.0), (90.0, 10.05, 200.0)]], np.float32)
+    cells = {(0, 0): Cell(street_tris=road)}
+    world = SimpleNamespace(cell=lambda i, j: cells.get((i, j), Cell()))
+    f = Shore(t, water=water.Water(body), built=world).field(0, 0)
+    d = f.sample(f.d, np.array([100.0, 60.0]), np.array([100.0, 100.0]))
+    assert d[0] > 0 and d[1] < 0  # the road's strip is land, the lake beside it water
+    assert f.height(np.array([100.0]), np.array([100.0]))[0] == pytest.approx(10.0, abs=0.01)

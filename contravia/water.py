@@ -13,7 +13,8 @@ water stands. `build` gives each a level from the relief:
 - a lake or a reservoir is level: a low height of its outline (LOW, a percentile) less DROP.
 
 A road that crosses water and is not a bridge keeps its ground, as over a culvert: the water is cut ROAD_MARGIN
-either side of it. Everything is cut into tiles of TILE metres, so a cell reads only what lies near it.
+either side of it. Under a bridge the water stands UNDER_DECK or more below the lower of the bridge's two ends,
+which its deck never goes under, so no deck is in the water. Everything is cut into tiles of TILE metres, so a cell reads only what lies near it.
 
 `save` and `load` keep it in one zstd file, water.src, beside coast.src, its outlines and points as whole
 numbers of QUANT metres, each the difference from the one before, which packs far smaller. `Water` answers for the game: which
@@ -42,6 +43,8 @@ LOW, DROP = 20.0, 0.3  # a still body's level: this percentile of its outline's 
 LEVEL_STEP = 20.0  # metres between the points a waterway's level is worked out at
 LEVEL_KEEP, SPARSE = 0.05, 100.0  # a level point is kept when the level changed this much, or this far on
 ROAD_MARGIN = 2.5  # metres of ground kept either side of a road that crosses water without a bridge
+UNDER_DECK = 1.5  # metres from the lower end of a bridge down to the water under it, at least
+BRIDGE_NEAR = 15.0  # metres from a bridge's line within which a waterway is under it
 MIN_AREA = 40.0  # m2: smaller water is left out, the grid that draws it has nodes 2.5 m apart
 TOLERANCE = 0.7  # metres the outlines are simplified to
 QUANT = 0.25  # metres the outlines and the level points are kept to, as whole numbers of it
@@ -61,18 +64,18 @@ def _width(tags, kind: str) -> float:
     return w if 1.0 <= w <= 400.0 else WIDTHS[kind]
 
 
-def read_osm(pbf) -> tuple[list, list, list]:
-    """(lines, areas, roads) of an OSM file, in lon, lat: the waterways as (geometry, kind, width, drawn), the
-    water areas as (geometry, kind) and the roads the game draws that are neither a bridge nor a tunnel as
-    (geometry, width). A waterway in a culvert or an intermittent stream is kept for the levels and not drawn;
-    intermittent areas are left out."""
+def read_osm(pbf) -> tuple[list, list, list, list]:
+    """(lines, areas, roads, bridges) of an OSM file, in lon, lat: the waterways as (geometry, kind, width,
+    drawn), the water areas as (geometry, kind), the roads the game draws that are neither a bridge nor a tunnel
+    as (geometry, width) and its bridges as geometries. A waterway in a culvert or an intermittent stream is kept
+    for the levels and not drawn; intermittent areas are left out."""
     import osmium
     import shapely
 
     from contravia.graph import road_width
     from contravia.prepare import WIDTHS as ROADS
 
-    lines, areas, roads = [], [], []
+    lines, areas, roads, bridges = [], [], [], []
     wkb = osmium.geom.WKBFactory()
 
     class Handler(osmium.SimpleHandler):
@@ -88,7 +91,9 @@ def read_osm(pbf) -> tuple[list, list, list]:
             if kind in WIDTHS:
                 hidden = t.get("tunnel", "no") != "no" or (kind == "stream" and t.get("intermittent") == "yes")
                 lines.append((g, kind, _width(t, kind), not hidden))
-            elif t.get("bridge", "no") == "no" and t.get("tunnel", "no") == "no":
+            elif t.get("bridge", "no") != "no":
+                bridges.append(g)
+            elif t.get("tunnel", "no") == "no":
                 roads.append((g, road_width(hw, {k: t.get(k) for k in ("lanes", "oneway", "junction")
                                                  if t.get(k) is not None}, ROADS)))
 
@@ -105,18 +110,37 @@ def read_osm(pbf) -> tuple[list, list, list]:
                 areas.append((g, t.get("water") or t.get("waterway") or t.get("landuse") or "water"))
 
     Handler().apply_file(str(pbf), locations=True)
-    return lines, areas, roads
+    return lines, areas, roads, bridges
 
 
-def levels(chains, height) -> list:
+def bridge_caps(bridges, height) -> tuple:
+    """(STRtree of the bridges' lines, the highest the water may stand under each): UNDER_DECK below the lower
+    of its two ends' ground; (None, empty) with no bridges."""
+    import shapely
+
+    if not len(bridges):
+        return None, np.zeros(0)
+    ends = np.array([[c[0], c[-1]] for c in (shapely.get_coordinates(g) for g in bridges)])
+    ground = np.asarray(height(ends[:, :, 0].ravel(), ends[:, :, 1].ravel()), float).reshape(-1, 2)
+    return shapely.STRtree(np.asarray(bridges, dtype=object)), ground.min(axis=1) - UNDER_DECK
+
+
+def levels(chains, height, caps=(None, None)) -> list:
     """The water's level at every point of the waterways chains, a list of (xz (n, 2), kind): what the module
     says. Points of different chains at the same place (to 10 cm) are one point of the network, so a tributary
-    and its river agree where they join and a level carried down one way goes on down the next."""
+    and its river agree where they join and a level carried down one way goes on down the next. caps is
+    `bridge_caps`: a point within BRIDGE_NEAR of a bridge lies no higher than that bridge's cap."""
     if not chains:
         return []
     xz = np.concatenate([c for c, _ in chains])
     bounds = np.cumsum([0] + [len(c) for c, _ in chains])
     h = np.asarray(height(xz[:, 0], xz[:, 1]), float)
+    top = np.full(len(xz), np.inf)
+    if caps[0] is not None:
+        import shapely
+
+        pi, bi = caps[0].query(shapely.points(xz), predicate="dwithin", distance=BRIDGE_NEAR)
+        np.minimum.at(top, pi, caps[1][bi])
     _, node = np.unique(np.round(xz * 10).astype(np.int64), axis=0, return_inverse=True)
     node = node.ravel()
     order = []
@@ -126,7 +150,9 @@ def levels(chains, height) -> list:
         order.append(idx[::-1] if h[idx[-m:]].mean() - h[idx[:m]].mean() > FLIP else idx)
     ground = np.full(node.max() + 1, np.inf)
     np.minimum.at(ground, node, h)
-    level = np.where(ground < SEA, WATER_Y, np.maximum(ground - CUT, WATER_Y))
+    lid = np.full(node.max() + 1, np.inf)
+    np.minimum.at(lid, node, top)
+    level = np.where(ground < SEA, WATER_Y, np.maximum(np.minimum(ground - CUT, lid), WATER_Y))
     users: dict = {}
     for k, idx in enumerate(order):
         for n in node[idx[[0, -1]]].tolist() + node[idx].tolist()[:: max(1, len(idx) // 64)]:
@@ -153,7 +179,8 @@ def levels(chains, height) -> list:
     out = []
     for k, (_, kind) in enumerate(chains):
         idx = np.arange(bounds[k], bounds[k + 1])
-        out.append(np.maximum(level[node[idx]], np.maximum(h[idx] - MAX_CUT[kind], WATER_Y)))
+        floor = np.maximum(np.minimum(h[idx] - MAX_CUT[kind], top[idx]), WATER_Y)  # a bridge's cap comes first
+        out.append(np.maximum(level[node[idx]], floor))
     return out
 
 
@@ -202,16 +229,17 @@ def _polygons(g):
     return shapely.multipolygons(np.array(parts, dtype=object)) if len(parts) > 1 else parts[0]
 
 
-def build(lines, areas, roads, height) -> tuple[dict, dict]:
-    """(body, report): the water of `read_osm`'s lines, areas and roads, already in local metres, with levels
-    from the relief height(x, z), cut at the roads and into tiles, as `save` writes it."""
+def build(lines, areas, roads, height, bridges=()) -> tuple[dict, dict]:
+    """(body, report): the water of `read_osm`'s lines, areas, roads and bridges, already in local metres, with
+    levels from the relief height(x, z), cut at the roads and into tiles, as `save` writes it."""
     import shapely
 
-    report = {"waterways": len(lines), "areas": len(areas), "roads": len(roads)}
+    report = {"waterways": len(lines), "areas": len(areas), "roads": len(roads), "bridges": len(bridges)}
+    caps = bridge_caps(list(bridges), height)
     geoms = np.array([g for g, *_ in lines], dtype=object)
     dense = shapely.segmentize(geoms, LEVEL_STEP) if len(geoms) else geoms
     chains = [(shapely.get_coordinates(g), kind) for g, (_, kind, _, _) in zip(dense, lines, strict=True)]
-    lv = levels(chains, height)
+    lv = levels(chains, height, caps)
     report["km"] = round(float(shapely.length(geoms).sum()) / 1000) if len(geoms) else 0
     tiles: dict = {}
 
@@ -244,6 +272,10 @@ def build(lines, areas, roads, height) -> tuple[dict, dict]:
         if not flowing:
             ring = shapely.get_coordinates(shapely.segmentize(shapely.boundary(g), LEVEL_STEP))
             level = still_level(ring, height)
+            if caps[0] is not None:
+                over = caps[0].query(g, predicate="intersects")
+                if len(over):
+                    level = max(min(level, float(caps[1][over].min())), WATER_Y)
             stills += 1
         for key in _tiles_of(g.bounds):
             piece = shapely.intersection(g, _tile_box(*key))
@@ -347,7 +379,7 @@ def read(pbf, height) -> tuple[dict, dict]:
     """(body, report) of the inland water of an OSM file over the relief height(x, z)."""
     from contravia.coast import _local
 
-    lines, areas, roads = read_osm(pbf)
+    lines, areas, roads, bridges = read_osm(pbf)
 
     def local(rows):
         if not rows:
@@ -355,7 +387,8 @@ def read(pbf, height) -> tuple[dict, dict]:
         g = _local(np.array([r[0] for r in rows], dtype=object))
         return [(g[k], *rows[k][1:]) for k in range(len(rows))]
 
-    return build(local(lines), local(areas), local(roads), height)
+    bridges = list(_local(np.array(bridges, dtype=object))) if bridges else []
+    return build(local(lines), local(areas), local(roads), height, bridges)
 
 
 def save(body: dict, path) -> int:
