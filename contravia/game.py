@@ -1288,7 +1288,7 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     builders = start_builders()  # first: they load the world while this process does and the menu shows
     try:
         _main(data, builders, at, shot, frames, size, traffic, when, warp, sky, pipelined, with_traffic, screen,
-              height, yaw, place)
+              height, yaw, place, mute, audio_out)
     except BaseException:
         for b in builders:  # a start that failed (a broken save under contravia dev) leaves no builder behind
             b.close()
@@ -1309,7 +1309,7 @@ def start_builders() -> tuple:
 
 
 def _main(data, builders, at, shot, frames, size, traffic, when, warp, sky, pipelined, with_traffic, screen,
-          height, yaw, place) -> None:
+          height, yaw, place, mute=False, audio_out=None) -> None:
     """main's body, with the builders already started."""
     import manifoldx as mx
 
