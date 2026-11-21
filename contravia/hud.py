@@ -99,13 +99,13 @@ def ease(height: float, target: float, dt: float, tau: float = MINIMAP_EASE) -> 
 
 
 def minimap_stale(last, pose, frames: int, loading: bool = False, height: float = MINIMAP_LOW,
-                  drawn: float = MINIMAP_LOW) -> bool:
+                  drawn: float = MINIMAP_LOW, every: int = MINIMAP_EVERY) -> bool:
     """Whether the minimap must render again for the car at pose = (x, z, yaw) seen from `height`, `frames`
     frames after it last rendered at `last` from `drawn` (None before its first render); while loading, the cells
-    landing around the car change it even when the car stands still."""
+    landing around the car change it even when the car stands still. It never renders sooner than every frames."""
     if last is None or frames >= MINIMAP_IDLE:
         return True
-    if frames < MINIMAP_EVERY:
+    if frames < every:
         return False
     if loading or abs(height - drawn) >= MINIMAP_ZOOM * drawn:
         return True
@@ -148,7 +148,13 @@ class Hud:
         self._clock_text, self._weather, self._lit, self._gear, self._speed = None, None, None, None, None
         self.panels, self.minimap = [], []
         self.stats_panel, self.stats_lines, self.stats_on = None, [], False
+        self.minimap_px, self.minimap_every = MINIMAP_SIZE, MINIMAP_EVERY
         engine.on("startup")(self._build)
+
+    def configure_quality(self, q) -> None:
+        """Take a quality preset's minimap (contravia/quality.py): the frames between two renders at once, the
+        texture's size when the panels are next built (the game's next start)."""
+        self.minimap_px, self.minimap_every = q.minimap
 
     def _build(self, _=None) -> None:
         """The panels; the minimap's texture needs the engine's device, which exists from startup on."""
@@ -156,7 +162,7 @@ class Hud:
 
         e = self.engine
         e.gui.design_height = ui.DESIGN_H
-        self.texture = e.render_to_texture(self.camera, (MINIMAP_SIZE, MINIMAP_SIZE), live=False,
+        self.texture = e.render_to_texture(self.camera, (self.minimap_px, self.minimap_px), live=False,
                                            background="#25331f")
         # Top left: the time, the day and the weather.
         self.weather_icon = Image(ui.icon("sol"), style_overrides={"width": 30, "height": 30})
@@ -427,7 +433,7 @@ class Hud:
         target = minimap_target(car.speed)
         self.height = target if self.height is None else ease(self.height, target, dt)
         if not self.minimap_on or not minimap_stale(self._drawn, pose, self._frame - self._drawn_frame, loading,
-                                                    self.height, self._drawn_height):
+                                                    self.height, self._drawn_height, self.minimap_every):
             return
         self._drawn, self._drawn_frame, self._drawn_height = pose, self._frame, self.height
         self.north.offset = north_offset(car.yaw, MINIMAP_SHOWN, 26)

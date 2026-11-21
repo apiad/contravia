@@ -157,7 +157,14 @@ class Atmosphere:
         self._tasks = {}
         self.env_key = None
         self._fallback = "day"
+        self.shadow = (SHADOW_EXTENT, SHADOW_RES, 1)  # half side (m), map size, PCF radius: quality.py's shadow
         engine.fog_enabled = True
+
+    def configure(self, q) -> None:
+        """Take a quality preset's shadow map and clear-weather fog (contravia/quality.py); the next apply uses them."""
+        global FOG_CLEAR
+        self.shadow = tuple(q.shadow)
+        FOG_CLEAR = tuple(q.fog_clear)
 
     def _ready(self, key: str) -> bool:
         """Start the environment's precompute in the background; True once it is done."""
@@ -191,9 +198,10 @@ class Atmosphere:
         if self.env_key:
             self.envs[self.env_key].intensity = lk.env_intensity
         if lk.shadows:
-            target = snap_target(eye, lk.light_dir)
-            e.enable_shadows(target=target, extent=SHADOW_EXTENT, resolution=SHADOW_RES, near=0.01, far=600.0,
-                             bias=0.002, pcf_radius=1, auto_fit=False)
+            extent, res, pcf = self.shadow
+            target = snap_target(eye, lk.light_dir, extent, res)
+            e.enable_shadows(target=target, extent=extent, resolution=res, near=0.01, far=600.0,
+                             bias=0.002, pcf_radius=pcf, auto_fit=False)
         else:
             e._shadow_config = None  # manifoldx has no public switch to turn shadows off
 
