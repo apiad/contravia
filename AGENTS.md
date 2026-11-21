@@ -164,6 +164,14 @@ shore's grid (`rules.shore.vegetated`). The
   `Options.locked_assists` keeps some off, and `Road.locate` finds the car's edge, lane and distance along it.
   While driving, L turns it to the next level (5, 4, ... 0, then 5 again, `next_level`) as the options would,
   saves it and names the level on the HUD for a moment.
+- Every sound is synthesized while the game runs (spec `docs/superpowers/specs/2026-11-20-audio-design.html`); no
+  recorded audio is ever committed. `contravia/audio/` builds Euterpe graphs (engines from the rpm and the throttle with
+  each family's numbers in `contravia/rules/sound.py`, tyres, wind, crashes, the horn on H, rain, thunder, the sea, the
+  four loudest traffic cars, ambience and music by biome, menu sounds); `manifoldx.audio` plays them in a sound
+  process, and a music process composes 2 bars ahead. Both live as long as the interpreter, so `contravia dev` keeps
+  them and re-imports the audio modules in them. `contravia/regions.toml` may set a place's `audio.biome` or
+  `audio.music`. `contravia play --mute` plays nothing, `--audio-out drive.wav` records the mix with a WAV per bus;
+  `engine.state.audio` reports voices, levels, CPU and underruns, and `contravia bench` adds them to its line.
 - The GPS (`contravia/gps.py`, spec `docs/superpowers/specs/2026-11-20-gps-design.html`) routes from anywhere to
   anywhere on the island over one routing graph, the 16 provinces' graphs joined where they share an OSM node, kept
   in `route.npz` beside `index.npz` (about 42 MB). It is built by the first run, by `contravia route`, or on the
@@ -172,6 +180,8 @@ shore's grid (`rules.shore.vegetated`). The
 - A script of your own that builds `Game` (custom shots, probes) must run its code under
   `if __name__ == "__main__":`: the streamer starts worker processes with spawn, which re-imports the script and
   fails with "start a new process before the current process has finished its bootstrapping phase".
+  `contravia play` starts those workers first (`game.start_builders()`, after setting `HAVANA_DATA`), so they
+  load the world while the game's process does; a script can do the same and pass them as `Game(builders=...)`.
 - `contravia flowmap out.png --time "Tue 08:00" [--traffic my.json]` draws the flow layer over the province without a
   window; `contravia bench --time ...` adds traffic numbers to the run.
 - `contravia fleet-sheet OUTDIR [--kind car]` renders one review PNG per kind: a row per variant of `contravia/rules/fleet.py`
