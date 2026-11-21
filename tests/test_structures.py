@@ -267,6 +267,25 @@ def test_the_two_carriageways_of_one_tunnel_run_at_one_depth():
     assert np.abs(ys[0] - ys[1]).max() < 0.05                      # and both carriageways run at that depth
 
 
+def test_osm_layers_only_order_crossings():
+    """OSM's layer orders what crosses at one spot, it is no depth: the Bay tunnel's bores are tagged -1 and -3
+    and cross nothing, so they are one level and run at one depth; a bridge tagged 2 over one tagged 1 keeps its
+    order."""
+    j = [(-400, -4), (-100, -4), (100, -4), (400, -4), (400, 4), (100, 4), (-100, 4), (-400, 4)]
+    edges = [(0, 1), (1, 2), (2, 3), (4, 5), (5, 6), (6, 7)]
+    a = dict(make_graph(j, edges).a)
+    a["g_layer"] = np.array([{(1, 2): -1, (5, 6): -3}.get((f, t), 0) for f, t in edges], np.int8)
+    chains = build(a, WIDTHS)[5]
+    assert sorted(c.layer for c in chains if c.layer) == [-1, -1]
+
+    j = [(-300, 0), (-40, 0), (40, 0), (300, 0), (0, -300), (0, -40), (0, 40), (0, 300)]
+    edges = [(0, 1), (1, 2), (2, 3), (4, 5), (5, 6), (6, 7)]
+    a = dict(make_graph(j, edges).a)
+    a["g_layer"] = np.array([{(1, 2): 1, (5, 6): 2}.get((f, t), 0) for f, t in edges], np.int8)
+    chains = build(a, WIDTHS)[5]
+    assert sorted(c.layer for c in chains if c.layer) == [1, 2]
+
+
 def test_a_street_tilted_with_a_hillside_gets_no_walls_and_no_cut():
     """Streets follow the ground across, so the higher kerb's ground stands over the centre: that is not a sunk
     street, and nothing may wall it in."""

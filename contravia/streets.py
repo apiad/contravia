@@ -718,6 +718,7 @@ def build(a, widths, walls=()):
     J, edges = load(a, widths)
     if walls:
         J, edges = _cut_at_walls(J, edges, walls)
+    _flatten_layers(edges)
     levels = defaultdict(list)
     for e in edges:
         levels[e.layer].append(e)
@@ -744,6 +745,23 @@ def build(a, widths, walls=()):
         out[5] += chains
     out[0] = _split_twins(out[0], out[2], [k for k, o in enumerate(out[1]) if out[5][o].layer < 0])
     return tuple(out)
+
+
+def _flatten_layers(edges):
+    """OSM's layer orders what crosses at one spot; it is not a depth. A bridge or tunnel on a layer beyond 1 (the
+    Bay tunnel's bores, -1 and -3) that crosses no bridge or tunnel of another layer goes to layer 1 (or -1), so
+    it is built and settled with the rest of its structure."""
+    odd = [e for e in edges if abs(e.layer) > 1]
+    if not odd:
+        return
+    lifted = [e for e in edges if e.layer]
+    lines = [LineString(e.p) for e in lifted]
+    tree = STRtree(lines)
+    for e in odd:
+        line = LineString(e.p)
+        hits = [lifted[i] for i in tree.query(line, predicate="crosses")]
+        if not any(o.layer != e.layer and o.layer * e.layer > 0 for o in hits):
+            e.layer = 1 if e.layer > 0 else -1
 
 
 def _split_twins(ribbons, axes, tubes):
