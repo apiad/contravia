@@ -201,7 +201,7 @@ prepare = [
 
 [package.metadata]
 requires-dist = [
-    { name = "manifold-gfx", extras = ["desktop", "svg"], git = "https://github.com/gia-uh/manifoldx?branch=main" },
+    { name = "manifold-gfx", extras = ["desktop", "svg"], git = "https://github.com/gia-uh/manifoldx?branch=feat%2Fbaked-albedo" },
     { name = "numpy" },
     { name = "pillow" },
     { name = "shapely" },
@@ -302,7 +302,7 @@ wheels = [
 [[package]]
 name = "manifold-gfx"
 version = "0.10.0"
-source = { git = "https://github.com/gia-uh/manifoldx?branch=main#04aae8b4bc23fed0c0e4113985fa8f619d139961" }
+source = { git = "https://github.com/gia-uh/manifoldx?branch=feat%2Fbaked-albedo#284daec3793bcbac51a60ae30d2f3c57cfd6e85a" }
 dependencies = [
     { name = "numpy" },
     { name = "rendercanvas" },
