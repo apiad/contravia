@@ -94,7 +94,10 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   per-segment ribbons.
 - Bridges and tunnels come from OSM's bridge, tunnel and layer tags (`g_layer`): each level of streets is built
   apart, a bridge stands 6 m over what it crosses, a tunnel runs 8 m under the ground or 14 m under the sea, and the
-  streets they leave from ramp to them at 8 %. `contravia/structures.py` dresses them (decks, parapets, piers, tunnel
+  streets they leave from ramp to them at 8 %. The ends of one bridge or tunnel agree at its own junctions and with
+  the ground they leave from; a ramp too long for its street goes on through the junction after it (16 % on the
+  streets that turn off there); a tunnel's mouth is no deeper than the street before the next junction lets a ramp
+  reach, unless a street or the sea is over it; a deck does not come down between two streets it clears. `contravia/structures.py` dresses them (decks, parapets, piers, tunnel
   walls, roofs and lamps, open cuts with the ground left out over them); a wheel stands on the surface level with
   it (`Surface.height(..., near=)`) and a wall stops the car only at its own heights.
 - `contravia prepare` then lays the pavements (`contravia/walks.py`): a road-network face built over more than 30 %
