@@ -236,6 +236,33 @@ def test_a_car_drives_into_and_out_of_a_tunnel_both_ways_without_touching_a_wall
         assert abs(end.x - x1) < 5.0 and abs(end.y) < 0.5   # and came back up on the far side
 
 
+def test_the_two_carriageways_of_one_tunnel_run_at_one_depth():
+    """At a river mouth the ground can dip under the sea's level below one carriageway and not below the other, a
+    few metres away; the two still share one box, so they run at one depth: the deeper of the two."""
+    from contravia.streets import SEA_DEPTH
+
+    heights = np.full((300, 300), 2.0)
+    heights[148:150, 145:155] = 0.0  # x in [-50, 50), z in [-20, -10]: under the carriageway at z = -14 only
+    t = Terrain(heights, (-1500, -1500), (10, 10))
+    j = [(-400, -14), (-100, -14), (100, -14), (400, -14), (400, -6), (100, -6), (-100, -6), (-400, -6)]
+    edges = [(0, 1), (1, 2), (2, 3), (4, 5), (5, 6), (6, 7)]
+    a = dict(make_graph(j, edges).a)
+    a["g_layer"] = np.array([-1 if (f, t_) in ((1, 2), (5, 6)) else 0 for f, t_ in edges], np.int8)
+    _, (ribbons, owner, axes, _, _, chains), _ = _city(t, a)
+    keep = {}
+    mesh(*build(a, WIDTHS), t, keep)
+    tubes = [k for k in range(len(axes)) if chains[owner[k]].layer < 0]
+    assert len(tubes) == 2
+    x = np.linspace(-90.0, 90.0, 37)
+    ys = []
+    for k in tubes:
+        s, h = keep["prof"][k]
+        along = np.abs(x - axes[k][0, 0])  # both axes run straight along x
+        ys.append(np.interp(along, s, h))
+    assert min(ys[0].min(), ys[1].min()) < -SEA_DEPTH + 0.5       # under the sea's level it runs deep
+    assert np.abs(ys[0] - ys[1]).max() < 0.05                      # and both carriageways run at that depth
+
+
 def test_a_street_tilted_with_a_hillside_gets_no_walls_and_no_cut():
     """Streets follow the ground across, so the higher kerb's ground stands over the centre: that is not a sunk
     street, and nothing may wall it in."""

@@ -1013,6 +1013,8 @@ def heights(ribbons, owner, axes, rings, rnode, chains, terrain):
         for k in [k for k in range(len(axes)) if layer[k] == L]:
             out[k] = structure_profile(axes[k], chains[owner[k]].w, L, terrain, y_lower)
             tilts[k] = np.zeros(len(out[k][0]))
+        if L < 0:
+            _share_twins([k for k in range(len(axes)) if layer[k] == L], axes, out)
         for i, n in enumerate(rnode):  # a junction on a bridge or in a tunnel: at its streets' mean end height
             if isinstance(n, tuple) and n[0] == L:
                 ys = [out[k][1][0 if chains[owner[k]].f == n[1] else -1] for k in range(len(axes))
@@ -1051,6 +1053,32 @@ def structure_profile(axis, width, layer, terrain, y_lower):
     raw = terrain.height(q[:, 0], q[:, 1])
     need = np.where(raw < SEA, -SEA_DEPTH, raw - TUNNEL_DEPTH)
     return s, np.minimum(lin, (need[None, :] + GRADE * d).min(axis=1))
+
+
+def _share_twins(tubes, axes, out):
+    """Two tunnels side by side, closer than structures.TWIN (the two carriageways of one tunnel, which
+    structures builds as one box), run at one depth: each takes the lower of the two where they are side by side,
+    then climbs from it no steeper than GRADE, so the box has one floor and one roof."""
+    from contravia.structures import TWIN
+
+    if len(tubes) < 2:
+        return
+    lines = {k: LineString(axes[k]) for k in tubes}
+    first = {k: out[k] for k in tubes}
+    for k in tubes:
+        s, h = first[k]
+        pts = shapely.points(np.c_[[lines[k].interpolate(v).coords[0] for v in s]])
+        low = h.copy()
+        for j in tubes:
+            if j == k:
+                continue
+            near = shapely.distance(pts, lines[j]) < TWIN
+            if near.any():
+                s2, h2 = first[j]
+                other = np.interp(shapely.line_locate_point(lines[j], pts[near]), s2, h2)
+                low[near] = np.minimum(low[near], other)
+        if (low < h).any():
+            out[k] = (s, np.minimum(h, (low[None, :] + GRADE * np.abs(s[:, None] - s[None, :])).min(axis=1)))
 
 
 class _Ends:
