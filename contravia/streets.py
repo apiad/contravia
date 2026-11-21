@@ -1100,7 +1100,7 @@ class _Drawn:
         return drawn(self.terrain, x, z)
 
 
-def heights(ribbons, owner, axes, rings, rnode, chains, terrain, moved=None):
+def heights(ribbons, owner, axes, rings, rnode, chains, terrain, moved=None, sunk=None):
     """A plane per ground junction, a height per bridge or tunnel junction, and a height profile and a cross
     slope per ribbon.
 
@@ -1115,7 +1115,7 @@ def heights(ribbons, owner, axes, rings, rnode, chains, terrain, moved=None):
     Returns (junction heights: the plane's height at its fitted centre, or the flat height, [(arclengths,
     heights)] along each centreline, [cross slopes at those arclengths], {junction: Plane}). A point of ribbon
     k at arclength s and distance u to the left of its centreline stands at heights + u * cross slope. A set
-    `moved` gets the ground ribbons a ramp took off the ground."""
+    `moved` gets the ground ribbons a ramp took off the ground, and `sunk` those of them it took under it."""
     layer = [chains[owner[k]].layer for k in range(len(axes))]
     ground_rings = [(r, n) for r, n in zip(rings, rnode) if not isinstance(n, tuple)]
     seen = _Drawn(terrain)
@@ -1223,6 +1223,8 @@ def heights(ribbons, owner, axes, rings, rnode, chains, terrain, moved=None):
                 hj[n] = ends[n[1]]
     if moved is not None:
         moved.update(k for k in ground if np.abs(out[k][1] - done[k][1]).max() > 0.05)
+    if sunk is not None:
+        sunk.update(k for k in ground if (out[k][1] - done[k][1]).min() < -0.05)
     return hj, out, tilts, planes
 
 
@@ -1625,8 +1627,8 @@ def mesh(ribbons, owner, axes, rings, rnode, chains, terrain, keep=None):
     not on a bridge or in a tunnel, which contravia.structures dresses instead. A dict `keep` gets the junction
     heights, the ribbons' profiles, the junctions' planes and the ribbons' cross slopes as "hj", "prof", "planes"
     and "tilts", and as "ribbons" the ribbons as meshed: cut apart where two levels nearly touched (_apart)."""
-    moved = set()
-    hj, prof, tilts, planes = heights(ribbons, owner, axes, rings, rnode, chains, terrain, moved)
+    moved, sunk = set(), set()
+    hj, prof, tilts, planes = heights(ribbons, owner, axes, rings, rnode, chains, terrain, moved, sunk)
     ribbons = _apart(ribbons, axes, [chains[o].layer for o in owner], prof, moved)
     if keep is not None:
         keep["hj"], keep["prof"], keep["planes"], keep["tilts"], keep["ribbons"] = hj, prof, planes, tilts, ribbons
@@ -1678,8 +1680,15 @@ def mesh(ribbons, owner, axes, rings, rnode, chains, terrain, keep=None):
         return np.stack([t[..., 0], y, t[..., 1]], axis=-1), np.concatenate(keys), poly
 
     cut = pmap(cut_cells, range(len(pieces_)), chunk=64)
-    # the pieces laid on the ground: not a ribbon a ramp took off it, nor a junction a ramp set the height of
-    laid = [k for k in range(len(pieces_)) if not level(k) and (k not in moved if k < nr else rnode[k - nr] in planes)]
+    # the pieces that belong over the ground: not a ribbon a ramp took under it, nor a junction a ramp set lower
+    def over(k):
+        if k < nr:
+            return k not in sunk
+        n = rnode[k - nr]
+        c = pieces_[k].representative_point()
+        return n in planes or hj[n] >= _Drawn(terrain).height(np.array([c.x]), np.array([c.y]))[0]
+
+    laid = [k for k in range(len(pieces_)) if not level(k) and over(k)]
     raised = _clear_ground(cut, [k for k in range(len(pieces_)) if not level(k)], laid, terrain)
     if keep is not None:
         keep["raised"] = raised

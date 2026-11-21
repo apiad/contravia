@@ -433,6 +433,12 @@ def _valley(depth, wall=100.0, half=250.0):
     return Terrain(np.tile(h.astype(np.float32), (len(x), 1)), (-3000.0, -3000.0), (10.0, 10.0))
 
 
+# How much steeper than the ramp grade a street of these valleys may run over 10 m: where it crosses the plateau's
+# rim, a crease no real relief has, it is raised clear of the ground (streets._clear_ground), up to a third of a
+# metre over one square of the ground's grid.
+RIM = 0.045
+
+
 def _steepest(y, over=10.0, step=0.5):
     """The steepest grade a wheel's heights y, taken every step metres, hold over `over` metres."""
     n = int(over / step)
@@ -446,7 +452,7 @@ def test_a_bridge_over_a_valley_holds_its_ends_up_so_its_street_comes_down_at_th
     t = _valley(60.0, wall=250.0)
     city, _, _ = _city(t, _graph(j, [(0, 1), (1, 2), (2, 3)], {(1, 2): 1}))
     y = _roll(city, t, j)
-    assert _steepest(y) < GRADE + 0.02
+    assert _steepest(y) < GRADE + RIM
     assert np.abs(np.diff(y)).max() < 0.15
     x = np.arange(0.0, 1800.0, 0.5) - 900
     deck = y[(x > -140) & (x < 140)]
@@ -462,7 +468,7 @@ def test_a_bridge_over_a_valley_that_ends_at_a_junction_holds_the_junction_up():
     for path in ([j[0], j[1], j[2], j[3]], [j[0], j[1], j[2], j[4], j[5]]):
         y = _roll(city, t, path)
         assert np.abs(np.diff(y)).max() < 0.15
-        assert _steepest(y) < GRADE + 0.02
+        assert _steepest(y) < GRADE + RIM
 
 
 def test_a_valley_bridge_whose_street_is_too_short_to_come_down_in_holds_the_junction_behind_it():
@@ -474,7 +480,7 @@ def test_a_valley_bridge_whose_street_is_too_short_to_come_down_in_holds_the_jun
     for path in ([j[0], j[1], j[2], j[3], j[4]], [j[0], j[1], j[2], j[3], j[5]]):
         y = _roll(city, t, path)
         assert np.abs(np.diff(y)).max() < 0.15
-        assert _steepest(y) < GRADE + 0.02
+        assert _steepest(y) < GRADE + RIM
 
 
 def test_a_bridge_over_a_shallow_dip_keeps_its_ends_on_the_ground():
