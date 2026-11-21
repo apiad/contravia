@@ -538,11 +538,21 @@ def test_from_the_drive_s_map_a_point_sets_the_gps_and_the_camera_flies_back_to_
     _fly(engine, game)
     assert game.mode == "drive" and (game.car.x, game.car.z) == pytest.approx((x, z), abs=0.5)
 
-    menu.press("Escape")  # the pause offers to drop the route
+    for _ in range(600):  # the route comes in from the router's thread
+        engine.render_frame(supersample=1, dt=0.05)
+        if game.gps.route is not None:
+            break
+    assert game.gps.route is not None
+    menu.press("Escape")
+    menu.press("ArrowDown")  # Mapa
+    menu.press("Enter")
+    _fly(engine, game)
+    engine.render_frame(supersample=1)
+    assert len(engine.lines.layers["route"]) > 0 and len(engine.lines.layers["route-mark"]) == 2
+    menu.press("Escape")  # back to the pause, which offers to drop the route
     labels = [label for label, _, _ in menu.screens["pause"].items()]
-    assert "Quitar ruta" in labels
-    for _ in range(labels.index("Quitar ruta")):
-        menu.press("ArrowDown")
+    assert labels.index("Quitar ruta") == labels.index("Mapa") + 1
+    menu.press("ArrowDown")  # the pause keeps «Mapa» chosen; «Quitar ruta» is under it
     menu.press("Enter")
     assert game.gps.to is None and "Quitar ruta" not in [label for label, _, _ in menu.screens["pause"].items()]
     game.streamer.close()

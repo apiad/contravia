@@ -55,6 +55,9 @@ OCEAN = 30_000_000.0  # metres: the side of the ocean, centred on the Capitolio,
 OCEAN_TILE = 1_000_000.0  # metres: the ocean is laid in squares no larger than this, so clipping stays exact
 MAP_SINK = 2.0  # screen pixels the water sinks below sea level in the map, so the coast never flickers on it
 SHALLOW = (0.16, 0.42, 0.45)
+ROUTE_KEYS = ("route-casing", "route", "route-mark")  # the GPS route's layers on the map, in drawing order
+ROUTE_PX, MARK_PX = 3.0, 10.0  # the route's width and its end's cross, screen pixels
+ROUTE_FILL = (0.84, 0.05, 0.03, 1.0)  # linear red, the brand's
 HIDDEN_Y = -1e4  # metres: where the shallows wait while driving, far under everything
 WATER = (0.10, 0.24, 0.32)
 FLAT_BASE_Y = -1.0  # with flat data: below every streamed ground, which always wins over it
@@ -1071,6 +1074,42 @@ class Game:
                                   "lines": {k: len(v) for k, v in self.engine.lines.layers.items()},
                                   "streets_busy": self.maproads.busy})
 
+    def _map_route(self) -> None:
+        """The GPS route on the map as a line over the roads (engine.lines, after maproads' layers so it draws on
+        top), and a cross where it ends; set again when the route or the render frame changes, hidden off the map."""
+        from contravia import mapview, maproads
+        from contravia.summary import _heights
+
+        lines, g = self.engine.lines, self.gps
+        on = (self.mode == "map" and self.map is not None and self.flight is None and g.route is not None
+              and g.router.rg is not None and getattr(self, "maproads", None) is not None)
+        if not on:
+            if getattr(self, "_route_drawn", None) is not None:
+                for k in ROUTE_KEYS:
+                    lines.look(k, alpha=0.0)
+                self._route_drawn = None
+            elif not getattr(self, "_route_cleared", False):  # a reload under dev keeps the engine and its lines
+                for k in ROUTE_KEYS:
+                    lines.remove(k)
+                self._route_cleared = True
+            return
+        mpp = mapview.metres_per_pixel(self.map, max(self.engine.h, 1))
+        key = (id(g.route), tuple(self.engine.origin), round(math.log(mpp), 1))
+        if key != getattr(self, "_route_drawn", None):
+            self._route_drawn = key
+            o = np.array([self.engine.origin[0], 0.0, self.engine.origin[1]])
+            pts = g.route.polyline(g.router.rg)
+            y = _heights(pts, self.terrain, True) + maproads.LIFT
+            p3 = np.c_[pts[:, 0], y, pts[:, 1]] - o
+            lines.set("route-casing", p3[:-1], p3[1:], maproads.DARK, ROUTE_PX + maproads.CASING)
+            lines.set("route", p3[:-1], p3[1:], ROUTE_FILL, ROUTE_PX)
+            r = MARK_PX * mpp  # the end's cross, MARK_PX screen pixels across its arms
+            c = p3[-1]
+            arms = np.array([[r, 0.0, r], [r, 0.0, -r]])
+            lines.set("route-mark", c - arms, c + arms, ROUTE_FILL, ROUTE_PX + 1.0)
+        for k in ROUTE_KEYS:
+            lines.look(k, scale=maproads.scale(self.map.h) if k != "route-mark" else 1.0, alpha=1.0)
+
     def _recentre(self) -> np.ndarray:
         """Move the engine's origin to the camera (behind the car while driving) when it has gone RECENTRE
         metres; returns the origin as (x, 0, z)."""
@@ -1265,6 +1304,7 @@ class Game:
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
         self.engine.camera.vertical_scale = self._exaggeration()
         self._map_roads()
+        self._map_route()
         self._save_photo()
         self.engine.camera.fov = collect.fov_for(self.aim["zoom"]) if self.mode == "aim" and self.aim else collect.FOV_DEG
         self.hud.show(self.mode == "drive")
