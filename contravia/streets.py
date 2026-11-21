@@ -1128,7 +1128,8 @@ def heights(ribbons, owner, axes, rings, rnode, chains, terrain, moved=None):
             that junction: (None, None) off the ground."""
             nodes, streets = near.at(point)
             ys = [float(planes[n](point)[0]) if n in planes else hj[n] for n in nodes]
-            ys = ys or [float(out[k][1][0 if at_start else -1]) for k, at_start in streets]
+            ys += [float(out[k][1][0 if at_start else -1]) for k, at_start in streets  # those ending at the point
+                   if not nodes or np.hypot(*(near.axis[k][0 if at_start else -1] - point)) <= AT_END]
             return ((max if up else min)(ys) if ys else None), (nodes[0] if nodes else None)
 
         leaving = {}  # a junction of this level -> the ends of the ground streets that start at its edge
