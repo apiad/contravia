@@ -111,3 +111,24 @@ def test_squares_without_cover_take_the_palette_from_their_woods_and_towns():
     assert np.allclose(c[1], far_green(today()))  # all wood
     assert np.allclose(c[2], rules.TONES[50])  # all town
     assert np.allclose(c[3], (far_green(today()) + np.asarray(rules.TONES[50])) / 2)
+
+
+def test_two_downloads_of_one_tile_at_once_do_not_share_their_part_file(tmp_path, monkeypatch):
+    """Provinces built at once fetch the same tile: each process writes its own part file, so none reads or
+    renames what another is still writing."""
+    from contravia import cover
+
+    seen = []
+
+    def fetch(url, part):
+        seen.append(part)
+        part.write_bytes(b"tile")
+
+    path = tmp_path / "N21W084.tif"
+    monkeypatch.setattr(cover.os, "getpid", lambda: 111)
+    assert cover._download("u", path, fetch) and path.read_bytes() == b"tile"
+    path.unlink()
+    monkeypatch.setattr(cover.os, "getpid", lambda: 222)
+    assert cover._download("u", path, fetch)
+    assert seen[0] != seen[1] and all(p.parent == tmp_path and p.name.endswith(".part") for p in seen)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["N21W084.tif"]
