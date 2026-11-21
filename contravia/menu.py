@@ -276,7 +276,8 @@ class PauseScreen(ListScreen):
 
     def items(self):
         m = self.menu
-        return [("Seguir", "", m.resume), ("Mapa", "", lambda: m.show("map")),
+        route = [("Quitar ruta", "", lambda: (m.game.gps_clear(), m.resume()))] if m.game.gps.to is not None else []
+        return [("Seguir", "", m.resume), ("Mapa", "", lambda: m.show("map")), *route,
                 ("Cambiar vehículo", "", lambda: m.show("garage")), ("Modo foto", "", lambda: m.show("photo")),
                 ("Álbum", "", lambda: m.show("album")),
                 ("Opciones", "", lambda: m.show("options")), ("Menú principal", "", m.to_menu)]
@@ -573,7 +574,7 @@ MARK_PX = 26  # pixels across a place's icon on the map
 OFF = (-1000, -1000)  # offset that puts an unused mark outside the window
 HERE_ICON_PX = 18  # pixels across a place's icon in the panel of what lies near the crosshair
 HERE_CHARS = 40  # longest place name the panel writes whole
-CHOICES = ("Ver ficha", "Manejar aquí")
+CHOICES = ("Ver ficha", "Manejar aquí", "Ir con GPS", "Quitar ruta")  # the most the map's choice offers
 
 
 class MapScreen(Screen):
@@ -687,11 +688,49 @@ class MapScreen(Screen):
         self.here_panel.children = children
         ui.refit(self.here_panel)
 
-    def _open_choice(self, on: bool) -> None:
-        """Show or hide «Ver ficha» and «Manejar aquí» for the place under the crosshair."""
+    def _rows(self, mark) -> list[tuple[str, object]]:
+        """What the choice offers for the place `mark` (or, None, the point under the crosshair): its card and driving
+        there; from the drive's map, guiding the car there with the GPS, and dropping the route when one is set."""
+        g = self.menu.game
+        rows = []
+        if mark is not None:
+            p = g.places.by_id(mark.ids[0])
+            rows += [("Ver ficha", lambda: self.menu.view_card(p)), ("Manejar aquí", lambda: self._drive(g.drive_to(p)))]
+            to = lambda: (*g.near_spot(p), p.title)  # noqa: E731
+        else:
+            rows += [("Manejar aquí", lambda: self._drive(g.drive_here()))]
+            to = lambda: (g.map.x, g.map.z, None)  # noqa: E731
+        if self.back_to == "pause":  # a car to guide
+            rows.append(("Ir con GPS", lambda: self._gps(*to())))
+            if g.gps.to is not None:
+                rows.append(("Quitar ruta", lambda: (g.gps_clear(), self._open_choice(False))))
+        return rows
+
+    def _drive(self, error) -> None:
+        if error:
+            self.note.text = "Aquí no hay calle cerca"
+        else:
+            self.menu.show(None)
+
+    def _gps(self, x: float, z: float, title) -> None:
+        g = self.menu.game
+        error = g.gps_to(x, z, title)
+        if error:
+            self.note.text = error
+            return
+        g.back_to_car()
+        self.menu.show(None)
+
+    def _open_choice(self, on: bool, mark=None) -> None:
+        """Show or hide the choice for the place `mark` under the crosshair, or for the point under it."""
         if on == (self.choice is not None):
             return
-        self.choice, self.picked = (self.under if on else None), 0
+        self.choice, self.picked = (self._rows(mark) if on else None), 0
+        if on:
+            for t, (label, _) in zip(self.options, self.choice, strict=False):
+                t.text = label
+            self.choice_panel.children = self.options[:len(self.choice)]
+            ui.refit(self.choice_panel)
         (self.menu.engine.gui.append if on else self.menu.engine.gui.remove)(self.choice_panel)
         self._paint_choice()
 
@@ -705,19 +744,14 @@ class MapScreen(Screen):
             return  # the camera is still flying to the map
         if self.choice is not None:
             if k in ("up", "down"):
-                self.picked = 1 - self.picked
+                self.picked = (self.picked + (1 if k == "down" else -1)) % len(self.choice)
                 self._paint_choice()
             elif k == "back":
                 self._open_choice(False)
             elif k == "enter":
-                pid = self.choice.ids[0]
+                act = self.choice[self.picked][1]
                 self._open_choice(False)
-                if self.picked == 0:
-                    self.menu.view_card(g.places.by_id(pid))
-                elif g.drive_to(g.places.by_id(pid)):
-                    self.note.text = "Aquí no hay calle cerca"
-                else:
-                    self.menu.show(None)
+                act()
             return
         if k == "enter" and self.under is None and self.city is not None:  # a city: come down over it
             x, z = self.city.at
@@ -728,7 +762,7 @@ class MapScreen(Screen):
                 x, z = self.under.at
                 self.target = mapview.MapCam(x, z, placemarks.CITY_H / 2, g.map.yaw)  # the follow glides there
             else:
-                self._open_choice(True)
+                self._open_choice(True, self.under)
             return
         if k == "back":
             g.map = None
@@ -736,12 +770,10 @@ class MapScreen(Screen):
                 self.menu.show("pause")
             else:
                 self.menu.to_menu()
+        elif k == "enter" and self.back_to == "pause":  # from the drive: drive there or guide the car there
+            self._open_choice(True)
         elif k == "enter":
-            error = g.drive_here()
-            if error:
-                self.note.text = "Aquí no hay calle cerca"
-            else:
-                self.menu.show(None)
+            self._drive(g.drive_here())
 
     def tick(self, dt):
         g = self.menu.game

@@ -435,3 +435,49 @@ def test_across_a_border_the_next_edge_is_the_other_province_s():
     assert isinstance(gd.route, Route)
     nxt = gd.next_edge(rg.island(0, 0))
     assert rg.local(nxt) == (1, 0)
+
+
+def test_the_router_brings_the_route_s_steps_from_its_thread():
+    r = Router(lambda: RouteGraph.from_graphs([grid(3)]))
+    r.ask((10.0, 0.0, 0.0), (200.0, 150.0))
+    got = wait_for(r.take, 5.0)
+    assert got.steps and got.steps[-1].kind == "arrive"
+
+
+def test_a_failing_router_says_none_and_is_free_again():
+    def broken():
+        raise OSError("No space left on device")
+
+    r = Router(broken)
+    r.ask((10.0, 0.0, 0.0), (200.0, 150.0))
+    assert wait_for(r.take, 5.0) == "none" and r.busy is False
+
+
+def test_a_reroute_starts_on_the_edge_the_car_is_on():
+    g = grid(3)
+    r = Router(lambda: RouteGraph.from_graphs([g]))
+    e = edge(g, 1, 0)  # westbound, though the point and heading say eastbound edge 0 -> 1
+    r.ask((50.0, 0.0, 0.0), (200.0, 150.0), at=(e, 50.0))
+    assert wait_for(r.take, 5.0).edges[0] == e
+
+
+def test_a_reroute_with_no_answer_keeps_the_destination_and_asks_again():
+    g = grid(3)
+    gd = guide_on(g, (200.0, 150.0))
+    assert 1 not in gd.route.edges
+    island = make_graph([(5000, 5000), (5100, 5000)], [(0, 1), (1, 0)])
+    gd.router.rg = RouteGraph.from_graphs([island])  # the car's street is cut off from the destination
+    for _ in range(70):
+        gd.update(1, 10.0, car_at(island, 1, 10.0), 1 / 60)
+    settle(gd)
+    gd.update(1, 10.0, car_at(island, 1, 10.0), 1 / 60)
+    assert gd.to == (200.0, 150.0) and gd.message == "No hay ruta"
+
+
+def test_a_stale_route_npz_that_cannot_load_is_built_again(island_dir):
+    from contravia.world import World
+
+    path = island_dir / "route.npz"
+    path.write_bytes(b"not a zip")
+    rg = RouteGraph.for_world(World.load(island_dir))
+    assert len(rg.length) > 0 and RouteGraph.load(path).length.shape == rg.length.shape

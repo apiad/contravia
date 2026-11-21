@@ -55,6 +55,10 @@ OCEAN = 30_000_000.0  # metres: the side of the ocean, centred on the Capitolio,
 OCEAN_TILE = 1_000_000.0  # metres: the ocean is laid in squares no larger than this, so clipping stays exact
 MAP_SINK = 2.0  # screen pixels the water sinks below sea level in the map, so the coast never flickers on it
 SHALLOW = (0.16, 0.42, 0.45)
+KERB_KEEP = 40.0  # metres: an arrived route's stop line is kept for the pilot only this close ahead on its street
+ROUTE_KEYS = ("route-casing", "route", "route-mark")  # the GPS route's layers on the map, in drawing order
+ROUTE_PX, MARK_PX = 3.0, 10.0  # the route's width and its end's cross, screen pixels
+ROUTE_FILL = (0.84, 0.05, 0.03, 1.0)  # linear red, the brand's
 HIDDEN_Y = -1e4  # metres: where the shallows wait while driving, far under everything
 WATER = (0.10, 0.24, 0.32)
 FLAT_BASE_Y = -1.0  # with flat data: below every streamed ground, which always wins over it
@@ -194,7 +198,7 @@ class Game:
         engine.system(self.sky, parallel=True)
         engine.on("teleport")(self._teleport_event)
         engine.on("gps")(self._gps_event)
-        engine.on("gps_clear")(self._gps_clear)
+        engine.on("gps_clear")(self.gps_clear)
         engine.on("traffic_config")(self.configure_traffic)
         engine.on("close")(self.close_street)
         engine.on("sky_config")(self.configure_sky)
@@ -517,10 +521,17 @@ class Game:
         if to:
             self.gps.go(to[0], to[1], to[2])
 
-    def gps_to(self, x: float, z: float, title: str | None = None) -> None:
-        """Guide the car to (x, z), named title when it is a place."""
+    def gps_to(self, x: float, z: float, title: str | None = None) -> str | None:
+        """Guide the car to (x, z), named title when it is a place; the error when no street is near it."""
+        from contravia.gps import ROAD_NEAR
+
+        found = self.walls.nearest_road(x, z)
+        if found is None or math.hypot(found[0] - x, found[1] - z) > ROAD_NEAR:
+            return "Aquí no hay calle cerca"
         self.gps.go(x, z, title)
         self.engine.state.gps_to = [float(x), float(z), title]
+        self._pilot_stop = None
+        return None
 
     def _gps_event(self, p: dict) -> None:
         if "lat" in p:
@@ -529,9 +540,11 @@ class Game:
             x, z = float(p["x"]), float(p["z"])
         self.gps_to(float(x), float(z), p.get("title"))
 
-    def _gps_clear(self, _=None) -> None:
+    def gps_clear(self, _=None) -> None:
+        """Drop the GPS destination and its route."""
         self.gps.clear()
         self.engine.state.gps_to = None
+        self._pilot_stop = None
 
     def _show_route(self, help) -> None:
         """The GPS panel from the guide: the next step and what is left, or «Llegaste» or «No hay ruta» for a
@@ -676,10 +689,17 @@ class Game:
         takes the straightest exit until the focus moves) and the destination as a stop line, kept until it has
         stopped there even after the guide arrived."""
         g, rg, h = self.gps, self.gps.router.rg, self.help
-        if h.arrived:
+        level, locked = getattr(self, "help_level", DEFAULT), getattr(self, "locked_assists", ())
+        if h.arrived or "pilot" not in road_assists(level, locked):  # below level 0 the driver steers
             self._pilot_stop = None
-        if g.route is None or rg is None:
-            h.route_next, h.stop_at = None, getattr(self, "_pilot_stop", None)
+        if "pilot" not in road_assists(level, locked):
+            h.route_next = h.stop_at = None
+            return
+        if g.route is None or rg is None:  # arrived, or no route: keep the stop only while it lies just ahead
+            stop, p = getattr(self, "_pilot_stop", None), self.place
+            if stop is not None and (p is None or p.edge != stop[0] or not 0 <= stop[1] - p.s <= KERB_KEEP):
+                stop = self._pilot_stop = None
+            h.route_next, h.stop_at = None, stop
             return
         k = self.city.names.index(self.city.focused)
 
@@ -842,10 +862,25 @@ class Game:
         self._lifting = (f.start, got)
         threading.Thread(target=work, name="flight-lift", daemon=True).start()
 
+    def back_to_car(self) -> None:
+        """Leave the map for the car where it stands: the camera flies down to the chase camera's place behind it
+        and driving goes on, the car not moved (a GPS route was just set)."""
+        from contravia import mapview
+
+        _, eye, target = chase(None, self.car, 0.0, self.surface)
+        self.flight = flight.down(mapview.pose(self.map), (eye, target), (self.car.x, self.car.z))
+        self._lift_flight(self.car.x, self.car.z)
+        self.map, self._keep_car = None, True
+
     def _land(self) -> None:
-        """The flight down landed: the car on its road and driving, the chase camera on from the flight's eye."""
+        """The flight down landed: the car on its road and driving, the chase camera on from the flight's eye;
+        back to the car (back_to_car), the car stays where it was."""
         eye, (x, z) = self.eye, self.flight.dest
         self.flight = None
+        if getattr(self, "_keep_car", False):
+            self._keep_car = False
+            self.resume()
+            return
         self.teleport(x, z)
         self.eye = eye  # teleport puts the eye over the car; the chase starts from the flight's last one instead
         self.km, self.area, self.address = 0.0, "", ("", "", "")
@@ -1064,6 +1099,42 @@ class Game:
                                   "lines": {k: len(v) for k, v in self.engine.lines.layers.items()},
                                   "streets_busy": self.maproads.busy})
 
+    def _map_route(self) -> None:
+        """The GPS route on the map as a line over the roads (engine.lines, after maproads' layers so it draws on
+        top), and a cross where it ends; set again when the route or the render frame changes, hidden off the map."""
+        from contravia import mapview, maproads
+        from contravia.summary import _heights
+
+        lines, g = self.engine.lines, self.gps
+        on = (self.mode == "map" and self.map is not None and self.flight is None and g.route is not None
+              and g.router.rg is not None and getattr(self, "maproads", None) is not None)
+        if not on:
+            if getattr(self, "_route_drawn", None) is not None:
+                for k in ROUTE_KEYS:
+                    lines.look(k, alpha=0.0)
+                self._route_drawn = None
+            elif not getattr(self, "_route_cleared", False):  # a reload under dev keeps the engine and its lines
+                for k in ROUTE_KEYS:
+                    lines.remove(k)
+                self._route_cleared = True
+            return
+        mpp = mapview.metres_per_pixel(self.map, max(self.engine.h, 1))
+        key = (id(g.route), tuple(self.engine.origin), round(math.log(mpp), 1))
+        if key != getattr(self, "_route_drawn", None):
+            self._route_drawn = key
+            o = np.array([self.engine.origin[0], 0.0, self.engine.origin[1]])
+            pts = g.route.polyline(g.router.rg)
+            y = _heights(pts, self.terrain, True) + maproads.LIFT
+            p3 = np.c_[pts[:, 0], y, pts[:, 1]] - o
+            lines.set("route-casing", p3[:-1], p3[1:], maproads.DARK, ROUTE_PX + maproads.CASING)
+            lines.set("route", p3[:-1], p3[1:], ROUTE_FILL, ROUTE_PX)
+            r = MARK_PX * mpp  # the end's cross, MARK_PX screen pixels across its arms
+            c = p3[-1]
+            arms = np.array([[r, 0.0, r], [r, 0.0, -r]])
+            lines.set("route-mark", c - arms, c + arms, ROUTE_FILL, ROUTE_PX + 1.0)
+        for k in ROUTE_KEYS:
+            lines.look(k, scale=maproads.scale(self.map.h) if k != "route-mark" else 1.0, alpha=1.0)
+
     def _recentre(self) -> np.ndarray:
         """Move the engine's origin to the camera (behind the car while driving) when it has gone RECENTRE
         metres; returns the origin as (x, 0, z)."""
@@ -1259,6 +1330,7 @@ class Game:
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
         self.engine.camera.vertical_scale = self._exaggeration()
         self._map_roads()
+        self._map_route()
         self._save_photo()
         self.engine.camera.fov = collect.fov_for(self.aim["zoom"]) if self.mode == "aim" and self.aim else collect.FOV_DEG
         self.hud.show(self.mode == "drive")

@@ -108,7 +108,7 @@ def test_a_gps_destination_survives_a_reload(city):
     again.engine, again.city = g.engine, g.city
     again._make_gps()
     assert again.gps.to == (150.0, 80.0) and again.gps.title == "Capitolio"
-    again._gps_clear({})
+    again.gps_clear({})
     assert again.gps.to is None and again.engine.state.gps_to is None
 
 
@@ -127,3 +127,54 @@ def test_following_a_route_reads_the_focused_province_s_edge(city):
     g.gps_to(g.car.x + 300.0, g.car.z)
     g._follow_route()
     assert g.engine.state.gps["to"] == [g.car.x + 300.0, g.car.z]
+
+
+def _game_with_route(city, level):
+    from contravia.driving_help import DrivingHelp, Road
+    from contravia.gps import RouteGraph
+    from contravia.world import World
+
+    g = bare_game(city)
+    g.city = World(city)
+    g._make_gps()
+    g.teleport(100.0, 50.0)
+    g._dt, g.help_level, g.locked_assists = 1 / 60, level, ()
+    g.help = DrivingHelp(Road(g.city.graph), 0.6, 2.6)
+    rg = g.gps.router.rg = RouteGraph.from_graphs([g.city.graph])
+    from contravia.gps import route
+
+    s = rg.start_at(g.car.x, g.car.z, g.car.yaw)
+    g.gps.to, g.gps.route = (0.0, 0.0), route(rg, s, [(s[0], min(s[1] + 5.0, float(rg.length[s[0]])))])
+    return g
+
+
+def test_the_route_steers_only_the_pilot(city):
+    g = _game_with_route(city, 2)
+    g._route_for_pilot()
+    assert g.help.route_next is None and g.help.stop_at is None
+    g.help_level = 0
+    g._route_for_pilot()
+    assert g.help.route_next is not None and g.help.stop_at is not None
+
+
+def test_dropping_or_changing_the_destination_drops_the_pilot_s_stop(city):
+    g = _game_with_route(city, 0)
+    g._route_for_pilot()
+    g.gps_clear()
+    g._route_for_pilot()
+    assert g.help.stop_at is None
+    g = _game_with_route(city, 0)
+    g._route_for_pilot()
+    g.gps.route = None  # the guide arrived while the car is on another street
+    g.place = None
+    g._route_for_pilot()
+    assert g.help.stop_at is None
+
+
+def test_a_gps_point_far_from_every_street_is_refused(city):
+    from contravia.world import World
+
+    g = bare_game(city)
+    g.city = World(city)
+    g._make_gps()
+    assert g.gps_to(1e6, 1e6) == "Aquí no hay calle cerca" and g.gps.to is None
