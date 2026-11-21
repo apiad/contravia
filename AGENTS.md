@@ -59,7 +59,8 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   drew its streets and houses in the water (335 km² of Matanzas). `read_terrain(..., land=)` raises every sample on
   `coast.src`'s land to `terrain.LAND` (0.6 m, twice SEA: the waterline falls half way to the next sample of sea);
   `prepare` and `source` pass the coast. `contravia relief --data X.npz` does it to a built province in place; then
-  rebuild its streets and walks, and the island's `causeways` and `water`, which are read on the relief.
+  rebuild its streets and walks, and the island's `causeways` and `water`, which are read on the relief, and delete
+  `index.npz`: the far view keeps the old sea until the index and `summary/` are written again on the next load.
 - A car driven into the sea sinks and comes back on the shore (`contravia/sea.py`): over the sea the wheels stand
   on a floor that goes down past the shallows (`Shore.floor`), under 0.7 m of water the car sinks for 2 s and at
   2.6 s stands, stopped, on the nearest dry road within 300 m or else the nearest dry land, facing inland.

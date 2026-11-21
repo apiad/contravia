@@ -288,7 +288,8 @@ def read_terrain(folder, box, step: float = 30.0, stride: int = 1, fetch: bool =
 def main(path, coast_path=None) -> dict:
     """Raise the relief of a prepared data file onto the coast's land (ashore) in place and print the count; the
     coast is coast.src beside the file unless given. Its streets and walks are then rebuilt on the new relief
-    (`contravia streets`, `contravia walks`), and the island's causeways and water with theirs."""
+    (`contravia streets`, `contravia walks`), and the island's causeways and water with theirs; the far view
+    follows when index.npz is deleted and written again on the next load."""
     import json
     from pathlib import Path
 
