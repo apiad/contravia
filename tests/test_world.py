@@ -68,3 +68,39 @@ def test_focus_moves_the_graph_to_the_province_of_the_car(island):
     assert w.focus(FAR_EAST, 0.0) and w.focused == "Artemisa"
     assert not w.focus(FAR_EAST + 50, 0.0)
     assert w.focus(0.0, 0.0) and w.focused == "La Habana"
+
+
+def two_reliefs():
+    """Province 0 holds cell (0, 0) on a small grid at 10 m; province 1 holds cell (1, 0) on a grid at 20 m that
+    reaches far past both, so every point here lies deeper inside it."""
+    from types import SimpleNamespace
+
+    from contravia.terrain import Terrain
+    from contravia.world import IslandTerrain, _keys
+
+    grids = [Terrain(np.full((11, 11), 10.0, np.float32), (-500.0, -500.0), (100.0, 100.0), fade=0.0),
+             Terrain(np.full((101, 101), 20.0, np.float32), (-5000.0, -5000.0), (100.0, 100.0), fade=0.0)]
+    world = SimpleNamespace(top=20.0, _grids=[World._grid_box(t) for t in grids], _terrain=lambda k: grids[k],
+                            _region_keys=[_keys(np.array([[0, 0]])), _keys(np.array([[1, 0]]))])
+    world._regions_over = lambda x, z: World._regions_over(world, x, z)
+    return IslandTerrain(world)
+
+
+def test_the_ground_of_a_cell_is_the_relief_of_the_province_that_holds_it():
+    from contravia.world import BLEND
+
+    t = two_reliefs()
+    assert t.owner(np.array([0, 1, 7, 900]), np.array([0, 0, 7, 0])).tolist() == [0, 1, 1, -1]
+    x = np.array([100.0, 200.0 - BLEND, 200.0, 200.0 + BLEND, 300.0])
+    h = t.height(x, np.full(5, 100.0))
+    assert h.tolist() == pytest.approx([10.0, 10.0, 15.0, 20.0, 20.0])  # held, pure to BLEND of the edge, mixed on it
+    ramp = t.height(np.linspace(200.0 - BLEND, 200.0 + BLEND, 41), np.full(41, 100.0))
+    assert (np.diff(ramp) > 0).all() and np.abs(np.diff(ramp)).max() < 0.3  # no step across the edge
+    assert t.height(1500.0, 1500.0) == pytest.approx(20.0)  # bare land: the grid it lies deepest inside
+    assert t.height(9000.0, 0.0) == 0.0 and t.height(np.zeros((2, 3)), np.zeros((2, 3))).shape == (2, 3)
+
+
+def test_an_island_of_one_province_keeps_its_relief(city):
+    w = World(city)
+    xz = city.a["roads"][:50, :2].astype(float)
+    assert np.allclose(w.terrain.height(xz[:, 0], xz[:, 1]), city.terrain.height(xz[:, 0], xz[:, 1]))
