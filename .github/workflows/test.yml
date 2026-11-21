@@ -34,6 +34,8 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --locked --group dev
+      - name: Every path declares its licence
+        run: uvx reuse lint
       - name: fastci
         env:
           GH_TOKEN: ${{ github.token }}

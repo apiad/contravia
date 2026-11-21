@@ -1,0 +1,41 @@
+version = 1
+
+[[annotations]]
+path = ["contravia/**", "havana/**", "tests/**", "bench/**", "packaging/**", "caiman/**", "site/**",
+        "pyproject.toml", "uv.lock", ".github/**", ".rift.yaml", ".gitignore", ".python-version", "REUSE.toml"]
+SPDX-FileCopyrightText = "The Contravía authors"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+[[annotations]]
+path = ["assets/**", "branding/**", "docs/**", "know-how/**", "README.md", "AGENTS.md", "CONTRIBUTING.md", "TRADEMARKS.md"]
+SPDX-FileCopyrightText = "The Contravía authors"
+SPDX-License-Identifier = "CC-BY-NC-SA-4.0"
+
+[[annotations]]
+path = "assets/fonts/**"
+precedence = "override"
+SPDX-FileCopyrightText = "The Noto Project Authors"
+SPDX-License-Identifier = "OFL-1.1"
+
+[[annotations]]
+path = ["data/**", "contravia/places.json", "contravia/towns.json"]
+precedence = "override"
+SPDX-FileCopyrightText = "OpenStreetMap contributors; Copernicus DEM (DLR e.V., Airbus); ESA WorldCover"
+SPDX-License-Identifier = "ODbL-1.0"
+
+[[annotations]]
+path = ["contravia/sky_data/stars.npy", "contravia/sky_data/milkyway.npy"]
+precedence = "override"
+SPDX-FileCopyrightText = "The Contravía authors, from the Yale Bright Star Catalogue (public domain) and NASA SVS 4851 (public domain)"
+SPDX-License-Identifier = "CC-BY-NC-SA-4.0"
+
+[[annotations]]
+path = "contravia/sky_data/climate.json"
+precedence = "override"
+SPDX-FileCopyrightText = "Contains modified Copernicus Climate Change Service information (ERA5, via Open-Meteo) and NOAA GHCN-Daily"
+SPDX-License-Identifier = "CC-BY-4.0"
+
+[[annotations]]
+path = ["MODS.md", "LICENSES/LicenseRef-Contravia-Mods.txt"]
+SPDX-FileCopyrightText = "The Contravía authors"
+SPDX-License-Identifier = "LicenseRef-Contravia-Mods"
