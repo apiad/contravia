@@ -72,3 +72,73 @@ def test_play_takes_pipelining_off(monkeypatch):
     assert seen["pipelined"] is True
     contravia.cli.main(["play", "--data", "data/cuba", "--no-pipeline"])
     assert seen["pipelined"] is False
+
+
+def test_showcase_scenes_and_their_camera_paths():
+    from contravia import showcase
+
+    scenes = showcase.load()
+    assert set(scenes) == {"malecon", "obispo", "loma"}
+    for s in scenes.values():
+        assert len(s["when"].split()) == 2  # a fixed date: the light must not change with the day of the run
+        assert len(s["at"]) == 2 and len(s["path"]) >= 2 and all(len(p) == 6 for p in s["path"])
+    s = {"path": [[0, 10, 0, 100, 0, 0], [100, 20, 0, 200, 0, 0]]}
+    assert showcase.path_at(s, 0.0, 30.0) == ((0.0, 10.0, 0.0), (100.0, 0.0, 0.0))
+    assert showcase.path_at(s, 15.0, 30.0) == ((50.0, 15.0, 0.0), (150.0, 0.0, 0.0))
+    assert showcase.path_at(s, 99.0, 30.0) == ((100.0, 20.0, 0.0), (200.0, 0.0, 0.0))
+
+
+def test_showcase_runs_each_scene_and_saves_a_shot(city, tmp_path):
+    import manifoldx as mx
+
+    from contravia import showcase
+    from contravia.game import Game
+    from contravia.world import World
+
+    engine = mx.Engine("showcase", width=64, height=48)
+    game = Game(engine, World(city))
+    try:
+        out = showcase.run(engine, game, showcase.load(), seconds=0.2, wait=5.0, shots=tmp_path, tag="t")
+    finally:
+        game._shutdown()
+    assert set(out) == {"malecon", "obispo", "loma"}
+    for name, r in out.items():
+        assert r["frames"] >= 1 and r["p50_ms"] > 0 and "gpu_ms" in r
+        assert (tmp_path / f"t-{name}.jpg").exists() and r["shot"].endswith(f"t-{name}.jpg")
+        assert r["clock"].startswith(showcase.load()[name]["when"].replace(" ", "T"))  # set again after the wait
+
+
+def test_compare_writes_one_page_with_every_run(tmp_path):
+    import json
+
+    from PIL import Image
+
+    from contravia import showcase
+
+    for k in (1, 2):
+        Image.new("RGB", (32, 18), (40 * k, 80, 120)).save(tmp_path / f"r{k}.jpg")
+    lines = [{"showcase": True, "preset": p, "knobs": {}, "host": "h", "gpu": "G", "size": [64, 48],
+              "gpu_memory_mb": None,
+              "scenes": {"malecon": {"p50_ms": ms, "p95_ms": ms + 1, "gpu_ms": {"main": 1.5}, "frames": 9,
+                                     "seconds_to_drawn": 0.1, "shot": str(tmp_path / f"r{k}.jpg")}}}
+             for k, (p, ms) in enumerate((("bajo", 31.4), ("ultra", 12.7)), 1)]
+    history = tmp_path / "history.jsonl"
+    history.write_text("\n".join(json.dumps(x) for x in [{"p50_ms": 1}, *lines]) + "\n")
+    page = showcase.compare(history, tmp_path / "page.html").read_text()
+    assert "bajo" in page and "ultra" in page and "31.4" in page and "12.7" in page
+    assert page.count("data:image/jpeg;base64,") == 2 and "http" not in page.split("<body")[1]
+
+
+def test_bench_takes_the_showcase_flags(monkeypatch):
+    import contravia.cli
+    import contravia.showcase
+
+    seen = {}
+    monkeypatch.setattr(contravia.showcase, "main", lambda *a, **k: seen.update(k))
+    monkeypatch.setattr(contravia.showcase, "compare", lambda *a, **k: seen.update(compare=a))
+    contravia.cli.main(["bench", "--showcase", "--preset", "bajo", "--knob", "far=7000", "--knob", "tau=24,72",
+                        "--size", "800x600"])
+    assert seen["preset"] == "bajo" and seen["knobs"] == {"far": 7000.0, "tau": [24.0, 72.0]}
+    assert seen["size"] == (800, 600)
+    contravia.cli.main(["bench", "--compare"])
+    assert "compare" in seen

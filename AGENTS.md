@@ -189,6 +189,11 @@ shore's grid (`rules.shore.vegetated`). The
   window; `contravia bench --time ...` adds traffic numbers to the run.
 - `contravia fleet-sheet OUTDIR [--kind car]` renders one review PNG per kind: a row per variant of `contravia/rules/fleet.py`
   (the ten kinds' families, eras, ranges and colourways) in four views, offscreen; `variant(kind, family, k)` is seeded.
+- `contravia bench --showcase [--preset ultra] [--knob far=7000] [--size 2560x1440]` times the three scenes of
+  `bench/showcase.json` (the Malecón at sunset, Obispo at noon, the hill over the Castillo) at one graphics preset,
+  30 s each once drawn, with GPU ms per pass where manifoldx can measure it and VRAM from nvidia-smi; a few minutes.
+  It appends a line to `bench/history.jsonl` and saves its shots in `bench/out/showcase/`; `contravia bench
+  --compare` writes `bench/out/showcase.html` with every run side by side.
 - `bench/pipelined.py` drives the bench route's first leg offscreen and measures a frame serial against pipelined,
   where the engine draws this frame while the next frame's systems run on a worker; `--check` drives the same leg
   under `MANIFOLDX_PIPELINE=check` to catch a system that writes what the render reads.
