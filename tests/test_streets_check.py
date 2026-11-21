@@ -4,18 +4,19 @@ import numpy as np
 import pytest
 
 from contravia import streets_check
-from contravia.mesh import lattice
-from contravia.streets_check import Check, Levels, count
 from contravia.citydata import CityData
+from contravia.mesh import lattice
 from contravia.prepare import WIDTHS
 from contravia.streets import add_to
+from contravia.streets_check import Check, Levels, count
 from contravia.terrain import Terrain
 from tests.test_structures import _arrays
 
 
-def _city(terrain=None, roads=np.zeros((0, 5))):
+def _city(terrain=None, roads=None):
     """The bridge over a street and the tunnel of tests/test_structures.py, built as prepare builds them."""
-    city = CityData.from_features(roads, [], np.zeros(0), [], np.zeros(0), np.zeros((0, 2)), terrain or Terrain.flat())
+    city = CityData.from_features(np.zeros((0, 5)) if roads is None else roads, [], np.zeros(0), [], np.zeros(0),
+                                  np.zeros((0, 2)), terrain or Terrain.flat())
     city.a.update(_arrays())
     add_to(city, WIDTHS)
     return city
@@ -178,9 +179,9 @@ def test_streets_laid_on_rough_ground_are_raised_clear_of_every_crease_of_it():
 
 
 def test_no_verge_is_laid_across_a_street_where_it_climbs_off_the_ground():
-    from contravia import walks
-
     import shapely
+
+    from contravia import walks
 
     city = _city(roads=np.array([[-300.0, 0.0, 300.0, 0.0, 7.5]]))
     assert walks.add_to(city)["walk_triangles"] > 0          # the avenue climbs to its bridge: its edges get verges
