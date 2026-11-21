@@ -379,9 +379,17 @@ class Game:
             mb.add([(-h, 0, -h), (h, 0, -h), (h, 0, h), (-h, 0, h)], [(0, 1, 0)] * 4, WATER if sea else GROUND,
                    [(0, 1, 2), (0, 2, 3)])
         m = mb.to_meshdata(0.0, 0.0)
+        material = StandardMaterial("#ffffff", roughness=0.95, vertex_colors=True)
+        self.sea_material = None
+        try:  # open water with ripples, the sky in it and the sun's glitter, on a manifoldx that has it
+            from manifoldx.resources import SeaMaterial
+        except ImportError:
+            SeaMaterial = None
+        if sea and SeaMaterial is not None:
+            material = self.sea_material = SeaMaterial(color=(0.03, 0.14, 0.22))
         return self.engine.spawn(Mesh({"positions": m.positions, "normals": m.normals, "colors": m.colors,
                                        "indices": m.indices}),
-                                 Material(StandardMaterial("#ffffff", roughness=0.95, vertex_colors=True)),
+                                 Material(material),
                                  Transform(pos=(0.0, BASE_Y if sea else FLAT_BASE_Y, 0.0)))
 
     def _spawn_shelf(self):
@@ -1555,6 +1563,8 @@ class Game:
         self.look = look(sun, moon, now, self.weather.config)
         eye = self.eye - self.o  # these write render-frame positions
         self.atmosphere.apply(self.look, eye)
+        if getattr(self, "sea_material", None) is not None:  # the sea reflects the sky of this frame
+            self.sea_material.zenith, self.sea_material.horizon = self.look.zenith, self.look.horizon
         self.engine.camera.far = self.far
         view = flight.view((self.eye, self._target)) if self.flight is not None and self._target is not None \
             else self.map if self.mode == "map" else None

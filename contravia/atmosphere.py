@@ -165,6 +165,7 @@ class Atmosphere:
         global FOG_CLEAR
         self.shadow = tuple(q.shadow)
         FOG_CLEAR = tuple(q.fog_clear)
+        self.sky = bool(getattr(q, "sky", False))
 
     def _ready(self, key: str) -> bool:
         """Start the environment's precompute in the background; True once it is done."""
@@ -197,6 +198,11 @@ class Atmosphere:
             self.env_key = key
         if self.env_key:
             self.envs[self.env_key].intensity = lk.env_intensity
+        if getattr(self, "sky", False) and hasattr(e, "set_post"):
+            from manifoldx.post import Sky
+
+            # the disk at full glare for a sun well up, dimmer for a low sun, a faint one for the moon
+            e.set_post(sky=Sky(zenith=lk.zenith, horizon=lk.horizon, sun_intensity=24.0 * min(1.0, lk.light_intensity / 1.5)))
         if lk.shadows:
             extent, res, pcf = self.shadow
             target = snap_target(eye, lk.light_dir, extent, res)
