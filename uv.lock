@@ -202,8 +202,8 @@ prepare = [
 
 [package.metadata]
 requires-dist = [
-    { name = "euterpe", git = "https://github.com/gia-uh/euterpe?rev=01e33e0c50e01ec2ad5f6d2078e742f02bf8f810" },
-    { name = "manifold-gfx", extras = ["desktop", "svg", "audio"], git = "https://github.com/gia-uh/manifoldx?branch=audio" },
+    { name = "euterpe", git = "https://github.com/gia-uh/euterpe?rev=8c9b8f39428aa4d0e6fe2b1ab6641257ab70c512" },
+    { name = "manifold-gfx", extras = ["desktop", "svg", "audio"], git = "https://github.com/gia-uh/manifoldx?branch=main" },
     { name = "numpy" },
     { name = "pillow" },
     { name = "shapely" },
@@ -227,7 +227,7 @@ prepare = [
 [[package]]
 name = "euterpe"
 version = "0.2.0"
-source = { git = "https://github.com/gia-uh/euterpe?rev=01e33e0c50e01ec2ad5f6d2078e742f02bf8f810#01e33e0c50e01ec2ad5f6d2078e742f02bf8f810" }
+source = { git = "https://github.com/gia-uh/euterpe?rev=8c9b8f39428aa4d0e6fe2b1ab6641257ab70c512#8c9b8f39428aa4d0e6fe2b1ab6641257ab70c512" }
 dependencies = [
     { name = "numpy" },
     { name = "pyloudnorm" },
@@ -315,7 +315,7 @@ wheels = [
 [[package]]
 name = "manifold-gfx"
 version = "0.10.0"
-source = { git = "https://github.com/gia-uh/manifoldx?branch=audio#11fd4bd317405db8d9c39caa58a3c311f49b815e" }
+source = { git = "https://github.com/gia-uh/manifoldx?branch=main#fd69f0ded11a8a73e1f09ae802d0c107e55eea6b" }
 dependencies = [
     { name = "numpy" },
     { name = "rendercanvas" },
