@@ -167,6 +167,8 @@ shore's grid (`rules.shore.vegetated`). The
 - A script of your own that builds `Game` (custom shots, probes) must run its code under
   `if __name__ == "__main__":`: the streamer starts worker processes with spawn, which re-imports the script and
   fails with "start a new process before the current process has finished its bootstrapping phase".
+  `contravia play` starts those workers first (`game.start_builders()`, after setting `HAVANA_DATA`), so they
+  load the world while the game's process does; a script can do the same and pass them as `Game(builders=...)`.
 - `contravia flowmap out.png --time "Tue 08:00" [--traffic my.json]` draws the flow layer over the province without a
   window; `contravia bench --time ...` adds traffic numbers to the run.
 - `contravia fleet-sheet OUTDIR [--kind car]` renders one review PNG per kind: a row per variant of `contravia/rules/fleet.py`
