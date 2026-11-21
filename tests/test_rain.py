@@ -46,3 +46,16 @@ def test_two_rains_keep_their_own_pools():
     first.configure(PRESETS["bajo"])
     second.configure(PRESETS["bajo"])  # the first one's change does not make this one a no-op
     assert second.pool == 1000 and len(second.rel) == 1000 and rain.POOL == 3000
+
+
+def test_a_smaller_pool_moves_in_the_frame_it_was_made():
+    import manifoldx as mx
+
+    from contravia import rain
+    from contravia.quality import PRESETS
+
+    engine = mx.Engine("rain-small", width=64, height=64)
+    r = rain.Rain(engine)
+    r.configure(PRESETS["medio"])  # the old drops are destroyed only at the frame's end
+    engine.systems.run_all(engine, 1 / 60)
+    assert len(r.rel) == r.pool < 3000
