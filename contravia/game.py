@@ -656,10 +656,34 @@ class Game:
             length, _, width = self.driven.spec.size
             self.help = DrivingHelp(self._road(), *self.driven.steering(), length, width)
             self._help_for = (id(graph), id(self.driven))
+        self._route_for_pilot()
         on = road_assists(level, locked)
         return self.help.apply(c, self.car, self._dt, level, locked, float(self.strengths()[0]),
                                self._ahead_of_car() if on & {"brake", "pilot"} else None,
                                self.layer.signal_open if self.layer else None, place=self.place)
+
+    def _route_for_pilot(self) -> None:
+        """Hand the pilot the GPS route in this province's edge ids: the next edge (None across a border, where it
+        takes the straightest exit until the focus moves) and the destination as a stop line, kept until it has
+        stopped there even after the guide arrived."""
+        g, rg, h = self.gps, self.gps.router.rg, self.help
+        if h.arrived:
+            self._pilot_stop = None
+        if g.route is None or rg is None:
+            h.route_next, h.stop_at = None, getattr(self, "_pilot_stop", None)
+            return
+        k = self.city.names.index(self.city.focused)
+
+        def next_local(e: int, k=k) -> int | None:
+            n = g.next_edge(rg.island(k, e))
+            if n is None:
+                return None
+            p, local = rg.local(n)
+            return local if p == k else None
+
+        last_k, last = rg.local(int(g.route.edges[-1]))
+        self._pilot_stop = (last, g.route.s1) if last_k == k else None
+        h.route_next, h.stop_at = next_local, self._pilot_stop
 
     def _road(self) -> Road | None:
         """The focused province's streets, indexed for Road.locate; None with no graph."""
