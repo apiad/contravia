@@ -808,6 +808,31 @@ class Game:
         if self.layer:
             self.runner.stop()
 
+    def _map_roads(self) -> None:
+        """The map's roads as lines over the relief (contravia/maproads.py), made on the map's first frame and
+        hidden everywhere else."""
+        on = self.mode == "map" and self.map is not None and self.flight is None
+        if getattr(self, "maproads", None) is None:
+            if not on:
+                if not getattr(self, "_lines_cleared", False):  # a reload under dev keeps the engine and its lines
+                    from contravia.maproads import KEYS
+
+                    for k in KEYS:
+                        self.engine.lines.remove(k)
+                    self._lines_cleared = True
+                return
+            from contravia.maproads import MapRoads
+
+            self.maproads = MapRoads(self.engine, self.city, (self.streamer.levels, 0, 0))
+        self.maproads.update(on, self.map.h if on else 0.0, self.streamer.drawn() if on else ())
+        t = time.perf_counter()
+        if on and t - getattr(self, "_map_state_at", 0.0) > 0.5:  # what an agent checks: the camera, the lines
+            self._map_state_at = t
+            m = self.map
+            self._publish("map", {"x": round(m.x), "z": round(m.z), "h": round(m.h), "yaw": round(math.degrees(m.yaw), 1),
+                                  "lines": {k: len(v) for k, v in self.engine.lines.layers.items()},
+                                  "streets_busy": self.maproads.busy})
+
     def _recentre(self) -> np.ndarray:
         """Move the engine's origin to the camera (behind the car while driving) when it has gone RECENTRE
         metres; returns the origin as (x, 0, z)."""
@@ -996,6 +1021,7 @@ class Game:
             self.shelf.transform.pos = (0.0, self._shelf_y(), 0.0)
         self.engine.camera.set_pose(position=tuple(self.eye - self.o), target=tuple(target - self.o))
         self.engine.camera.vertical_scale = self._exaggeration()
+        self._map_roads()
         self._save_photo()
         self.engine.camera.fov = collect.fov_for(self.aim["zoom"]) if self.mode == "aim" and self.aim else collect.FOV_DEG
         self.hud.show(self.mode == "drive")

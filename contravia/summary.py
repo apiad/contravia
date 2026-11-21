@@ -36,6 +36,8 @@ LIFT = 0.2  # metres: with relief, a summary's land never stands lower than this
 RELIEF_STEP = 50.0  # metres: the ground's squares are cut down toward this, so the relief reads from the air
 RELIEF_SUB = 4  # at most this many pieces a side per square
 ROAD_LIFT = 0.15  # metres a summary's road stands over its own ground: still under a cell's ground (BELOW)
+ROAD_LEVELS = 5  # the highest level whose mesh draws its roads: above it a road a pixel wide would be metres wide,
+# and the map draws the roads as lines instead (contravia/maproads.py)
 ROOF_MIX = 0.6  # far roofs lean this share toward the built-up tone, the same at every level: each piece of a
 # merged mass averages its buildings' roofs, and side by side those pastels read from the air as a checkerboard
 
@@ -414,7 +416,7 @@ def summary_mesh(s: dict, L: int, a: int, b: int, origin, terrain=None, pantheon
         _blocks_mesh(mb, s, L, a, b, origin, terrain, sea)
     else:
         _boxes(mb, s, x0, z0, sq, terrain, (L, a, b))
-    roads = np.asarray(s["roads"], float)
+    roads = np.asarray(s["roads"], float) if L <= ROAD_LEVELS else np.zeros((0, 5))
     if len(roads):
         length = np.hypot(roads[:, 2] - roads[:, 0], roads[:, 3] - roads[:, 1])
         _roads(mb, roads[np.lexsort((-length, -roads[:, 4]))][:ROAD_CAP], ground, land, x0, z0, side, sea)
