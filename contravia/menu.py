@@ -469,6 +469,7 @@ class OptionsScreen(RowsScreen):
 
     title = "Opciones"
     hints: ClassVar[list] = [("↑↓", "Ajuste"), ("←→", "Cambiar"), ("ESC", "Guardar y volver")]
+    per_column = 6  # twelve rows: two columns keep the last ones above the hints
 
     def rows(self):
         return self.menu.options.rows
@@ -584,7 +585,8 @@ class CreditsScreen(Screen):
                 for part in textwrap.wrap(line, self.WRAP):
                     self.texts.append(_text(part, ui.BOLD, 14, ui.PAPER))
                     column.append(self.texts[-1])
-        self.panels.append(Panel(column, anchor="top-left", offset=(60, 120), style_overrides={**CLEAR, "gap": 3}))
+        self.panels.append(Panel(column, anchor="top-left", offset=(44, 112),
+                                 style_overrides={"gap": 3, "padding": "8 16 14 16", "bg": ui.alpha(ui.INK, 0.86)}))
         self.panels.append(_hints(width, [("ESC", "Volver")]))
 
     def key(self, k):

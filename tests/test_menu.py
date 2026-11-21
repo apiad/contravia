@@ -704,3 +704,35 @@ def test_the_credits_row_is_never_saved(tmp_path, monkeypatch):
     assert "credits" not in saved and "tune_quality" not in saved
     (tmp_path / "settings.json").write_text(json.dumps({"units": "mph"}))
     assert Options.load()["units"].value == "mph"
+
+
+def test_the_credits_sit_on_a_dark_backing(city_npz, tmp_path):
+    from PIL import Image
+
+    out = tmp_path / "credits.png"
+    env = {**os.environ, "CONTRAVIA_CONFIG": str(tmp_path)}
+    subprocess.run([sys.executable, "-m", "contravia.cli", "play", "--data", str(city_npz), "--screen", "credits",
+                    "--shot", str(out), "--frames", "10"], check=True, timeout=600, env=env)
+    img = np.asarray(Image.open(out).convert("L"), int)
+    box = img[200:420, 520:640]  # right of the options' dark band, where the longest credits run
+    assert np.median(box) < 70  # mostly backing, so the light letters read
+
+
+def test_every_option_row_fits_above_the_hints(city_npz, tmp_path, monkeypatch):
+    import manifoldx as mx
+
+    from contravia import ui
+    from contravia.game import Game
+    from contravia.menu import Menu, OptionsScreen
+    from contravia.world import World
+
+    monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path))
+    engine = mx.Engine("menu", width=64, height=48)
+    game = Game(engine, World.load(str(city_npz)), clock=Clock(at=parse_at("Tue 10:00")))
+    menu = Menu(engine, game, FreeDrive.from_flags(), Options.load())
+    menu.show("options")
+    rows = len(menu.screens["options"].rows())
+    per = OptionsScreen.per_column or rows
+    assert 130 + 54 * per + 66 <= ui.DESIGN_H - 44  # rows, then the help lines, above the hints bar
+    game.streamer.close()
+    game.detail.close()
