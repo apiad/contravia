@@ -191,7 +191,7 @@ class Game:
         engine.system(self.sky, parallel=True)
         engine.on("teleport")(self._teleport_event)
         engine.on("gps")(self._gps_event)
-        engine.on("gps_clear")(self._gps_clear)
+        engine.on("gps_clear")(self.gps_clear)
         engine.on("traffic_config")(self.configure_traffic)
         engine.on("close")(self.close_street)
         engine.on("sky_config")(self.configure_sky)
@@ -526,7 +526,8 @@ class Game:
             x, z = float(p["x"]), float(p["z"])
         self.gps_to(float(x), float(z), p.get("title"))
 
-    def _gps_clear(self, _=None) -> None:
+    def gps_clear(self, _=None) -> None:
+        """Drop the GPS destination and its route."""
         self.gps.clear()
         self.engine.state.gps_to = None
 
@@ -837,10 +838,25 @@ class Game:
         self._lifting = (f.start, got)
         threading.Thread(target=work, name="flight-lift", daemon=True).start()
 
+    def back_to_car(self) -> None:
+        """Leave the map for the car where it stands: the camera flies down to the chase camera's place behind it
+        and driving goes on, the car not moved (a GPS route was just set)."""
+        from contravia import mapview
+
+        _, eye, target = chase(None, self.car, 0.0, self.surface)
+        self.flight = flight.down(mapview.pose(self.map), (eye, target), (self.car.x, self.car.z))
+        self._lift_flight(self.car.x, self.car.z)
+        self.map, self._keep_car = None, True
+
     def _land(self) -> None:
-        """The flight down landed: the car on its road and driving, the chase camera on from the flight's eye."""
+        """The flight down landed: the car on its road and driving, the chase camera on from the flight's eye;
+        back to the car (back_to_car), the car stays where it was."""
         eye, (x, z) = self.eye, self.flight.dest
         self.flight = None
+        if getattr(self, "_keep_car", False):
+            self._keep_car = False
+            self.resume()
+            return
         self.teleport(x, z)
         self.eye = eye  # teleport puts the eye over the car; the chase starts from the flight's last one instead
         self.km, self.area, self.address = 0.0, "", ("", "", "")

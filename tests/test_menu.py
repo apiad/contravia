@@ -159,6 +159,7 @@ def test_the_map_opens_from_the_pause_and_the_main_menu_and_drives_at_its_crossh
     road = game.walls.random_road(np.random.default_rng(3))[:2]
     game.map = mapview.MapCam(float(road[0]), float(road[1]), 800.0, 0.0)
     engine.render_frame(supersample=1)
+    menu.press("Enter")  # from the drive's map, a point offers «Manejar aquí» first
     menu.press("Enter")  # Manejar aquí
     assert menu.current is None and game.flight is not None and game.map is None
     engine.render_frame(supersample=1, dt=0.05)
@@ -500,3 +501,49 @@ def test_road_help_comes_back_after_a_level_without_it(city_npz):
             assert (game.help is None) == (level == 5)
     finally:
         game._shutdown()
+
+
+def test_from_the_drive_s_map_a_point_sets_the_gps_and_the_camera_flies_back_to_the_car(city_npz, tmp_path,
+                                                                                       monkeypatch):
+    import manifoldx as mx
+
+    from contravia import mapview
+    from contravia.game import Game
+    from contravia.menu import Menu
+    from contravia.world import World
+
+    monkeypatch.setenv("CONTRAVIA_CONFIG", str(tmp_path))
+    engine = mx.Engine("gps", width=64, height=48)
+    game = Game(engine, World.load(str(city_npz)), clock=Clock(at=parse_at("Tue 10:00")))
+    menu = Menu(engine, game, FreeDrive.from_flags(when="Tue 10:00"), Options.load())
+    engine.render_frame(supersample=1)
+    menu.press("Enter")  # Modo libre
+    menu.press("Enter")  # Arrancar
+    _lift(engine, game)
+    menu.press("Escape")
+    menu.press("ArrowDown")  # Mapa
+    menu.press("Enter")
+    _fly(engine, game)
+    x, z = game.car.x, game.car.z
+    road = game.walls.random_road(np.random.default_rng(3))[:2]
+    game.map = mapview.MapCam(float(road[0]), float(road[1]), 800.0, 0.0)
+    engine.render_frame(supersample=1)
+    menu.press("Enter")
+    screen = menu.screens["map"]
+    assert [t.text for t in screen.choice_panel.children] == ["Manejar aquí", "Ir con GPS"]
+    menu.press("ArrowDown")
+    menu.press("Enter")  # Ir con GPS
+    assert game.gps.to == pytest.approx((float(road[0]), float(road[1])))
+    assert menu.current is None and game.flight is not None and game.map is None
+    _fly(engine, game)
+    assert game.mode == "drive" and (game.car.x, game.car.z) == pytest.approx((x, z), abs=0.5)
+
+    menu.press("Escape")  # the pause offers to drop the route
+    labels = [label for label, _, _ in menu.screens["pause"].items()]
+    assert "Quitar ruta" in labels
+    for _ in range(labels.index("Quitar ruta")):
+        menu.press("ArrowDown")
+    menu.press("Enter")
+    assert game.gps.to is None and "Quitar ruta" not in [label for label, _, _ in menu.screens["pause"].items()]
+    game.streamer.close()
+    game.detail.close()

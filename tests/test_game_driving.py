@@ -108,7 +108,7 @@ def test_a_gps_destination_survives_a_reload(city):
     again.engine, again.city = g.engine, g.city
     again._make_gps()
     assert again.gps.to == (150.0, 80.0) and again.gps.title == "Capitolio"
-    again._gps_clear({})
+    again.gps_clear({})
     assert again.gps.to is None and again.engine.state.gps_to is None
 
 
