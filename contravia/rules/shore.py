@@ -71,7 +71,7 @@ CLIFF_ROCK = (0.62, 0.58, 0.50)
 MUD = (0.27, 0.24, 0.18)
 RIPRAP_ROCK = (0.50, 0.50, 0.48)  # the grey of the causeways' quarried rock
 SEA_COLOUR = (0.10, 0.24, 0.32)  # the water plane's colour (game.WATER): the shallows fade into it
-RIVER_COLOUR = (0.11, 0.22, 0.20)  # inland water away from its banks: greener and darker than the sea
+RIVER_COLOUR = (0.13, 0.27, 0.25)  # inland water away from its banks: greener and darker than the sea
 SHALLOW = ((0.40, 0.70, 0.68), (0.18, 0.40, 0.44), (0.14, 0.34, 0.40), (0.22, 0.30, 0.22), (0.20, 0.36, 0.40),
            (0.24, 0.32, 0.24))
 FOAM = (0.80, 0.86, 0.86)

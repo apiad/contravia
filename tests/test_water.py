@@ -1,11 +1,16 @@
 """Inland water: the levels the relief gives rivers and lakes, the cut at a road with no bridge, what a cell's
 grid reads of it, and a river cell's field, floor and sinking (contravia/water.py, contravia/rules/shore.py)."""
 
+import math
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 import shapely
 
 from contravia import sea, water
+from contravia.car import Controls
+from contravia.game import Game
 from contravia.geo import CELL
 from contravia.rules import shore as R
 from contravia.rules.ground import SEA, WATER_Y
@@ -154,3 +159,38 @@ def test_a_cell_with_no_water_near_keeps_the_ground_it_had():
     assert s.field(4, 4) is None
     plain = Shore(flat())
     assert plain.field(0, 0) is None  # no water.src: no inland shore at all
+
+
+def test_a_car_driven_into_a_lake_sinks_and_comes_back_on_its_bank(city):
+    from contravia.car import CarState, settle
+    from contravia.surface import Surface
+
+    g = Game.__new__(Game)
+    g.engine = SimpleNamespace(state=SimpleNamespace(), origin=(0.0, 0.0), set_origin=lambda x, z: None)
+    shore, terrain = shore_of()
+    g.surface = Surface(city, terrain)
+    g.surface.shore = shore  # the fixture city is flat and dry: give it the river and the lake
+    g.walls = SimpleNamespace(nearest_road=lambda x, z: None)
+    g._place(settle(CarState(100.0, 250.0, math.pi / 2, 0.0, y=10.0), g.surface), 8.0)  # 50 m north of the lake
+    g.eye = np.array([100.0, 14.0, 240.0])
+    level = float(shore.level(100.0, 340.0)[0])
+    sank, dt = None, 1 / 60
+    for k in range(int(20 / dt)):
+        c = Controls(0.4, 0.0, 0.0, False) if g.sinking is None else Controls(0.0, 1.0, 0.0, True)
+        g.car = g.driven.step(c, dt, np.zeros((0, 2, 2)), None)
+        g._at_sea(dt)
+        if g.sinking is not None and sank is None:
+            sank = k * dt
+            assert 300.0 + R.SHALLOWS[R.BANK] < g.car.z < 380.0  # past the bank's shallows, in the lake
+        if sank is not None and g.sinking is None:
+            break
+    assert sank is not None and sank < 12.0, "the car never went into the lake"
+    assert g.sinking is None
+    assert float(shore.floor(g.car.x, g.car.z)[0]) >= level + sea.DRY  # back on dry ground, over the lake's level
+
+
+def test_what_a_cut_leaves_that_is_no_polygon_is_dropped():
+    line = shapely.LineString([(0, 0), (5, 5)])
+    both = shapely.GeometryCollection([line, shapely.box(0, 0, 4, 4), shapely.box(10, 0, 14, 4)])
+    assert water._polygons(line).is_empty
+    assert water._polygons(both).area == pytest.approx(32.0)

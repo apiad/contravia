@@ -15,7 +15,8 @@ water stands. `build` gives each a level from the relief:
 A road that crosses water and is not a bridge keeps its ground, as over a culvert: the water is cut ROAD_MARGIN
 either side of it. Everything is cut into tiles of TILE metres, so a cell reads only what lies near it.
 
-`save` and `load` keep it in one zstd file, water.src, beside coast.src. `Water` answers for the game: which
+`save` and `load` keep it in one zstd file, water.src, beside coast.src, its outlines and points as whole
+numbers of QUANT metres, each the difference from the one before, which packs far smaller. `Water` answers for the game: which
 cells have water near (`near`) and, for a cell's grid, which nodes are wet and at what level (`raster`). The
 shore (contravia/rules/shore.py) draws it: a cell near water takes the shore's fine grid with the water as its
 sea, at that level.
@@ -38,10 +39,13 @@ CUT = 1.5  # metres the water lies under the smoothed relief along a waterway
 MAX_CUT = {"river": 45.0, "canal": 4.0, "stream": 10.0}  # metres under the relief a waterway carves at most
 FLIP = 3.0  # metres a waterway may climb from its first point to its last before it is read backwards
 LOW, DROP = 20.0, 0.3  # a still body's level: this percentile of its outline's relief, less DROP metres
-LEVEL_STEP = 20.0  # metres between the points a waterway's level is kept at
+LEVEL_STEP = 20.0  # metres between the points a waterway's level is worked out at
+LEVEL_KEEP, SPARSE = 0.05, 100.0  # a level point is kept when the level changed this much, or this far on
 ROAD_MARGIN = 2.5  # metres of ground kept either side of a road that crosses water without a bridge
 MIN_AREA = 40.0  # m2: smaller water is left out, the grid that draws it has nodes 2.5 m apart
 TOLERANCE = 0.7  # metres the outlines are simplified to
+QUANT = 0.25  # metres the outlines and the level points are kept to, as whole numbers of it
+CM = 0.01  # metres the levels are kept to
 TILE = 1000.0  # metres a side of the tiles the water is cut into
 OVERLAP = 1.0  # metres neighbouring tiles' pieces overlap, so no node on their edge is left dry
 POINTS_NEAR = 150.0  # metres round a tile whose level points it keeps
@@ -153,6 +157,20 @@ def levels(chains, height) -> list:
     return out
 
 
+def _thin(p: np.ndarray) -> np.ndarray:
+    """The level points (n, 3) of one waterway with those left out that say nothing new: a point is kept when
+    the level has changed by LEVEL_KEEP since the last one kept or it lies SPARSE metres past it; so are both ends."""
+    if len(p) <= 2:
+        return p
+    run = np.r_[0.0, np.cumsum(np.hypot(*np.diff(p[:, :2], axis=0).T))]
+    keep, last = [0], 0
+    for k in range(1, len(p) - 1):
+        if abs(p[k, 2] - p[last, 2]) >= LEVEL_KEEP or run[k] - run[last] >= SPARSE:
+            keep.append(k)
+            last = k
+    return p[keep + [len(p) - 1]]
+
+
 def still_level(ring_xz, height) -> float:
     """A still body's level from the relief along its outline: its LOW percentile less DROP, the sea's where
     that is sea."""
@@ -179,7 +197,9 @@ def _polygons(g):
     import shapely
 
     parts = [p for p in shapely.get_parts(g) if p.geom_type == "Polygon" and not p.is_empty]
-    return shapely.multipolygons(parts) if len(parts) != 1 else parts[0]
+    if not parts:
+        return shapely.Polygon()
+    return shapely.multipolygons(np.array(parts, dtype=object)) if len(parts) > 1 else parts[0]
 
 
 def build(lines, areas, roads, height) -> tuple[dict, dict]:
@@ -207,7 +227,7 @@ def build(lines, areas, roads, height) -> tuple[dict, dict]:
             piece = shapely.intersection(band, _tile_box(*key))
             if not piece.is_empty:
                 tile(key)["flow"].append(piece)
-        p = np.c_[chains[k][0], lv[k]]
+        p = _thin(np.c_[chains[k][0], lv[k]])
         for di in (-POINTS_NEAR, POINTS_NEAR):
             for dj in (-POINTS_NEAR, POINTS_NEAR):
                 keys = np.floor((p[:, :2] + (di, dj)) / TILE).astype(np.int64)
@@ -256,7 +276,8 @@ def build(lines, areas, roads, height) -> tuple[dict, dict]:
             if dry is not None and shapely.intersects(g, dry):
                 g = shapely.difference(g, dry)
                 cut += 1
-            g = _polygons(shapely.simplify(_polygons(shapely.make_valid(g)), TOLERANCE, preserve_topology=True))
+            g = shapely.simplify(_polygons(shapely.make_valid(g)), TOLERANCE, preserve_topology=True)
+            g = _polygons(shapely.set_precision(g, QUANT))
             if g.is_empty or g.area < MIN_AREA / 4:
                 continue
             pieces.append((g, level))
@@ -266,15 +287,46 @@ def build(lines, areas, roads, height) -> tuple[dict, dict]:
         if any(level is None for _, level in pieces) and not len(points):
             pieces = [(g, still_level(shapely.get_coordinates(shapely.segmentize(shapely.boundary(g), LEVEL_STEP)),
                                       height) if level is None else level) for g, level in pieces]
-        out[key] = ([(shapely.to_wkb(g), level) for g, level in pieces],
-                    np.unique(points.astype(np.float32), axis=0))
+        out[key] = (_pack([g for g, _ in pieces]),
+                    np.array([np.nan if level is None else level for _, level in pieces], np.float32),
+                    _pack_points(points))
         whole = shapely.union_all([g for g, _ in pieces])
         km2 += whole.area / 1e6
         cells.update(_cells_near(whole))
     code = np.array(sorted(i * 4_000_000 + j for i, j in cells), np.int64)
     report.update(tiles=len(out), cells=len(code), km2=round(km2, 1), road_cuts=cut,
-                  points=int(sum(len(p) for _, p in out.values())))
+                  points=int(sum(len(p) for _, _, p in out.values())))
     return {"version": VERSION, "tiles": out, "cells": code}, report
+
+
+def _pack(geoms) -> tuple:
+    """Polygons as (coordinate differences in QUANT, the offsets of their rings, polygons and parts)."""
+    import shapely
+
+    multi = np.array([shapely.multipolygons(shapely.get_parts(g)) for g in geoms], dtype=object)
+    _, coords, offsets = shapely.to_ragged_array(multi)
+    q = np.round(coords[:, :2] / QUANT).astype(np.int32)
+    return np.diff(q, axis=0, prepend=np.zeros((1, 2), np.int32)), tuple(np.asarray(o, np.int32) for o in offsets)
+
+
+def _unpack(packed) -> np.ndarray:
+    """The polygons `_pack` packed, one MultiPolygon each."""
+    import shapely
+
+    diffs, offsets = packed
+    coords = np.cumsum(diffs, axis=0).astype(float) * QUANT
+    return shapely.from_ragged_array(shapely.GeometryType.MULTIPOLYGON, coords, offsets)
+
+
+def _pack_points(points: np.ndarray) -> np.ndarray:
+    """Level points (n, 3) as whole QUANT metres and centimetres, sorted, each the difference from the one before."""
+    q = np.unique(np.round(points / (QUANT, QUANT, CM)).astype(np.int32).reshape(-1, 3), axis=0)
+    return np.diff(q, axis=0, prepend=np.zeros((1, 3), np.int32))
+
+
+def _unpack_points(packed: np.ndarray) -> np.ndarray:
+    """The level points `_pack_points` packed, (n, 3) in metres."""
+    return np.cumsum(packed, axis=0).astype(float) * (QUANT, QUANT, CM)
 
 
 def _cells_near(geom) -> set:
@@ -366,9 +418,12 @@ class Water:
                 import shapely
                 from scipy.spatial import cKDTree
 
-                pieces, points = raw
-                points = np.asarray(points, float).reshape(-1, 3)
-                self._open[key] = ([(shapely.from_wkb(w), level) for w, level in pieces], points,
+                packed, levels, points = raw
+                points = _unpack_points(points)
+                geoms = _unpack(packed)
+                geoms = np.where(shapely.is_valid(geoms), geoms, shapely.make_valid(geoms))
+                self._open[key] = ([(g, None if np.isnan(lv) else float(lv)) for g, lv in
+                                    zip(geoms, levels, strict=True)], points,
                                    cKDTree(points[:, :2]) if len(points) else None)
         return self._open[key]
 
