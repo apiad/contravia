@@ -241,9 +241,22 @@ def _mesh(parts, cells_of_part, codes, lift, drop, sample, heights: StreetHeight
     return tris, paint_, keys
 
 
+def _every_street(a, cells: np.ndarray, street: np.ndarray, streets: dict) -> np.ndarray:
+    """Per cell, the footprint of all its street triangles, those of bridges and tunnels too: the ground streets'
+    own (street) wherever the cell holds no other."""
+    tris, off = a["street_tris"], a["street_tris_offsets"]
+    out = street.copy()
+    for k, c in enumerate(map(tuple, cells.tolist())):
+        if off[k + 1] - off[k] > (len(streets[c]) if c in streets else 0):
+            t = np.asarray(tris[off[k]:off[k + 1]], float)[:, :, [0, 2]]
+            out[k] = shapely.union_all(shapely.make_valid(shapely.polygons(t))).buffer(SEAM)
+    return out
+
+
 def _free_edges(streets: dict, street: np.ndarray, index: dict, terrain):
     """The edges of the ground streets' triangles with no street past them that stand VERGE_MIN or more over the
-    ground at either end: (E, 2, 3) with their outward unit normals (E, 2) in (x, z)."""
+    ground at either end: (E, 2, 3) with their outward unit normals (E, 2) in (x, z). street holds per cell the
+    footprint of every street, so the edge a bridge or a tunnel goes on from is not free."""
     edges, normals, homes = [], [], []
     for cell, t in streets.items():
         a, b, c = t, t[:, [1, 2, 0]], t[:, [2, 0, 1]]  # every edge a to b, c the triangle's third corner
@@ -269,12 +282,12 @@ def _free_edges(streets: dict, street: np.ndarray, index: dict, terrain):
     return e[~inside], n[~inside]
 
 
-def _verges(streets, street, cells, boxes, cover, terrain):
+def _verges(streets, street, cells, boxes, cover, terrain, every=None):
     """The verges off the raised edges of the ground streets (see the module): triangles (T, 3, 3), their paint and
     their cell keys. cover holds per cell what else lies on the land there (pavements, platforms, parks,
     buildings), which a verge leaves alone."""
     index = {c: k for k, c in enumerate(map(tuple, cells.tolist()))}
-    e, n = _free_edges(streets, street, index, terrain)
+    e, n = _free_edges(streets, street if every is None else every, index, terrain)
     if not len(e):
         return np.zeros((0, 3, 3)), np.zeros(0, np.uint8), np.zeros((0, 2), np.int64)
     a, b = e[:, 0, [0, 2]], e[:, 1, [0, 2]]
@@ -444,7 +457,7 @@ def build(a, terrain) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
         # the union of valid pieces can still come out with nested shells, which the verges' overlay rejects
         cover[uc] = pmap(lambda g: shapely.make_valid(shapely.union_all(shapely.make_valid(geoms[g]))),
                          np.split(order, first[1:]), chunk=16)
-    t, p, k = _verges(streets, street, cells, boxes, cover, terrain)
+    t, p, k = _verges(streets, street, cells, boxes, cover, terrain, _every_street(a, cells, street, streets))
     if len(t):
         tris.append(t), paints.append(p), keys.append(k)
 
