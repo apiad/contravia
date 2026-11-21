@@ -1187,6 +1187,10 @@ class Game:
         from contravia import curtain
 
         self.curtain, self.waiting_now = curtain.Curtain(time.perf_counter(), then), None
+        # A mode about to start elsewhere: the builders drop the menu's queue instead of finishing it first.
+        # hasattr: under contravia dev, a manifoldx older than QuadStreamer.cancel stays loaded until a restart.
+        if then is not None and hasattr(self.streamer, "cancel"):
+            self.streamer.cancel()
         self._curtain_panel = self._curtain_panel or curtain.Panel(self.engine)
         self._curtain_panel.show(1.0)
         if self._budgets is None:
@@ -1256,7 +1260,7 @@ class Game:
             self._follow_route()
             if getattr(self, "sinking", None) is not None:  # under water the engine is cut and the wheels held
                 c = Controls(0.0, 1.0, 0.0, True)
-            walls = self.walls.near(self.car.x, self.car.z, self.car.y)
+            walls = self.walls.near(self.car.x, self.car.z, self.car.y, wait=not veiled)  # held: none needed yet
             if self.layer:
                 walls = np.concatenate([walls.reshape(-1, 2, 2), self.layer.boxes_near(self.car.x, self.car.z)])
             # the physics checks its walls in every 1/120 s step: hand it only those this frame can reach
@@ -1406,10 +1410,12 @@ class Game:
     def stream(self, query, dt: float) -> None:
         """Point the city's streamer at the camera and publish the cells it holds."""
         self._tune()
-        self.streamer.focus(self.eye[0], self.eye[2], height=max(float(self.eye[1]), 1.0))
-        self.detail.radius = 0 if self.streamer.tau >= self.tau_range[1] else 1
-        # going down to the map's crosshair, the detail ring builds the cells there from the flight's start
-        self.detail.focus(*(self.flight.dest if self.flight is not None and self.flight.dest else (self.car.x, self.car.z)))
+        if self.curtain is None or self.curtain.then is None:  # else the mode starts next frame, maybe elsewhere
+            self.streamer.focus(self.eye[0], self.eye[2], height=max(float(self.eye[1]), 1.0))
+            self.detail.radius = 0 if self.streamer.tau >= self.tau_range[1] else 1
+            # going down to the map's crosshair, the detail ring builds the cells there from the flight's start
+            self.detail.focus(*(self.flight.dest if self.flight is not None and self.flight.dest
+                                else (self.car.x, self.car.z)))
         o = self.city.tree.origin
         full = {(o[0] + a, o[1] + b) for L, a, b in self.streamer.drawn() if L == 0}
         self.forest.update(full, self.eye)

@@ -72,13 +72,25 @@ class Walls:
             self._cache[(i, j)] = pending.result() if pending else self._build(i, j)
         return self._cache[(i, j)]
 
-    def near(self, x: float, z: float, y: float | None = None) -> np.ndarray:
+    def near(self, x: float, z: float, y: float | None = None, wait: bool = True) -> np.ndarray:
         """The (W, 2, 2) wall segments of the 3x3 cells around (x, z). The ring of cells past them is built
         meanwhile on a thread, so a car crossing into the next cell finds its walls ready. Given the car's
         height y, the walls of bridges and tunnels it is level with join them: a bridge's parapet does not stop
-        a car on the street under it, and so do the low walls (raised tombs) within LOW_REACH."""
+        a car on the street under it, and so do the low walls (raised tombs) within LOW_REACH. With wait False
+        (a car held still, under the loading curtain), the 3x3 cells not built yet are built on the thread
+        instead, nothing past them, and there are no walls till they are."""
         i, j = int(np.floor(x / CELL)), int(np.floor(z / CELL))
         if self._joined is None or self._joined[0] != (i, j):  # the car stays in a cell for many frames
+            for key in [k for k in self._pending if max(abs(k[0] - i), abs(k[1] - j)) > 2]:  # left behind: a
+                if self._pending[key].cancel():  # teleport would otherwise wait for the old place's walls
+                    del self._pending[key]
+            keys = [(i + di, j + dj) for di in (-1, 0, 1) for dj in (-1, 0, 1)]
+            if not wait and not all(k in self._cache or (k in self._pending and self._pending[k].done())
+                                    for k in keys):
+                for key in sorted(keys, key=lambda k: abs(k[0] - i) + abs(k[1] - j)):  # the car's own cell first
+                    if key not in self._cache and key not in self._pending:
+                        self._pending[key] = self._pool.submit(self._build, *key)
+                return np.zeros((0, 2, 2), np.float32)
             cells = [self._cell(i + di, j + dj) for di in (-1, 0, 1) for dj in (-1, 0, 1)]
             walls = np.concatenate([c[0] for c in cells])
             low = np.concatenate([c[1] for c in cells])
@@ -89,7 +101,7 @@ class Walls:
         if y is not None:
             s = s[(s[:, 4] - 0.5 <= y) & (y <= s[:, 5])]
             walls = np.concatenate([walls.reshape(-1, 2, 2), s[:, :4].reshape(-1, 2, 2), self._low_near(low, x, z)])
-        for di in range(-2, 3):
+        for di in range(-2, 3) if wait else ():
             for dj in range(-2, 3):
                 key = (i + di, j + dj)
                 if key not in self._cache and key not in self._pending:
