@@ -80,6 +80,7 @@ def test_showcase_scenes_and_their_camera_paths():
     scenes = showcase.load()
     assert set(scenes) == {"malecon", "obispo", "loma"}
     for s in scenes.values():
+        assert len(s["when"].split()) == 2  # a fixed date: the light must not change with the day of the run
         assert len(s["at"]) == 2 and len(s["path"]) >= 2 and all(len(p) == 6 for p in s["path"])
     s = {"path": [[0, 10, 0, 100, 0, 0], [100, 20, 0, 200, 0, 0]]}
     assert showcase.path_at(s, 0.0, 30.0) == ((0.0, 10.0, 0.0), (100.0, 0.0, 0.0))
@@ -104,6 +105,7 @@ def test_showcase_runs_each_scene_and_saves_a_shot(city, tmp_path):
     for name, r in out.items():
         assert r["frames"] >= 1 and r["p50_ms"] > 0 and "gpu_ms" in r
         assert (tmp_path / f"t-{name}.jpg").exists() and r["shot"].endswith(f"t-{name}.jpg")
+        assert r["clock"].startswith(showcase.load()[name]["when"].replace(" ", "T"))  # set again after the wait
 
 
 def test_compare_writes_one_page_with_every_run(tmp_path):

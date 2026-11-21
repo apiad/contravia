@@ -1,8 +1,9 @@
 """contravia bench --showcase: three fixed views of La Habana, timed at one graphics preset, and a page to compare runs.
 
 The scenes are in bench/showcase.json: the Malecón at sunset (the sea and a low sun), Obispo at noon (a narrow street
-seen from a pedestrian's eye) and the hill over the Castillo del Príncipe (distance and fog). Each scene waits until
-the city around its first view is drawn, then moves its camera along a short path for `seconds` while it records
+seen from a pedestrian's eye) and the hill over the Castillo del Príncipe (distance and fog), each at a fixed date and
+time, so every run sees the same light. Each scene waits until the city around its first view is drawn, sets its
+clock again, then moves its camera along a short path for `seconds` while it records
 the frame time and, where manifoldx can measure it, the GPU time of each pass; it ends with a JPEG of its last view.
 One run appends one line to bench/history.jsonl with the preset, the knobs changed from it and every scene's
 numbers. `contravia bench --compare` writes one self-contained page with every run's numbers and shots side by
@@ -70,6 +71,8 @@ def run(engine, game, scenes: dict, seconds: float = 30.0, wait: float = 300.0, 
         while game.waiting() and time.monotonic() - start < wait:
             engine.render_frame(supersample=1)
         drawn = time.monotonic() - start
+        game.clock.set(parse_at(sc["when"]))  # again: a slow preset waits longer, and its sun must not move on
+        clock = game.clock.now().isoformat()
         ms, gpu, t0 = [], {}, time.monotonic()
         while not ms or time.monotonic() - t0 < seconds:
             game.camera_override = lambda t=time.monotonic() - t0: view(t)
@@ -87,7 +90,7 @@ def run(engine, game, scenes: dict, seconds: float = 30.0, wait: float = 300.0, 
         out[name] = {"p50_ms": round(float(np.percentile(f, 50)), 2), "p95_ms": round(float(np.percentile(f, 95)), 2),
                      "frames": len(ms), "seconds_to_drawn": round(drawn, 1),
                      "gpu_ms": {k: round(float(np.median(v)), 3) for k, v in gpu.items()} or None,
-                     "shot": str(path)}
+                     "clock": clock, "shot": str(path)}
     game.camera_override = None
     return out
 
