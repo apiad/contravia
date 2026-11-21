@@ -94,3 +94,36 @@ def test_a_reload_keeps_the_height_the_gear_and_the_slide(city):
     assert g2.car.gear >= 3
     assert g2.driven.fleet.angular[0, 1] == pytest.approx(0.4)
     assert g2.car.vy == pytest.approx(g.car.vy, abs=1e-6)
+
+
+def test_a_gps_destination_survives_a_reload(city):
+    from contravia.world import World
+
+    g = bare_game(city)
+    g.city = World(city)
+    g._make_gps()
+    g._gps_event({"x": 150.0, "z": 80.0, "title": "Capitolio"})
+    assert g.engine.state.gps_to == [150.0, 80.0, "Capitolio"] and g.gps.to == (150.0, 80.0)
+    again = bare_game(city)
+    again.engine, again.city = g.engine, g.city
+    again._make_gps()
+    assert again.gps.to == (150.0, 80.0) and again.gps.title == "Capitolio"
+    again._gps_clear({})
+    assert again.gps.to is None and again.engine.state.gps_to is None
+
+
+def test_following_a_route_reads_the_focused_province_s_edge(city):
+    from contravia.driving_help import Road
+    from contravia.gps import RouteGraph
+    from contravia.world import World
+
+    g = bare_game(city)
+    g.city = World(city)
+    g._make_gps()
+    g.teleport(100.0, 50.0)
+    g._dt = 1 / 60
+    g.gps.router.rg = RouteGraph.from_graphs([g.city.graph])
+    g.place = Road(g.city.graph).locate(g.car.x, g.car.z, g.car.yaw)
+    g.gps_to(g.car.x + 300.0, g.car.z)
+    g._follow_route()
+    assert g.engine.state.gps["to"] == [g.car.x + 300.0, g.car.z]

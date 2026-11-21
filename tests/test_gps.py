@@ -5,7 +5,7 @@ import time
 from graphs import grid, make_graph, straight
 
 from contravia.driving_help import STRAIGHT
-from contravia.gps import Router, RouteGraph, Step, arc_cost, distance_text, route, say, steps
+from contravia.gps import Guide, Router, RouteGraph, Step, arc_cost, distance_text, route, say, steps
 
 
 def rg_joined(rg) -> bool:
@@ -232,3 +232,144 @@ def test_a_roundabout_says_which_exit():
     first = steps(rg, r)[0]
     assert first.kind == "roundabout" and first.exit == 2
     assert say(first, 80.0, None)[1].startswith("En la rotonda, toma la segunda salida")
+
+
+def car_at(g, e, s):
+    from types import SimpleNamespace
+
+    x, z, h = g.points([e], [s], [0.0])
+    return SimpleNamespace(x=float(x[0]), z=float(z[0]), yaw=float(h[0]), speed=10.0)
+
+
+def points_of(g):
+    return lambda e, s: tuple(float(v[0]) for v in g.points([e], [s], [0.0])[:2])
+
+
+def guide_on(g, to, start=(0, 10.0)):
+    """A guide on graph g toward `to`, its first route found from a car `start` (edge, s) along."""
+    gd = Guide(Router(lambda: RouteGraph.from_graphs([g])))
+    gd.go(*to)
+    wait_for(lambda: (gd.update(start[0], start[1], car_at(g, *start), 1 / 60), gd.route)[1] is not None, 5.0)
+    return gd
+
+
+def settle(gd):
+    wait_for(lambda: not gd.router.busy, 5.0)
+
+
+def along_route(g, gd, step=2.0):
+    for k, e in enumerate(gd.route.edges.tolist()):
+        lo = gd.route.s0 if k == 0 else 0.0
+        hi = gd.route.s1 if k == len(gd.route.edges) - 1 else float(g.a["g_len"][e])
+        for s in np.arange(lo, hi + 1e-9, step):
+            yield e, float(s)
+
+
+def test_the_guide_advances_step_by_step_and_arrives():
+    g = grid(3)
+    gd = guide_on(g, (200.0, 150.0))
+    seen = set()
+    for e, s in list(along_route(g, gd)):
+        gd.update(e, s, car_at(g, e, s), 1 / 60)
+        if gd.step is not None:
+            seen.add((gd.step.kind, round(gd.step.at)))
+    assert gd.route is None and gd.message.startswith("Llegaste") and gd.reroutes == 0
+    assert len(seen) >= 2  # it went through the turn and then the arrival
+
+
+def test_off_the_route_for_a_second_a_new_route_starts_from_there():
+    g = grid(3)
+    gd = guide_on(g, (200.0, 150.0))
+    wrong = next(e for e in range(len(g)) if e not in gd.route.edges)
+    for _ in range(70):
+        gd.update(wrong, 10.0, car_at(g, wrong, 10.0), 1 / 60)
+    settle(gd)
+    gd.update(wrong, 10.0, car_at(g, wrong, 10.0), 1 / 60)
+    assert gd.route.edges[0] == wrong and gd.reroutes == 1
+    assert gd.message == "Ruta nueva"
+
+
+def test_a_teleport_routes_again_once():
+    g = grid(3)
+    gd = guide_on(g, (200.0, 150.0))
+    far = next(e for e in range(len(g)) if e not in gd.route.edges)
+    for _ in range(300):
+        gd.update(far, 10.0, car_at(g, far, 10.0), 1 / 60)
+        settle(gd)
+    assert gd.reroutes == 1
+
+
+def test_no_route_says_so_and_drops_the_destination():
+    g = grid(3)
+    gd = Guide(Router(lambda: RouteGraph.from_graphs([g])))
+    gd.go(5000.0, 5000.0)
+    wait_for(lambda: (gd.update(0, 10.0, car_at(g, 0, 10.0), 1 / 60), gd.to)[1] is None, 5.0)
+    assert gd.message == "No hay ruta" and gd.route is None
+
+
+def test_the_look_ahead_turns_the_corner_before_the_car():
+    g = grid(3)
+    gd = guide_on(g, (200.0, 100.0), start=(edge(g, 1, 2), 10.0))  # east along z = 0, then right (south) at x = 200
+    x, z = gd.ahead(22.0, points_of(g), from_edge_s=(edge(g, 1, 2), 82.0))  # 18 m before the corner
+    assert x == pytest.approx(200.0, abs=0.5) and z == pytest.approx(4.0, abs=0.5)
+    assert gd.next_edge(edge(g, 1, 2)) == edge(g, 2, 5)
+
+
+def test_the_arrow_eases_toward_its_heading_the_short_way_round():
+    from contravia.gps import arrow_yaw
+
+    assert arrow_yaw(None, 1.0, 1 / 60) == 1.0
+    assert arrow_yaw(0.0, 1.0, 0.15) == pytest.approx(1 - np.exp(-1), abs=1e-6)
+    assert arrow_yaw(3.0, -3.0, 0.05) > 3.0  # across ±π it turns on, not back through 0
+
+
+def test_the_arrow_is_faint_far_from_the_next_step():
+    from contravia.gps import arrow_opacity
+
+    assert arrow_opacity(400.0) == 0.55 and arrow_opacity(120.0) == 1.0
+
+
+def test_the_arrow_mesh_is_1_6_m_long_along_x():
+    from contravia.gps import arrow_mesh
+
+    m = arrow_mesh()
+    x = m.positions[:, 0]
+    assert x.max() - x.min() == pytest.approx(1.6, abs=0.1) and abs(x.max() + x.min()) < 0.05
+    assert len(m.indices) % 3 == 0 and len(m.positions) == len(m.colors)
+
+
+def test_a_point_along_an_island_edge_follows_its_polyline():
+    g = make_graph([(0, 0), (100, 0), (100, 100)], [(0, 1), (1, 2)])
+    rg = RouteGraph.from_graphs([g])
+    assert rg.point(0, 30.0) == pytest.approx((30.0, 0.0))
+    assert rg.point(1, 100.0) == pytest.approx((100.0, 100.0))
+
+
+def test_the_arrow_s_faces_wind_as_the_shadow_s_that_shows_from_above():
+    from contravia.gps import arrow_mesh
+
+    m = arrow_mesh()
+    p, i = m.positions.astype(float), m.indices.reshape(-1, 3)
+    geo = np.cross(p[i[:, 1]] - p[i[:, 0]], p[i[:, 2]] - p[i[:, 0]])
+    said = m.normals[i[:, 0]]
+    # wound as the car's shadow, which shows from above: its declared normal agrees with its right-hand winding
+    assert np.all((geo * said).sum(1) > 0)
+
+
+def _rotate(q, v):
+    x, y, z, w = q
+    u = np.array([x, y, z])
+    return v + 2 * w * np.cross(u, v) + 2 * np.cross(u, np.cross(u, v))
+
+
+@pytest.mark.parametrize("yaw", [0.0, 1.2, -2.5])
+def test_the_arrow_points_along_its_yaw_and_leans_its_top_toward_the_camera(yaw):
+    from contravia.gps import ARROW_TILT, arrow_rotation
+
+    to_camera = np.array([-np.cos(0.4), -np.sin(0.4)])  # the camera behind the car, seen from above
+    q = arrow_rotation(yaw, to_camera)
+    nose, top = _rotate(q, np.array([1.0, 0, 0])), _rotate(q, np.array([0, 1.0, 0]))
+    ground = nose[[0, 2]] / np.hypot(nose[0], nose[2])
+    assert ground @ np.array([np.cos(yaw), np.sin(yaw)]) > 0.75  # the tilt foreshortens it, never turns it away
+    assert top[1] == pytest.approx(np.cos(ARROW_TILT), abs=1e-6)
+    assert top[[0, 2]] @ to_camera == pytest.approx(np.sin(ARROW_TILT), abs=1e-6)
