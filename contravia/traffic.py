@@ -208,8 +208,8 @@ class Cars:
     def _may_enter(self, i: int, t: float) -> bool:
         """Whether car i, at the head of its lane near the end of its edge, may enter the junction now."""
         e = int(self.edge[i])
-        if self.next_edge[i] < 0:
-            return False
+        if self.next_edge[i] < 0:  # no way on: the road goes on into the next province, and the car with it
+            return True
         if self.control[e] == 1:  # a signal is obeyed however long the wait
             return bool(self._signal_open(np.array([e]), t, np.array([self.len[e] - self.s[i]]),
                                           np.array([self.v[i]]))[0])
@@ -286,6 +286,8 @@ class Cars:
         go = np.flatnonzero(head & self.cleared)
         for i in go.tolist():
             nxt = self.next_edge[i]
+            if nxt < 0:
+                continue
             on = np.flatnonzero((self.edge == nxt) & (self.lane == min(self.lane[i], self.lanes[nxt] - 1)))
             if len(on):
                 k = on[np.argmin(self.s[on])]
@@ -301,7 +303,10 @@ class Cars:
         self.s = self.s + advance
         self.wait = np.where(held & (to_end < LOOK) & (self.v < 0.5), self.wait + dt, 0.0)
 
-        # Cars past the end of their edge move onto the next one.
+        # Cars past the end of their edge move onto the next one; with none, they have left the province.
+        past = self.s > self.len[self.edge]
+        if (past & (self.next_edge < 0)).any():
+            self.remove(past & (self.next_edge < 0))
         over = np.flatnonzero(self.s > self.len[self.edge])
         if len(over):
             rest = self.s[over] - self.len[self.edge[over]]

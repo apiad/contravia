@@ -126,14 +126,18 @@ def _reach(start: int, succ: list[list[int]]) -> np.ndarray:
     return seen
 
 
-def build_graph(ways, controls, restrictions, municipios, rings, to_local, widths, inside=None, places=None) -> dict:
+def build_graph(ways, controls, restrictions, municipios, rings, to_local, widths, inside=None, places=None,
+                near=None) -> dict:
     """The g_* arrays of the drivable graph.
 
     ways: (way id, highway, node ids, [(lat, lon)], tags) per road; controls: node id -> kind; restrictions:
     (from way, via node, to way, kind); municipios: (name, ring in degrees); rings: building footprints in local
     metres; to_local: (lat, lon) arrays -> (N, 2) metres; widths: road width by highway; inside: optional
     (N, 2) -> bool mask, edges whose midpoint is outside are dropped; places: the barrios, as addresses() reads
-    them.
+    them; near: optional (N, 2) -> bool mask of the province and a margin around it: whether a car can enter
+    and leave an edge is worked out over the edges with their midpoint there, so a road that goes on into the
+    next province keeps its pieces up to the border. Each one ends at a junction the other province's graph
+    has too (the same OSM node), and a one-way piece into the border has no turn out of it in this graph.
     """
     from shapely import contains_xy
     from shapely.geometry import Polygon
@@ -176,9 +180,11 @@ def build_graph(ways, controls, restrictions, municipios, rings, to_local, width
 
     lens = np.array([float(np.sum(np.hypot(*np.diff(r[2], axis=0).T))) for r in rows])
     keep = lens > 0.5
+    drivable = keep.copy()  # what a car may use to come back: the province's edges and, with near, the margin
     if inside is not None:
         mids = np.array([r[2][len(r[2]) // 2] for r in rows])
         keep &= inside(mids)
+        drivable &= near(mids) if near is not None else keep
 
     # Keep the part a car can enter and leave: the largest strongly connected part, tried from junctions spread
     # over the province (the one nearest the Capitolio can be a stub at a province's border).
@@ -186,7 +192,7 @@ def build_graph(ways, controls, restrictions, municipios, rings, to_local, width
     jxz = np.array(junction_xz)
     succ, pred = [[] for _ in range(J)], [[] for _ in range(J)]
     for k, r in enumerate(rows):
-        if keep[k]:
+        if drivable[k]:
             succ[r[0]].append(r[1])
             pred[r[1]].append(r[0])
     used = np.zeros(J, bool)
@@ -205,9 +211,9 @@ def build_graph(ways, controls, restrictions, municipios, rings, to_local, width
         if core[start]:
             continue
         part = _reach(start, succ) & _reach(start, pred)
-        if part.sum() > core.sum():
+        if part[candidates].sum() > core[candidates].sum():  # by its junctions inside the province
             core = part
-        if core.sum() > len(candidates) / 2:
+        if core[candidates].sum() > len(candidates) / 2:
             break
     keep &= np.array([core[r[0]] and core[r[1]] for r in rows])
     rows = [r for k, r in enumerate(rows) if keep[k]]
