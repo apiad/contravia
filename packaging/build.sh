@@ -101,7 +101,7 @@ for target in linux windows; do
     rm -rf "$tree/site"/bin "$tree/site"/*.dist-info/RECORD
 
     # The game.
-    rsync -a --exclude __pycache__ "$REPO/contravia" "$REPO/assets" "$tree/app/"
+    rsync -a --exclude __pycache__ "$REPO/contravia" "$REPO/assets" "$REPO/LICENSE" "$REPO/LICENSES" "$REPO/MODS.md" "$REPO/TRADEMARKS.md" "$tree/app/"
     mkdir -p "$tree/app/branding/poster" "$tree/app/data/cuba-src"
     rsync -a "$REPO/branding/poster/panels" "$tree/app/branding/poster/"
     cp "$SRC"/*.src "$tree/app/data/cuba-src/"
