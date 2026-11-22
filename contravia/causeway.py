@@ -294,6 +294,41 @@ def write(pbf, out, height=None) -> dict:
     return report
 
 
+class Banked:
+    """A ground with the causeways' banks on it: at each point the higher of the two (Causeways.top). Streets and
+    pavements built on it (world.island_ground) lie on the crown, and a bridge between two causeways starts from
+    it, instead of from the sea under them."""
+
+    def __init__(self, ground, causeways: Causeways):
+        import shapely
+
+        self.ground, self.causeways = ground, causeways
+        self.heights = getattr(ground, "heights", None)  # what rules.ground.relief reads
+        self.area = shapely.union_all(shapely.buffer(causeways.tree.geometries, causeways.reach() + 1.0))
+        shapely.prepare(self.area)
+
+    def height(self, x, z, near=None) -> np.ndarray:
+        import shapely
+
+        x, z = np.asarray(x, float), np.asarray(z, float)
+        h = np.asarray(self.ground.height(x, z), float)
+        shape = h.shape
+        fx, fz, h = np.broadcast_to(x, shape).ravel(), np.broadcast_to(z, shape).ravel(), h.ravel().copy()
+        on = np.flatnonzero(shapely.contains_xy(self.area, fx, fz)) if h.size else np.zeros(0, int)
+        if len(on):
+            cw = self.causeways
+            p, s = cw.tree.query(shapely.points(fx[on], fz[on]), predicate="dwithin", distance=cw.reach())
+            q = np.c_[fx[on][p], fz[on][p]]
+            a, ab = cw.a[s], cw.b[s] - cw.a[s]
+            t = np.clip(((q - a) * ab).sum(-1) / np.maximum((ab * ab).sum(-1), 1e-9), 0, 1)
+            r = np.hypot(*(q - a - t[:, None] * ab).T)
+            top = cw.ca[s] + t * (cw.cb[s] - cw.ca[s]) - np.maximum(r - cw.hw[s], 0.0) / SLOPE
+            best = np.full(len(on), -np.inf)
+            np.maximum.at(best, p, top)
+            h[on] = np.maximum(h[on], best)
+        return h.reshape(shape)
+
+
 class Causeways:
     """The causeways of a world, from causeways.src: the bank's height at points (`top`), which cells they
     reach (`near`) and a cell's features raised onto them (`lift`)."""

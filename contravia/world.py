@@ -519,16 +519,21 @@ def index(folder) -> dict:
     return {"provinces": len(names), "cells": len(cells), "leaves": len(tree.leaves), "summaries": len(done)}
 
 
-def island_ground(path) -> IslandTerrain | None:
+def island_ground(path):
     """The ground the game draws over the province in data file path, when the file lies in a folder with the
     island's index: in a cell two provinces hold that is the lowest one's relief (IslandTerrain), not always the
     province's own, so its streets and walks are built on it. None for a lone file or a folder not indexed yet.
-    The index is read as it is: what it says of the cells does not change when streets or walks are rebuilt."""
+    The index is read as it is: what it says of the cells does not change when streets or walks are rebuilt.
+    With the island's causeways, their banks are on it (causeway.Banked)."""
     folder = Path(path).resolve().parent
     if not (folder / "index.npz").exists():
         return None
     world = World(folder=folder)
-    return world.terrain if len(world.names) > 1 else None
+    if len(world.names) < 2:
+        return None
+    if world.causeways is None or world.causeways.tree is None:
+        return world.terrain
+    return causeway.Banked(world.terrain, world.causeways)
 
 
 def _summary_version(folder: Path) -> int:
