@@ -75,6 +75,8 @@ AT_END = 1.0  # metres: a ground street leaves from a bridge's or tunnel's end w
 VALLEY = 10.0  # metres the ground drops under the line between a bridge's ends for the bridge to hold them up
 SLOPE = 0.16  # the steepest a junction's plane lies, as a turn off a carried ramp
 CROSS = 0.08  # the steepest a street lies across: on a hillside steeper than this it is built up on its low side
+BANK = 0.25  # the steepest a street lies across while the height it is built up by settles past a bend
+SETTLE = 0.02  # rise over run: the fastest the height a street is built up by on a hillside changes along it
 DASH, DASH_GAP = 3.0, 6.0  # metres of paint and of gap along a dashed centre line, and of each painted piece
 PAINTED = {c for k in ("motorway", "trunk", "primary", "secondary", "tertiary") for c in (k, f"{k}_link")}
 
@@ -1013,6 +1015,13 @@ def _ease(x):
     return 1 - x * x * (3 - 2 * x)
 
 
+def _settled(need, s, rate=SETTLE):
+    """The least heights no lower than `need` (N,) at arclengths s (N,) that change no faster than `rate` along
+    them: each one the most of every need less `rate` times how far away it is."""
+    return np.maximum(np.maximum.accumulate(need + rate * s) - rate * s,
+                      np.maximum.accumulate((need - rate * s)[::-1])[::-1] + rate * s)
+
+
 def _follow(terrain, p, half):
     """The road's centre heights and cross slopes at centre points p (N, 2) with half widths half (N,).
 
@@ -1020,12 +1029,23 @@ def _follow(terrain, p, half):
     ground under the centre stands higher than that line (a crown), so the ground never shows through; its
     slope is metres up per metre toward the left, the side of (-tz, tx) for the tangent (tx, tz). On a hillside
     that line would be steeper than CROSS: there the road slopes CROSS across, LIFT over the ground under its
-    high kerb, and stands built up over the ground on its low side."""
+    high kerb, and stands built up over the ground on its low side.
+
+    What that builds the low kerb up by depends on the road's heading against the hillside. Through a bend it
+    would change within a few metres, and that kerb would climb faster than the ground under it, the more so
+    on the inside of the bend, where it is shorter. So the height each kerb is built up by comes down SETTLE
+    along the road (_settled), and the road lies across as its kerbs then stand, up to BANK: banked past a
+    bend, back to CROSS once it has settled."""
     t = tangents(p)
     half = np.asarray(half, float)
     side = np.stack([-t[:, 1], t[:, 0]], axis=1) * half[..., None]
     left, centre, right = (terrain.height(q[:, 0], q[:, 1]) for q in (p + side, p, p - side))
-    tilt = np.clip((left - right) / (2 * half), -CROSS, CROSS)
+    reach = 2 * CROSS * half  # what one kerb stands over the other at the most, once settled
+    up_l, up_r = np.maximum(right - reach - left, 0.0), np.maximum(left - reach - right, 0.0)
+    if (up_l > 1e-6).any() or (up_r > 1e-6).any():
+        s = arclen(p)
+        left, right = left + _settled(up_l, s), right + _settled(up_r, s)
+    tilt = np.clip((left - right) / (2 * half), -BANK, BANK)
     return np.maximum.reduce([left - tilt * half, right + tilt * half, centre]) + LIFT, tilt
 
 

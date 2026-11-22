@@ -123,7 +123,8 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
 - `contravia prepare` then builds the street surface from that graph (`contravia/streets.py`): avenues' two carriageways
   joined, junctions merged and rounded, each junction on the plane that fits the ground under it and each street
   5 cm over the ground, tilted with it across up to 8 % (`streets.CROSS`; on a steeper hillside it is built up on
-  its low side, and a junction's plane is no steeper than `SLOPE`), cut per cell and triangulated. The cells draw
+  its low side, each kerb's built-up height comes down 2 % along the street past a bend, `SETTLE`, with the street
+  banked up to 25 % meanwhile, `BANK`, and a junction's plane is no steeper than `SLOPE`), cut per cell and triangulated. The cells draw
   it and the wheels stand on the same triangles (`contravia/surface.py`). `contravia streets` rebuilds it in an existing
   data file in about a minute, without reading OSM again: `--jobs` processes, every core by default (`streets.pmap`
   forks them; `prepare` and `build`, which run several provinces at once, keep one each). Data without it draws the old
