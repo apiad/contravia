@@ -1823,8 +1823,6 @@ def _main(data, builders, at, shot, frames, size, traffic, when, warp, sky, pipe
     elif "car" in engine.state:  # a reload under contravia dev drives on
         screen = "drive"
     if vehicle == "boat" and game.craft is None and not game.board("boat"):
-        import sys
-
         print(f"no boat: {engine.state.craft['error']}", file=sys.stderr)
     from contravia.menu import Menu
     from contravia.settings import FreeDrive, Options
