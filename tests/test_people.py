@@ -51,6 +51,16 @@ def test_a_palette_is_the_zones_and_the_same_for_the_same_draw():
     assert skins == {tuple(map(float, t)) for t in SKIN_TONES.values()}
 
 
+def test_a_walkers_top_and_bottom_never_share_a_colour():
+    from manifoldx.modeling.assets.human_dress import SLOTS
+
+    t, b = SLOTS.index("top"), SLOTS.index("bottom")
+    for z in range(3):
+        for s in range(300):
+            p = rules.palette(np.random.default_rng(s), z, False)
+            assert not np.array_equal(p[t], p[b])
+
+
 def test_a_walkers_size_keeps_to_its_range_and_the_statures():
     g = np.random.default_rng(0)
     for stature in (1.45, 1.7, 1.95):

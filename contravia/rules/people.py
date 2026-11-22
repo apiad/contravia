@@ -77,7 +77,8 @@ def palette(g: np.random.Generator, zone: int, elder: bool) -> np.ndarray:
     out = np.ones((8, 3))
     top = pick(TOPS[zone])
     grey = g.random() < (0.7 if elder else 0.1)
-    for slot, colour in (("skin", None), ("top", top), ("bottom", pick(BOTTOMS[zone])),
+    bottom = pick([b for b in BOTTOMS[zone] if b != top])  # never one colour head to foot
+    for slot, colour in (("skin", None), ("top", top), ("bottom", bottom),
                          ("stripe", pick([t for t in TOPS[zone] if t != top])), ("shoes", pick(SHOES)),
                          ("hair", pick(HAIR[4:] if grey else HAIR[:4])), ("hat", pick(HATS))):
         out[SLOTS.index(slot)] = pick(list(SKIN_TONES.values())) if colour is None else rgb(colour)
