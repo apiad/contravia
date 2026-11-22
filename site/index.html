@@ -102,6 +102,44 @@
 
   /* ---------- Real screenshots ---------- */
   .real { background: #151515; }
+  /* ---------- Gallery: a mosaic on a desktop, a strip to swipe on a phone, a lightbox for each shot ---------- */
+  .gallery { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: 190px; grid-auto-flow: dense; gap: 12px; margin-top: 46px; }
+  .g { margin: 0; position: relative; overflow: hidden; border: 3px solid #3a3a3a; background: var(--cv-ink); }
+  .g.big { grid-column: span 2; grid-row: span 2; }
+  .g.wide { grid-column: span 2; }
+  .g.tall { grid-row: span 2; }
+  .g button { all: unset; display: block; width: 100%; height: 100%; cursor: zoom-in; }
+  .g button:focus-visible { outline: 3px solid var(--cv-yellow); outline-offset: -3px; }
+  .g img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .4s; }
+  .g:hover img { transform: scale(1.04); }
+  .g figcaption { position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 12px 8px; font-size: 14px; color: #dcd6c8; pointer-events: none;
+                  background: linear-gradient(transparent, rgba(0, 0, 0, .85)); }
+  .g figcaption b { display: block; color: var(--cv-yellow); font-family: "Contravia Tag"; text-transform: uppercase; letter-spacing: .06em; font-size: 14px; }
+  .g:not(.big) figcaption { font-size: 0; } .g:not(.big) figcaption b { font-size: 13px; }
+  #lb { border: 4px solid var(--cv-yellow); padding: 0; background: var(--cv-ink); color: var(--cv-paper); max-width: min(1600px, 94vw); width: 94vw; }
+  #lb::backdrop { background: rgba(0, 0, 0, .88); }
+  #lb img { display: block; width: 100%; height: auto; max-height: 80vh; object-fit: contain; background: #000; }
+  #lb p { margin: 0; padding: 12px 16px 14px; font-size: 16px; }
+  #lb p b { color: var(--cv-yellow); font-family: "Contravia Tag"; text-transform: uppercase; letter-spacing: .06em; margin-right: 10px; }
+  #lb button { position: absolute; background: var(--cv-yellow); color: var(--cv-ink); border: 3px solid var(--cv-ink); font: 30px/1 "Contravia Tag";
+               width: 48px; height: 48px; cursor: pointer; }
+  #lb .lb-prev { left: 10px; top: 40%; } #lb .lb-next { right: 10px; top: 40%; } #lb .lb-close { right: 10px; top: 10px; }
+  @media (max-width: 640px) {
+    .gallery { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 10px; margin-inline: -20px; padding: 0 20px 8px; }
+    .g, .g.big, .g.wide, .g.tall { flex: 0 0 84%; aspect-ratio: 16 / 10; scroll-snap-align: center; }
+    .g:not(.big) figcaption { font-size: 13px; }
+  }
+  /* ---------- What comes next ---------- */
+  .next .road { list-style: none; padding: 0; margin: 44px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; counter-reset: none; }
+  .stop { background: #1d1d1d; border: 3px solid #3a3a3a; padding: 18px 22px 20px; position: relative; }
+  .stop .step { font-family: "Contravia Tag"; text-transform: uppercase; letter-spacing: .1em; font-size: 14px; color: var(--cv-red); }
+  .stop h3 { font-family: "Contravia Logo"; font-weight: normal; font-size: 30px; margin: 4px 0 8px; color: var(--cv-paper); }
+  .stop p { margin: 0; color: #cfc9bb; font-size: 17px; }
+  .stop.now { border-color: var(--cv-yellow); box-shadow: 6px 6px 0 var(--cv-red); }
+  .stop.now .step { color: var(--cv-yellow); }
+  .next .note { margin-top: 26px; font-size: 15px; color: #a8a294; }
+  .next .note a { color: var(--cv-yellow); }
+  @media (max-width: 900px) { .next .road { grid-template-columns: minmax(0, 1fr); } }
   .shots { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 18px; margin-top: 46px; }
   .shot { margin: 0; grid-column: span 3; background: var(--cv-ink); border: 3px solid #3a3a3a; padding: 8px 8px 0; }
   .shot.big { grid-column: span 6; }
@@ -409,16 +447,29 @@
   <div class="wrap">
     <p class="kicker tag reveal">Así se ve hoy</p>
     <h2 class="reveal">Capturas del juego,<br>tal como está.</h2>
-    <p class="lede reveal">Nada de esto es un dibujo: son pantallas de la demo de esta semana. Los colores de las fachadas, los árboles, la hora y el nombre de la calle en la esquina de abajo los pone el juego.</p>
-    <div class="shots">
-      <figure class="shot big reveal"><img src="shots/prado.jpg" alt="El Paseo de Martí con fachadas de colores, a las diez de la mañana" loading="lazy"><figcaption><b>Paseo de Martí</b> Entre San José y Neptuno, frente al Hotel Inglaterra. Las diez de la mañana.</figcaption></figure>
-      <figure class="shot reveal"><img src="shots/capitolio.jpg" alt="La Avenida de Bélgica, en La Habana Vieja" loading="lazy"><figcaption><b>La Habana Vieja</b> Avenida de Bélgica, entre José de San Martín y Obispo.</figcaption></figure>
-      <figure class="shot reveal"><img src="shots/santiago.jpg" alt="Una calle de Santiago de Cuba a las cinco y media" loading="lazy"><figcaption><b>Santiago de Cuba</b> Francisco Vicente Aguilera, en Tivolí, a las cinco y media.</figcaption></figure>
-      <figure class="shot third reveal"><img src="shots/trinidad.jpg" alt="Casas de colores en Trinidad" loading="lazy"><figcaption><b>Trinidad</b> Calle Piro Guinart.</figcaption></figure>
-      <figure class="shot third reveal"><img src="shots/camaguey.jpg" alt="Una avenida de Camagüey con palmas" loading="lazy"><figcaption><b>Camagüey</b> La Alameda, junto al parque Céspedes.</figcaption></figure>
-      <figure class="shot third reveal"><img src="shots/vinales.jpg" alt="Una carretera entre potreros en Viñales" loading="lazy"><figcaption><b>Viñales</b> La carretera, a las ocho y media.</figcaption></figure>
+    <p class="lede reveal">Nada de esto es un dibujo: son pantallas de la versión 0.2 con la calidad gráfica al máximo, «Ultra». Los colores de las fachadas, los árboles, la luz y el tiempo los pone el juego.</p>
+    <div class="gallery reveal">
+      <figure class="g big"><button type="button" data-full="shots/g/bahia.jpg" aria-label="Ver grande: La bahía de La Habana"><img src="shots/g/thumb/bahia.jpg" alt="La entrada de la bahía y el Malecón, desde La Cabaña, a las cinco y media de la tarde." loading="lazy" width="800" height="450"></button><figcaption><b>La bahía de La Habana</b> La entrada de la bahía y el Malecón, desde La Cabaña, a las cinco y media de la tarde.</figcaption></figure>
+      <figure class="g tall"><button type="button" data-full="shots/g/neptuno.jpg" aria-label="Ver grande: Neptuno"><img src="shots/g/thumb/neptuno.jpg" alt="El sol se pone al fondo de la calle Neptuno, en Centro Habana." loading="lazy" width="800" height="450"></button><figcaption><b>Neptuno</b> El sol se pone al fondo de la calle Neptuno, en Centro Habana.</figcaption></figure>
+      <figure class="g "><button type="button" data-full="shots/g/capitolio.jpg" aria-label="Ver grande: El Capitolio"><img src="shots/g/thumb/capitolio.jpg" alt="El Capitolio y el Parque Central a las nueve y media de la mañana." loading="lazy" width="800" height="450"></button><figcaption><b>El Capitolio</b> El Capitolio y el Parque Central a las nueve y media de la mañana.</figcaption></figure>
+      <figure class="g "><button type="button" data-full="shots/g/lluvia.jpg" aria-label="Ver grande: El Prado"><img src="shots/g/thumb/lluvia.jpg" alt="Un aguacero de septiembre en el Paseo del Prado." loading="lazy" width="800" height="450"></button><figcaption><b>El Prado</b> Un aguacero de septiembre en el Paseo del Prado.</figcaption></figure>
+      <figure class="g wide"><button type="button" data-full="shots/g/trinidad.jpg" aria-label="Ver grande: Trinidad"><img src="shots/g/thumb/trinidad.jpg" alt="Los techos de colores de Trinidad a las cinco y media de la tarde." loading="lazy" width="800" height="450"></button><figcaption><b>Trinidad</b> Los techos de colores de Trinidad a las cinco y media de la tarde.</figcaption></figure>
+      <figure class="g "><button type="button" data-full="shots/g/cienfuegos.jpg" aria-label="Ver grande: Cienfuegos"><img src="shots/g/thumb/cienfuegos.jpg" alt="La puesta de sol sobre la bahía, desde Punta Gorda." loading="lazy" width="800" height="450"></button><figcaption><b>Cienfuegos</b> La puesta de sol sobre la bahía, desde Punta Gorda.</figcaption></figure>
+      <figure class="g "><button type="button" data-full="shots/g/malecon.jpg" aria-label="Ver grande: El Malecón"><img src="shots/g/thumb/malecon.jpg" alt="Las fachadas del Malecón vistas desde el mar, al caer la tarde." loading="lazy" width="800" height="450"></button><figcaption><b>El Malecón</b> Las fachadas del Malecón vistas desde el mar, al caer la tarde.</figcaption></figure>
+      <figure class="g wide"><button type="button" data-full="shots/g/santiago.jpg" aria-label="Ver grande: Santiago de Cuba"><img src="shots/g/thumb/santiago.jpg" alt="El centro de Santiago, con la Sierra Maestra al fondo." loading="lazy" width="800" height="450"></button><figcaption><b>Santiago de Cuba</b> El centro de Santiago, con la Sierra Maestra al fondo.</figcaption></figure>
+      <figure class="g "><button type="button" data-full="shots/g/varadero.jpg" aria-label="Ver grande: Varadero"><img src="shots/g/thumb/varadero.jpg" alt="La playa de Varadero, desde el mar." loading="lazy" width="800" height="450"></button><figcaption><b>Varadero</b> La playa de Varadero, desde el mar.</figcaption></figure>
+      <figure class="g "><button type="button" data-full="shots/g/vinales.jpg" aria-label="Ver grande: Viñales"><img src="shots/g/thumb/vinales.jpg" alt="Las lomas de Viñales a las ocho de la mañana." loading="lazy" width="800" height="450"></button><figcaption><b>Viñales</b> Las lomas de Viñales a las ocho de la mañana.</figcaption></figure>
+      <figure class="g wide"><button type="button" data-full="shots/g/loma.jpg" aria-label="Ver grande: La ciudad desde arriba"><img src="shots/g/thumb/loma.jpg" alt="La Habana desde 180 metros sobre el Castillo del Príncipe." loading="lazy" width="800" height="450"></button><figcaption><b>La ciudad desde arriba</b> La Habana desde 180 metros sobre el Castillo del Príncipe.</figcaption></figure>
+      <figure class="g wide"><button type="button" data-full="shots/g/garaje.jpg" aria-label="Ver grande: El Garaje"><img src="shots/g/thumb/garaje.jpg" alt="Escoge tu carro: almendrones, rusos, moscovitas, guaguas, camiones y bicis." loading="lazy" width="800" height="450"></button><figcaption><b>El Garaje</b> Escoge tu carro: almendrones, rusos, moscovitas, guaguas, camiones y bicis.</figcaption></figure>
     </div>
-    <p class="rec reveal">Capturas reales de la demo técnica, noviembre de 2026</p>
+    <p class="rec reveal">Capturas reales de la demo técnica, noviembre de 2026. Toca una para verla grande.</p>
+    <dialog id="lb" aria-label="Captura en grande">
+      <img id="lb-img" alt="">
+      <p id="lb-cap"></p>
+      <button type="button" class="lb-prev" aria-label="Anterior">‹</button>
+      <button type="button" class="lb-next" aria-label="Siguiente">›</button>
+      <button type="button" class="lb-close" aria-label="Cerrar">×</button>
+    </dialog>
   </div>
 </section>
 
@@ -546,11 +597,28 @@
   </div>
 </section>
 
+<section id="viene" class="next dots">
+  <div class="wrap">
+    <p class="kicker tag reveal">Lo que viene</p>
+    <h2 class="reveal">El camino<br>hasta la 1.0, y después.</h2>
+    <p class="lede reveal">Esto es lo que falta, en el orden en que lo vamos a hacer. No hay fechas: cada etapa sale cuando está lista. Y nada de esto se va a cobrar: son mecánicas y contenido del juego.</p>
+    <ol class="road">
+      <li class="stop now reveal"><span class="step">1 · En curso</span><h3>Que se maneje como Cuba</h3><p>Fachadas con cornisas, balcones y portales; los lugares famosos modelados a partir de fotos; choques y daños; el tiempo al volante y mando de consola.</p></li>
+      <li class="stop reveal"><span class="step">2</span><h3>El primer pasaje</h3><p>Empieza el juego: botear en almendrón por pesos, la PNR y las persecuciones, varios personajes, el teléfono, misiones y partidas guardadas. El primer capítulo de la historia, en La Habana.</p></li>
+      <li class="stop reveal"><span class="step">3</span><h3>La Habana 1.0</h3><p>La historia de La Habana completa y una ciudad viva: gente en las aceras según la hora, tráfico por zona, apagones por barrio, radio y noticias, piques, el taller, motos con sidecar, fiestas y temporadas.</p></li>
+      <li class="stop reveal"><span class="step">4</span><h3>La Carretera Central</h3><p>La historia sale de La Habana hacia otras ciudades, cada una con sus edificios, sus lugares y sus capítulos. Viajes largos en guagua, tren o avión.</p></li>
+      <li class="stop reveal"><span class="step">5</span><h3>Mar y aire</h3><p>Lanchas en el mar, las bahías y los ríos; avionetas entre los aeropuertos de verdad; un globo sobre la ciudad.</p></li>
+      <li class="stop reveal"><span class="step">6</span><h3>A pie</h3><p>Bajarte del carro y caminar la ciudad.</p></li>
+    </ol>
+    <p class="note reveal">El plan completo, con cada tarea, está en los <a href="https://github.com/apiad/contravia/milestones">hitos del proyecto en GitHub</a>.</p>
+  </div>
+</section>
+
 <section id="descargar" class="get">
   <div class="wrap">
     <p class="kicker tag reveal">Gratis, para Linux y Windows</p>
     <h2 class="reveal">Descárgalo<br>y maneja.</h2>
-    <p class="lede reveal">Un solo archivo trae el juego y los datos de las 16 provincias. La primera vez que lo abres construye la isla en tu máquina: toma un buen rato y unos 6 GB de disco. Después arranca directo.</p>
+    <p class="lede reveal">Un solo archivo trae el juego y los datos de las 16 provincias. La primera vez que lo abres construye la isla en tu máquina: en una de 12 núcleos tomó 50 minutos, y al terminar ocupa unos 2 GB de disco. Después arranca directo.</p>
     <div class="ctas reveal">
       <a class="btn btn-main" href="https://github.com/apiad/contravia/releases/latest/download/contravia.exe"><span>Windows</span></a>
       <a class="btn btn-main" href="https://github.com/apiad/contravia/releases/latest/download/contravia"><span>Linux</span></a>
@@ -566,7 +634,7 @@
         <li>Dale permiso de ejecución y ábrelo: <code>chmod +x contravia</code> y <code>./contravia</code>.</li>
       </ul></div>
     </div>
-    <p class="note reveal"><b>Qué necesitas:</b> Windows o Linux de 64 bits, una tarjeta gráfica con Vulkan, unos 4 GB de memoria libres para la primera construcción de la isla y unos 6 GB de disco. Por ahora no hay versión para Mac.</p>
+    <p class="note reveal"><b>Qué necesitas:</b> Windows o Linux de 64 bits, una tarjeta gráfica con Vulkan, unos 4 GB de memoria libres para la primera construcción de la isla y unos 2 GB de disco. Por ahora no hay versión para Mac.</p>
     <p class="note reveal" id="release-line">Descargas la última versión publicada. <a href="https://github.com/apiad/contravia/releases/latest">Qué trae</a>.</p>
     <p class="note reveal">Es una demo técnica: puede fallar, y si falla nos ayuda que nos cuentes en <a href="https://github.com/apiad/contravia/issues">los issues</a>.</p>
   </div>
@@ -662,6 +730,27 @@
     a.href = r.html_url; a.textContent = "Qué trae";
     line.append(a, ".");
   }).catch(() => {});
+  // The gallery's lightbox: a shot opens large, with the previous and next ones by button, arrow key or swipe.
+  (() => {
+    const lb = document.getElementById("lb"), img = document.getElementById("lb-img"), cap = document.getElementById("lb-cap");
+    const items = [...document.querySelectorAll(".gallery .g")];
+    let i = 0;
+    const show = (k) => {
+      i = (k + items.length) % items.length;
+      const b = items[i].querySelector("button");
+      img.src = b.dataset.full; img.alt = items[i].querySelector("img").alt;
+      cap.innerHTML = items[i].querySelector("figcaption").innerHTML;
+    };
+    items.forEach((f, k) => f.querySelector("button").addEventListener("click", () => { show(k); lb.showModal(); }));
+    lb.querySelector(".lb-prev").addEventListener("click", () => show(i - 1));
+    lb.querySelector(".lb-next").addEventListener("click", () => show(i + 1));
+    lb.querySelector(".lb-close").addEventListener("click", () => lb.close());
+    lb.addEventListener("click", (e) => { if (e.target === lb) lb.close(); });
+    lb.addEventListener("keydown", (e) => { if (e.key === "ArrowLeft") show(i - 1); if (e.key === "ArrowRight") show(i + 1); });
+    let x0 = null;
+    lb.addEventListener("touchstart", (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+    lb.addEventListener("touchend", (e) => { if (x0 === null) return; const dx = e.changedTouches[0].clientX - x0; if (Math.abs(dx) > 50) show(dx < 0 ? i + 1 : i - 1); x0 = null; });
+  })();
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (!still) addEventListener("scroll", () => document.documentElement.style.setProperty("--scroll", scrollY), { passive: true });
   const seen = new IntersectionObserver((entries) => {
