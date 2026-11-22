@@ -1,0 +1,26 @@
+# El manual del jugador de Contravía. Las capturas las saca el propio juego
+# (contravia play --screen X --shot) en la máquina con GPU y los datos de la
+# isla; freeze: file guarda su salida y CI construye desde ahí.
+theme: book
+lang: es
+execute: {timeout: 600, freeze: file}
+
+vars:
+  title: "Contravía"
+  subtitle: "Manual del jugador"
+
+files:
+  - capitulos/00-indice.md
+  - capitulos/01-inicio-rapido.md
+
+outputs:
+  site:
+    format: docs
+    dir: site
+    repo-url: https://github.com/apiad/contravia
+    logo: ../../assets/logo/contravia.svg
+    palette: {primary: "#0b0b0b", accent: "#d62828", scheme: auto}
+    footer: "Contravía · el juego es GPL-3.0; este manual, CC BY-NC-SA 4.0."
+  print:
+    format: pdf
+    file: contravia-manual.pdf

@@ -1,0 +1,26 @@
+# Contravía, the developer's guide. Every block runs against the package; blocks
+# that need the GPU or the built island run on the GPU machine and freeze: file
+# keeps their output, so CI renders from it.
+theme: book
+lang: en
+execute: {timeout: 600, freeze: file}
+
+vars:
+  title: "Contravía"
+  subtitle: "The developer's guide"
+
+files:
+  - chapters/00-index.md
+  - chapters/01-quick-start.md
+
+outputs:
+  site:
+    format: docs
+    dir: site
+    repo-url: https://github.com/apiad/contravia
+    logo: ../../assets/logo/contravia.svg
+    palette: {primary: "#0b0b0b", accent: "#d62828", scheme: auto}
+    footer: "Contravía · code GPL-3.0; this guide CC BY-NC-SA 4.0."
+  print:
+    format: pdf
+    file: contravia-dev-guide.pdf
