@@ -139,8 +139,7 @@ class IslandTerrain:
                 on = w > 0
                 if not on.any():
                     continue
-                cells, back = np.unique(np.stack([i[on] + a, j[on] + b], axis=1), axis=0, return_inverse=True)
-                who = self.owner(cells[:, 0], cells[:, 1])[back.ravel()]
+                who = self.owner(i[on] + a, j[on] + b)  # a search per point: sorting the cells first cost more
                 for k in np.unique(who).tolist():
                     if k >= 0:
                         weight.setdefault(k, np.zeros(len(x)))[np.flatnonzero(on)[who == k]] += w[on][who == k]

@@ -104,3 +104,15 @@ def test_an_island_of_one_province_keeps_its_relief(city):
     w = World(city)
     xz = city.a["roads"][:50, :2].astype(float)
     assert np.allclose(w.terrain.height(xz[:, 0], xz[:, 1]), city.terrain.height(xz[:, 0], xz[:, 1]))
+
+
+def test_heights_of_many_points_agree_with_each_point_asked_alone():
+    """Points spread over held cells, bare land, the mixing bands round the edges and the open sea."""
+    t = two_reliefs()
+    t.world._terrain(0).heights[:] = np.random.default_rng(1).uniform(5.0, 15.0, (11, 11)).astype(np.float32)
+    rng = np.random.default_rng(0)
+    x = np.concatenate([rng.uniform(-800.0, 1200.0, 300), 200.0 + rng.uniform(-25.0, 25.0, 100), [9000.0]])
+    z = np.concatenate([rng.uniform(-800.0, 800.0, 300), rng.uniform(-25.0, 225.0, 100), [0.0]])
+    together = t.height(x, z)
+    alone = np.array([float(t.height(a, b)) for a, b in zip(x, z, strict=True)])
+    assert together == pytest.approx(alone, abs=1e-9) and len(np.unique(np.round(together, 3))) > 50

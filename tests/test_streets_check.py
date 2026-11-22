@@ -224,3 +224,40 @@ def test_an_avenues_median_wall_is_not_counted_and_the_same_wall_of_a_bridge_is(
     found = _kinds(Walled(CONCRETE))
     assert found.get("structure") and found.get("parapet")
     assert _kinds(Walled(BARRIER)) == {}
+
+
+def _scan(city, kept):
+    """streets_check._run over the city's cells as a worker runs it: (findings, cells checked again)."""
+    streets_check._check, streets_check._kept = Check(city), kept
+    found, again, modules = streets_check._run(sorted(map(tuple, np.asarray(city.cells()).reshape(-1, 2).tolist())))
+    assert "contravia.streets_check" in modules and "contravia.streets" not in modules
+    return found, again
+
+
+def test_a_second_run_checks_again_only_the_cells_whose_data_changed(built):
+    found, first = _scan(built, {})
+    assert first and all(len(mark) == 16 for mark, _ in first.values())
+    again, second = _scan(built, first)
+    assert second == {} and again == found                    # nothing changed: every cell is kept
+    bench = np.array([[[-150.0, 0.5, -1.0], [-149.0, 0.5, -1.0], [-150.0, 0.5, 1.0]]], np.float32)
+    changed, third = _scan(_with(built, "park_tris", bench, (-1, -1)), first)
+    assert sorted(f[0] for f in changed) == sorted([f[0] for f in found] + ["motif"])
+    near = {c for c in first if max(abs(c[0] + 1), abs(c[1] + 1)) <= streets_check.AROUND}
+    assert set(third) == near and len(near) < len(first)      # only the cells that read the changed one
+
+
+def test_what_a_run_keeps_holds_while_the_island_and_the_code_do(tmp_path, monkeypatch):
+    np.savez(tmp_path / "a.npz", heights=np.zeros((2, 2), np.float32), heights_origin=np.zeros(2), heights_step=np.ones(2))
+    (tmp_path / "coast.src").write_bytes(b"coast")
+    island = streets_check.island_stamp(tmp_path)
+    cells = {(0, 0): (b"m" * 16, [("step", 1.0, 2.0, 0.3)])}
+    streets_check.save_kept(tmp_path, island, ["contravia.streets_check", "contravia.walls"], cells)
+    assert streets_check.load_kept(tmp_path, island) == cells
+    (tmp_path / "coast.src").write_bytes(b"another coast")       # a file every cell reads changed
+    assert streets_check.island_stamp(tmp_path) != island
+    assert streets_check.load_kept(tmp_path, streets_check.island_stamp(tmp_path)) == {}
+    np.savez(tmp_path / "a.npz", heights=np.ones((2, 2), np.float32), heights_origin=np.zeros(2), heights_step=np.ones(2))
+    (tmp_path / "coast.src").write_bytes(b"coast")
+    assert streets_check.island_stamp(tmp_path) != island           # the relief changed
+    monkeypatch.setattr(streets_check, "code_stamp", lambda modules: "other code")
+    assert streets_check.load_kept(tmp_path, island) == {}          # a module the run loaded changed

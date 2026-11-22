@@ -249,7 +249,12 @@ shore's grid (`rules.shore.vegetated`). The
   segments `walls.parts` gives the car), bridge and tunnel walls across it at the car's height, and bridge
   dressing, pavements and park motifs drawn in the 3.5 m over the asphalt. An avenue's median (`structures.MEDIAN`
   paints: kerb, paving, lamps, Boyeros' wall as `BARRIER`) is no part of the surface. Every count must read 0; a province
-  takes about 6 minutes on 6 processes, and it needs `data/`, so it is not a rift rule. What keeps them clean: a
+  takes about 4 minutes on 11 processes the first time, and it needs `data/`, so it is not a rift rule. A run keeps
+  each cell's findings in `streets-check.kept` beside `index.npz` with a fingerprint of the data of the cells two
+  round it; the next run checks again only the cells whose fingerprint changed (after `contravia streets` or `walks`
+  on a province, the cells they changed), and all of them when the island's relief or files (`ISLAND`) or a module
+  the last run loaded changed. The modules that build the data (`BUILDERS`) are left out of that, since their work
+  is in the cells; `--fresh` checks everything again, which a release does. What keeps them clean: a
   bridge's two carriageways are one deck (`streets._split_twins`, `_share_twins`), a cut starts where its street
   first dips under the ground (`structures._below`), a street laid on the ground is raised clear of every crease
   of the drawn ground (`streets._clear_ground`), no trunk reaches the streets round its cell
