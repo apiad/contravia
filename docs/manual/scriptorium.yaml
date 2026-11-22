@@ -12,6 +12,19 @@ vars:
 files:
   - capitulos/00-indice.md
   - capitulos/01-inicio-rapido.md
+  - capitulos/02-instalar.md
+  - capitulos/03-menu-y-modo-libre.md
+  - capitulos/04-manejar.md
+  - capitulos/05-mapa-y-gps.md
+  - capitulos/06-garaje.md
+  - capitulos/07-lugares-y-album.md
+  - capitulos/08-que-hay-en-la-isla.md
+  - capitulos/09-cielo-hora-y-clima.md
+  - capitulos/10-sonido-y-musica.md
+  - capitulos/11-opciones-y-calidad.md
+  - capitulos/12-si-algo-sale-mal.md
+  - capitulos/a-teclas.md
+  - capitulos/b-datos-y-licencias.md
 
 outputs:
   site:
