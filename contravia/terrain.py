@@ -27,6 +27,7 @@ _M_PER_DEG_LAT = float(_STEP[0, 1] - _STEP[2, 1]) * 100
 
 FADE = 1000.0  # metres over which the relief falls to flat at the grid's edge, so leaving it shows no cliff
 LAND = 0.6  # metres: the least height of the relief on the coast's land, twice rules.ground.SEA
+LATTICE = 90.0  # metres: every province's grid starts on a multiple of this, so two provinces sample the same points
 
 
 class Terrain:
@@ -233,7 +234,10 @@ def read_terrain(folder, box, step: float = 30.0, stride: int = 1, fetch: bool =
     stays true far from the Capitolio, where meridians turn by degrees against the local axes. The heights are
     cleaned (clean) at `step` metres, then every `stride`-th sample is kept: a coarser grid for big provinces.
     Missing tiles are downloaded into folder when fetch is True; sea without a tile reads 0. With land, the
-    coast (coast.load), the samples on it stand over the sea (ashore).
+    coast (coast.load), the samples on it stand over the sea (ashore). The grid starts on a multiple of LATTICE,
+    which the kept samples' spacing divides: where two provinces' grids overlap they hold the same points, so
+    the island's ground (world.IslandTerrain) is the same whichever province a cell takes it from, and what one
+    province built in a cell another holds stands on the ground drawn there.
     """
     import tifffile
 
@@ -246,7 +250,9 @@ def read_terrain(folder, box, step: float = 30.0, stride: int = 1, fetch: bool =
     edge_lon = np.concatenate([west + t * (east - west), west + t * (east - west), np.full_like(t, west),
                                np.full_like(t, east)])
     xz = to_local(edge_lat, edge_lon)
-    x0, z0 = math.floor(xz[:, 0].min() / step) * step, math.floor(xz[:, 1].min() / step) * step
+    if LATTICE % (step * stride):
+        raise ValueError(f"a grid every {step * stride} m does not fall on the {LATTICE} m lattice")
+    x0, z0 = math.floor(xz[:, 0].min() / LATTICE) * LATTICE, math.floor(xz[:, 1].min() / LATTICE) * LATTICE
     cols = math.ceil((xz[:, 0].max() - x0) / step) + 1
     rows = math.ceil((xz[:, 1].max() - z0) / step) + 1
     tiles: dict = {}

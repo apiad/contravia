@@ -14,7 +14,8 @@ import numpy as np
 from contravia.prepare import Raw, read_osm
 from contravia.terrain import Terrain
 
-VERSION = 4  # 2: road names, places and consejos populares; 3: land never made a park; 4: the satellite's built-up
+VERSION = 5  # 2: road names, places and consejos populares; 3: land never made a park; 4: the satellite's built-up;
+# 5: every province's relief on one lattice (terrain.LATTICE)
 LEVEL = 19  # zstd level: packing is done once, unpacking stays fast at any level
 
 
