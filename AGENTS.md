@@ -7,6 +7,11 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
 - Licensing: `docs/superpowers/specs/2026-11-21-licensing-business-model-design.html`. Every path's licence is in
   `REUSE.toml` and `uvx reuse lint` checks it in CI, so a new top-level path needs a block there. Commit with
   `git commit -s`: CI rejects a pull request with a commit that is not signed off.
+- Every commit is authored and signed off as `Alejandro Piad <apiad@apiad.net>` (`git config user.email`
+  is set so in this clone) and carries no `Co-Authored-By` lines. The repository is public: no names of
+  people, machines or servers in commits, docs or issues.
+- `site/` is the landing page, published to https://apiad.github.io/contravia/ by
+  `.github/workflows/pages.yml` on every push to main that touches it, `branding/` or `assets/fonts/`.
 - The commercial name is Contravía; its brand (colours, fonts, logo, poster, how to make panels with klein) is in `branding/` and `know-how/branding.md`; the SVG icons, logo, palette and fonts the game draws are in `assets/`, written by `assets/build.py`; the approved UX (menus, free drive, map, options, pause, HUD, first run, icons) is `docs/ux/contravia-ux.html`.
 - The game is always the whole island; there is no Havana-only build. `contravia prepare <cuba-latest.osm.pbf>`
   builds each of the 16 provinces (`contravia.geo.PROVINCES`, La Habana first) into `data/cuba/<slug>.npz` with the same
