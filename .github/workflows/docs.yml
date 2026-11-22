@@ -1,0 +1,42 @@
+# The player's manual (docs/manual, Spanish) and the developer's guide (docs/dev): both render as a web site and a
+# PDF, and every block runs here, on the CPU, from the test fixtures and the tables in contravia/ (about 3 minutes).
+# The screenshots that need the GPU machine and the built island are not in the books yet (#105). The artifact
+# "books" holds both sites with their PDFs, for pages.yml to publish.
+name: docs
+
+on:
+  pull_request:
+    paths: ["docs/manual/**", "docs/dev/**", "contravia/**", "uv.lock", ".github/workflows/docs.yml"]
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  books:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+      - run: uv sync --locked --group docs
+      - name: Render both books
+        run: |
+          for book in manual dev; do
+            (cd docs/$book && uv run scriptorium render scriptorium.yaml) || exit 1
+          done
+      - name: No block failed
+        # scriptorium prints a failing block's traceback on the page and still exits 0
+        run: "! grep -l 'Traceback (most recent call last)' docs/*/site/*.html"
+      - name: Put each PDF beside its site
+        run: |
+          mkdir -p books
+          cp -r docs/manual/site books/manual && cp docs/manual/contravia-manual.pdf books/manual/
+          cp -r docs/dev/site books/dev && cp docs/dev/contravia-dev-guide.pdf books/dev/
+      - uses: actions/upload-artifact@v5
+        with:
+          name: books
+          path: books

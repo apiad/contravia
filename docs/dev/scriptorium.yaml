@@ -1,0 +1,49 @@
+# Contravía, the developer's guide. Every block runs against the package; blocks
+# that need the GPU or the built island run on the GPU machine and freeze: file
+# keeps their output, so CI renders from it.
+theme: book
+lang: en
+execute: {timeout: 600, freeze: file}
+
+vars:
+  title: "Contravía"
+  subtitle: "The developer's guide"
+
+files:
+  - chapters/00-index.md
+  - chapters/01-quick-start.md
+  - chapters/02-from-osm-to-a-frame.md
+  - chapters/03-the-data.md
+  - chapters/04-relief-and-coast.md
+  - chapters/05-the-road-graph.md
+  - chapters/06-the-street-surface.md
+  - chapters/07-bridges-and-tunnels.md
+  - chapters/08-pavements-verges-clearance.md
+  - chapters/09-blocks-and-buildings.md
+  - chapters/10-parks-and-cemeteries.md
+  - chapters/11-shore-causeways-water.md
+  - chapters/12-the-quadtree.md
+  - chapters/13-cells-rings-far-views.md
+  - chapters/14-trees-grass-foliage.md
+  - chapters/15-the-car.md
+  - chapters/16-the-fleet.md
+  - chapters/17-traffic.md
+  - chapters/18-the-gps.md
+  - chapters/19-sky-and-weather.md
+  - chapters/20-sound.md
+  - chapters/21-the-development-loop.md
+  - chapters/22-checking-and-measuring.md
+  - chapters/23-recipes.md
+  - chapters/24-packaging-and-releases.md
+
+outputs:
+  site:
+    format: docs
+    dir: site
+    repo-url: https://github.com/apiad/contravia
+    logo: ../../assets/logo/contravia.svg
+    palette: {primary: "#0b0b0b", accent: "#d62828", scheme: auto}
+    footer: "Contravía · code GPL-3.0; this guide CC BY-NC-SA 4.0."
+  print:
+    format: pdf
+    file: contravia-dev-guide.pdf

@@ -13,3 +13,10 @@ rules:
       regex: '`((?:docs|contravia|bench)/[\w./-]+\.\w+)`'
     require:
       exists: true
+  - name: "every contravia subcommand is explained in the developer's guide"
+    extract:
+      file: "contravia/cli.py"
+      regex: 'add_parser\("([\w-]+)"'
+    require:
+      in: "docs/dev/chapters/*.md"
+      as: word
