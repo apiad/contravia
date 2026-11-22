@@ -72,8 +72,7 @@ class Figures:
         jobs = sorted((s, k, item) for k, i in enumerate(new) for s, item in work(i))
         for _, _, item in jobs:
             if item not in self.store:
-                self.waiting.append(item)
-                self.builder.want(item)
+                self.waiting.append(item)  # submitted one at a time by step, so it never floods the thread
 
     def _make(self, item):
         """On the worker: a figure's geometry, or a clip's poses."""
@@ -94,14 +93,17 @@ class Figures:
             f = self._figs[i] = build_human(params, outfit=outfit, level=2)
         return bake_cycle(f, kind, speed, FRAMES)
 
-    def step(self) -> int:
-        """On the frame thread: put up to UPLOADS finished results on the GPU. The worker runs its jobs in the
-        order they were queued, so only the head of the queue can be done. Returns how many were put up."""
+    def step(self, build: bool = True) -> int:
+        """On the frame thread: start the next job if none is running, and put up to UPLOADS finished results on
+        the GPU. Jobs go to the worker one at a time, so the pool never holds the thread long. With build false
+        nothing new starts (the game waits for its world to load first). Returns how many results were put up."""
         from manifoldx.components import Mesh
 
         done = 0
         while self.waiting and done < UPLOADS:
             item = self.waiting[0]
+            if not build and repr(item) not in self.builder.jobs and repr(item) not in self.builder.cache:
+                break
             got = self.builder.want(item)
             if got is None:
                 break
@@ -395,10 +397,10 @@ class Crowd:
 
     # -- one frame
 
-    def update(self, cells, eye, dt: float, hour: float = 12.0, rain: float = 0.0) -> None:
+    def update(self, cells, eye, dt: float, hour: float = 12.0, rain: float = 0.0, build: bool = True) -> None:
         """Follow the cells drawn in full, keep the walker count, move everyone, change levels, pose them."""
         self._frame += 1
-        if self.figures.step():
+        if self.figures.step(build):
             self.clips = self.figures.clip_table()
         eye = np.asarray(eye, float)
         changed = self._follow(set(cells))
