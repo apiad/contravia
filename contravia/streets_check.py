@@ -10,7 +10,9 @@ the street triangles around it and counts, by kind:
 - water: a street triangle under the sea's plane or an inland water's, where the shore's grid says water;
 - step: a street triangle with another one over or under it by more than JUMP and less than HEAD: a step in the
   surface, two surfaces on one street, or a deck with no headroom;
-- steep: a street triangle steeper than STEEP;
+- steep: a street triangle steeper than STEEP, unless it only climbs along its street what the ground climbs
+  there: on a mountain's flank a street is as steep along as the relief, but across it never tilts past STEEP,
+  and a triangle off any road, or steeper than its ground, is a break in the surface;
 - building, landmark, park, tree, cemetery, tomb: a wall segment of that source the car hits (walls.parts) that
   reaches into a street;
 - parapet: a wall of a bridge or tunnel (struct_walls) that crosses a street at a height where it stops the car;
@@ -43,6 +45,7 @@ from contravia.landmarks import cached
 from contravia.mesh import lattice
 from contravia.rules.ground import drawn
 from contravia.shore import of as shore_of
+from contravia.streets import MIN_WIDTH
 from contravia.structures import MEDIAN
 from contravia.walks import BEVEL, KERB
 from contravia.walks import SIMPLIFY as WALK_SIMPLIFY
@@ -52,12 +55,15 @@ EDGE = 0.3  # metres a thing may reach past the street surface's edge: kerbs, be
 HEAD = 3.5  # metres of room over the asphalt a street needs: a bus and some air
 LOW = 0.1  # metres over the asphalt under which a drawn thing is paint or the foot of a kerb
 JUMP = 0.15  # metres: two street surfaces further apart than this at one point are a step
-STEEP = 0.3  # rise over run: no street triangle is steeper (a ramp climbs 8 %, a turn off a carried ramp 16 %)
+STEEP = 0.3  # rise over run: no street triangle is steeper (a ramp climbs 8 %, a turn off a carried ramp 16 %),
+# but along its street where the ground itself climbs more (Check._climbs)
 COVER = 0.005  # metres the ground may stand over a street's triangle: rounding, not a patch of grass
 REACH = 0.5  # metres under a structure wall's foot from where it stops the car (walls.Walls.near)
 STEP = 1.0  # metres between the points a street triangle is tested at
 FINE = 0.5  # metres between the points a drawn thing or a wall is tested at
 SLIVER = 0.05  # m²: a street triangle smaller than this is not judged steep
+ALONG = 0.05  # rise over run a street may climb along itself past what the ground climbs there: easing into a junction
+ROAD = 25.0  # metres past a road's half width within which a street triangle is that road's, to tell along from across
 WALK_EDGE = WALK_SIMPLIFY + KERB * BEVEL + 0.02  # metres a pavement and its bevel may reach into a street
 KINDS = ("ground", "water", "step", "steep", "building", "landmark", "park", "tree", "cemetery", "tomb", "parapet",
          "structure", "walk", "motif")
@@ -246,6 +252,48 @@ class Check:
         wet = f.sample(f.d, x, z) < 0
         return np.where(wet, f.level(x, z), f.height(x, z)), wet
 
+    def _climbs(self, i: int, j: int, tris: np.ndarray) -> np.ndarray:
+        """Whether each of cell (i, j)'s street triangles (K, 3, 3), steeper than STEEP, only climbs with the
+        relief: across the road it lies on (the nearest road segment of the 3 x 3 cells, within ROAD of its
+        edge) it slopes no more than STEEP, and along it no more than the drawn ground does, the same way, by
+        more than ALONG. The ground is read under the triangle and a half and a whole road's width to either
+        side, the steepest of them: a street built up on a hillside follows the ground under its high kerb
+        (streets._follow), not the ground under each triangle. A triangle with no road near is not excused."""
+        out = np.zeros(len(tris), bool)
+        if not len(tris):
+            return out
+        roads = [self.city.cell(i + di, j + dj).roads for di in (-1, 0, 1) for dj in (-1, 0, 1)]
+        roads = np.concatenate([np.asarray(r, float).reshape(-1, 5) for r in roads])
+        if not len(roads):
+            return out
+        c = tris[:, :, [0, 2]].mean(axis=1)
+        a, ab = roads[:, 0:2], roads[:, 2:4] - roads[:, 0:2]
+        t = np.clip(np.einsum("krd,rd->kr", c[:, None] - a[None], ab) / np.maximum((ab * ab).sum(axis=1), 1e-9), 0, 1)
+        dist = np.linalg.norm(c[:, None] - (a[None] + t[..., None] * ab[None]), axis=2) - roads[None, :, 4] / 2
+        r = dist.argmin(axis=1)
+        d = ab[r] / np.maximum(np.linalg.norm(ab[r], axis=1, keepdims=True), 1e-9)
+
+        def gradient(y):
+            """(dy/dx, dy/dz) of the planes through the triangles' corners at heights y (K, 3)."""
+            p = np.stack([tris[:, :, 0], y, tris[:, :, 2]], axis=-1)
+            m = np.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0])
+            return -m[:, [0, 2]] / np.where(np.abs(m[:, [1]]) < 1e-12, 1e-12, m[:, [1]])
+
+        own = gradient(tris[:, :, 1])
+        along = (own * d).sum(axis=1)
+        across = np.abs(own[:, 0] * -d[:, 1] + own[:, 1] * d[:, 0])
+        # the ground a hair inside each corner: a corner on the cell's far border belongs to the next cell's grid
+        q = tris[:, :, [0, 2]] + (c[:, None] - tris[:, :, [0, 2]]) * 1e-3
+        side = np.stack([-d[:, 1], d[:, 0]], axis=1) * np.maximum(roads[r, 4], MIN_WIDTH)[:, None]
+        climb = np.zeros(len(tris))  # the most the ground climbs along the road, the way the triangle does
+        for u in (0.0, 0.5, -0.5, 1.0, -1.0):
+            at = q + u * side[:, None]
+            # the drawn ground, whatever cell the shifted corner falls in (the shore's grid is this cell's alone)
+            ground = (self._ground(i, j, at[..., 0].ravel(), at[..., 1].ravel())[0] if u == 0.0
+                      else drawn(self.city.terrain, at[..., 0].ravel(), at[..., 1].ravel())).reshape(-1, 3)
+            climb = np.maximum(climb, (gradient(ground) * d).sum(axis=1) * np.sign(along))
+        return (dist[np.arange(len(c)), r] <= ROAD) & (across <= STEEP) & (np.abs(along) <= climb + ALONG)
+
     def _surface(self, i: int, j: int, levels: Levels) -> list:
         """The cell's own street triangles: ground over them, steps between them and steep ones."""
         out = []
@@ -255,7 +303,8 @@ class Check:
         e1, e2 = tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0]
         n = np.cross(e1, e2)
         flat = np.hypot(n[:, 0], n[:, 2])
-        for k in np.flatnonzero((np.linalg.norm(n, axis=1) / 2 > SLIVER) & (flat > STEEP * np.abs(n[:, 1]))).tolist():
+        steep = np.flatnonzero((np.linalg.norm(n, axis=1) / 2 > SLIVER) & (flat > STEEP * np.abs(n[:, 1])))
+        for k in steep[~self._climbs(i, j, tris[steep])].tolist():
             x, _, z = tris[k].mean(axis=0)
             out.append(("steep", float(x), float(z), float(flat[k] / max(abs(n[k, 1]), 1e-9))))
         pts, own = lattice(tris, STEP)

@@ -291,3 +291,32 @@ def test_a_quick_run_reads_the_newer_of_the_two_kept_files_whatever_code_wrote_i
     assert streets_check.load_quick(tmp_path) == quick
     os.utime(tmp_path / streets_check.QUICK, (0, 0))
     assert streets_check.load_quick(tmp_path) == full          # a full run since: it is the one to start from
+
+
+def _hillside_street(heading, tilt=0.0, climb=0.0):
+    """A cell of a 45 % hillside rising to the south, with one road through it along `heading` (a unit vector)
+    and one street triangle on that road, laid on the ground, then tilted `tilt` more across the road and
+    `climb` more along it."""
+    r, _ = np.mgrid[0:300, 0:300]
+    terrain = Terrain(0.45 * (-1500 + 10.0 * r), (-1500, -1500), (10, 10))
+    h = np.asarray(heading, float)
+    side = np.array([-h[1], h[0]])
+    mid = np.array([100.0, 100.0])
+    road = np.array([[*(mid - 20 * h), *(mid + 20 * h), 8.0]], np.float32)
+    xz = np.array([mid - 3 * h - 3 * side, mid + 3 * h - 3 * side, mid + 3 * side])
+    y = terrain.height(xz[:, 0], xz[:, 1]) + tilt * ((xz - mid) @ side) + climb * ((xz - mid) @ h)
+    y += 0.05 - float((y - terrain.height(xz[:, 0], xz[:, 1])).min())  # its lowest corner 5 cm over the ground
+    tri = np.stack([xz[:, 0], y, xz[:, 1]], axis=1)[None].astype(np.float32)
+    city = CityData.from_features(road, [], np.zeros(0), [], np.zeros(0), np.zeros((0, 2)), terrain)
+    city.add_kind("street_tris", tri, np.array([[0, 0]]))
+    city.add_kind("street_edges", np.zeros((0, 2, 3)), np.zeros((0, 2), int))
+    return city
+
+
+def test_a_street_that_climbs_with_the_relief_is_not_steep_and_one_tilted_across_it_is():
+    up, level = (0.0, 1.0), (1.0, 0.0)  # up the hillside, and along its contour
+    assert "steep" not in _kinds(_hillside_street(up))                # 45 % along, as the ground: the relief's climb
+    assert _kinds(_hillside_street(level)).get("steep") == 1           # laid on the hillside, 45 % across the road
+    assert _kinds(_hillside_street(up, tilt=0.4)).get("steep") == 1    # along as the ground, but 40 % across
+    assert _kinds(_hillside_street(up, climb=0.2)).get("steep") == 1   # 65 % along on ground that climbs 45 %
+    assert "steep" not in _kinds(_hillside_street(up, climb=0.03))     # within ALONG of the ground: an eased end
