@@ -280,20 +280,20 @@ figcaption{font-family:var(--font-mono);font-size:11px;color:var(--faint);margin
 <p>These are starting values. The bench (section 14) sets the final ones: each preset must keep its <code>target_ms</code> on the Havana route with its crowd.</p>
 
 <h2 id="npcs"><span class="n">10</span>The eight NPCs</h2>
-<p>Each reference person of kind <code>npc</code> becomes an entry in <code>rules.people.NPCS</code>: a <code>HumanParams</code>, an <code>Outfit</code>, a seed, a place (latitude, longitude, heading) and what it does there (idle, or walk a short loop). An NPC is spawned when its cell is drawn in full, uses the same levels, counts against the caps but is the last to drop, and is not part of the pool.</p>
+<p>Each reference person of kind <code>npc</code> becomes an entry in <code>rules.people.NPCS</code>: a <code>HumanParams</code>, an <code>Outfit</code>, a seed, the id of the place in <code>contravia/places.json</code> where it stands, and what it does there (stand, or walk a short loop). The game already knows each place's coordinates, so the NPC stands on the pavement nearest to it. An NPC is spawned when its cell is drawn in full, uses the same levels, counts against the caps but is the last to drop, and is not part of the pool.</p>
 <div class="scroll"><table class="tbl">
-<thead><tr><th>npc</th><th>body and clothes (from the catalog)</th><th>proposed place</th></tr></thead>
+<thead><tr><th>npc</th><th>catalog description, as drawn</th><th>place (places.json)</th></tr></thead>
 <tbody>
-<tr><td>almendronero</td><td>about 50, white guayabera (shirt), dark trousers, straw hat (brim)</td><td>Parque de la Fraternidad, by the shared-taxi stand</td></tr>
-<tr><td>bicitaxista</td><td>young, lean, tank top, shorts, cap</td><td>Calle Obispo, at the Parque Central end</td></tr>
-<tr><td>manisero</td><td>older, shirt, trousers, brim hat</td><td>Malecón at Prado, walking a short loop</td></tr>
-<tr><td>senora-jaba</td><td>heavy build, blouse, skirt, sandals, bun</td><td>a corner in Centro Habana</td></tr>
-<tr><td>estudiante</td><td>young, t-shirt, trousers, long hair</td><td>Escalinata of the University of Havana</td></tr>
-<tr><td>jubilado</td><td>elder, shirt, trousers, cap</td><td>a park bench in Vedado (standing; no sitting cycle)</td></tr>
-<tr><td>turista</td><td>t-shirt, shorts, sandals, cap</td><td>Plaza de Armas</td></tr>
-<tr><td>joven</td><td>t-shirt with a stripe, trousers, curly hair</td><td>Malecón at Línea</td></tr>
+<tr><td>almendronero</td><td>shared-taxi driver, about fifty: white guayabera (shirt), dark trousers, straw hat (brim), grey hair</td><td>L0464 Parque de la Fraternidad</td></tr>
+<tr><td>bicitaxista</td><td>lean rickshaw rider, about thirty: red cap, sleeveless striped shirt (tank with a stripe), shorts, sandals</td><td>M061 Calle Obispo</td></tr>
+<tr><td>manisero</td><td>old peanut seller: white shirt, straw hat; walks a loop</td><td>M004 Malecón de La Habana</td></tr>
+<tr><td>senora-jaba</td><td>woman of about sixty: flowered dress (blouse and long skirt of one colour), plastic sandals</td><td>M069 Bulevar de San Rafael</td></tr>
+<tr><td>estudiante</td><td>secondary-school girl in uniform: white short-sleeved shirt, mustard skirt; built as the smallest adult body, since there are no children</td><td>M039 Universidad de La Habana</td></tr>
+<tr><td>jubilado</td><td>retired man of about seventy: light blue guayabera, beige trousers, flat cap</td><td>L0382 Línea y G, Vedado</td></tr>
+<tr><td>turista</td><td>foreign tourist of about forty: sun hat, shorts, trainers; walks a loop</td><td>M007 Plaza de Armas</td></tr>
+<tr><td>joven</td><td>young man of about twenty: baseball cap, sports shirt, jeans, trainers</td><td>L0381 Malecón at Línea</td></tr>
 </tbody></table></div>
-<p>What <code>Outfit</code> cannot draw is left out in this slice: sunglasses, moustaches, the bag of the señora, the peanut cones and the bicitaxi itself. A test builds all eight at every level, and the first PR carries a render sheet of them next to their reference images.</p>
+<p>What <code>Outfit</code> cannot draw is left out in this slice: sunglasses, the moustache, the flowers, the jabas, the peanut tin, the camera, the backpacks, the newspaper, the phone and the bicitaxi itself. A test builds all eight at every level, and the first PR carries a render sheet of them next to their reference images.</p>
 
 <h2 id="foot"><span class="n">11</span>The player on foot</h2>
 <ul>
