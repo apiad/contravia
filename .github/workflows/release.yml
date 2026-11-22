@@ -36,11 +36,13 @@ jobs:
         env:
           VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || github.sha }}
         run: packaging/build.sh out
-      - name: The Linux file carries the 16 sources and builds a province into an empty home
+      - name: The Linux file carries the 16 province sources and the island's, and builds a province into an empty home
         run: |
-          n=$(unzip -l out/contravia 2>/dev/null | grep -c 'app/data/cuba-src/.*\.src$' || true)
-          echo "$n province sources in the package"
-          test "$n" -eq 16
+          srcs=$(unzip -l out/contravia 2>/dev/null | grep -o 'app/data/cuba-src/[^/]*\.src$' || true)
+          island=$(echo "$srcs" | grep -c -E '/(coast|shore|cover|causeways|water|regions)\.src$' || true)
+          n=$(( $(echo "$srcs" | grep -c . || true) - island ))
+          echo "$n province sources and $island island-wide sources in the package"
+          test "$n" -eq 16 && test "$island" -eq 6
           mkdir -p smoke/src && cp data/cuba-src/cienfuegos.src smoke/src/
           out/contravia build --source "$PWD/smoke/src" --home "$PWD/smoke/home"
           test -f smoke/home/build.json && test -f smoke/home/cuba/cienfuegos.npz && test -f smoke/home/cuba/index.npz
