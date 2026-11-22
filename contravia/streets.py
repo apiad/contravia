@@ -71,6 +71,8 @@ END_FREE = 8.0  # metres at each end of a bridge where the ground street it leav
 SEA_DEPTH = 14.0  # metres under sea level where a tunnel runs beneath the sea
 AT_END = 1.0  # metres: a ground street leaves from a bridge's or tunnel's end when its own end is this near
 VALLEY = 10.0  # metres the ground drops under the line between a bridge's ends for the bridge to hold them up
+SLOPE = 0.16  # the steepest a junction's plane lies, as a turn off a carried ramp
+CROSS = 0.08  # the steepest a street lies across: on a hillside steeper than this it is built up on its low side
 DASH, DASH_GAP = 3.0, 6.0  # metres of paint and of gap along a dashed centre line, and of each painted piece
 PAINTED = {c for k in ("motorway", "trunk", "primary", "secondary", "tertiary") for c in (k, f"{k}_link")}
 
@@ -990,12 +992,15 @@ def _follow(terrain, p, half):
 
     Across, the road is the straight line between the ground under its kerbs, LIFT over it, raised where the
     ground under the centre stands higher than that line (a crown), so the ground never shows through; its
-    slope is metres up per metre toward the left, the side of (-tz, tx) for the tangent (tx, tz)."""
+    slope is metres up per metre toward the left, the side of (-tz, tx) for the tangent (tx, tz). On a hillside
+    that line would be steeper than CROSS: there the road slopes CROSS across, LIFT over the ground under its
+    high kerb, and stands built up over the ground on its low side."""
     t = tangents(p)
-    side = np.stack([-t[:, 1], t[:, 0]], axis=1) * np.asarray(half)[..., None]
+    half = np.asarray(half, float)
+    side = np.stack([-t[:, 1], t[:, 0]], axis=1) * half[..., None]
     left, centre, right = (terrain.height(q[:, 0], q[:, 1]) for q in (p + side, p, p - side))
-    mean = (left + right) / 2
-    return mean + np.maximum(centre - mean, 0) + LIFT, (left - right) / (2 * np.asarray(half, float))
+    tilt = np.clip((left - right) / (2 * half), -CROSS, CROSS)
+    return np.maximum.reduce([left - tilt * half, right + tilt * half, centre]) + LIFT, tilt
 
 
 class Plane:
@@ -1013,7 +1018,8 @@ class Plane:
 
 def _junction_plane(poly, terrain):
     """The plane that fits the ground under junction poly best (least squares over points FIT metres apart on
-    its edge and inside it), raised to stand LIFT over the highest of those points above it."""
+    its edge and inside it), no steeper than SLOPE, raised to stand LIFT over the highest of those points above
+    it."""
     pts = shapely.get_coordinates(poly.segmentize(FIT))
     x0, z0, x1, z1 = poly.bounds
     gx, gz = np.meshgrid(np.arange(x0, x1, FIT), np.arange(z0, z1, FIT))
@@ -1028,7 +1034,8 @@ def _junction_plane(poly, terrain):
         y0, sx, sz = np.linalg.solve(a.T @ a, a.T @ g)
     else:
         y0, sx, sz = float(g.mean()), 0.0, 0.0
-    plane = Plane(c[0], c[1], y0, sx, sz)
+    k = min(1.0, SLOPE / max(float(np.hypot(sx, sz)), 1e-9))
+    plane = Plane(c[0], c[1], y0, sx * k, sz * k)
     plane.y0 += float((g - plane(pts)).max()) + LIFT
     return plane
 

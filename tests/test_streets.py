@@ -219,3 +219,48 @@ def test_a_street_chained_from_its_middle_edge_runs_once_from_end_to_end():
     assert len(chains) == 1 and len(ribbons) == 1
     assert abs(arclen(axes[0])[-1] - arclen(np.array(j, float))[-1]) < 5.0  # the corners are rounded
     assert shapely.Point(50, 0).within(ribbons[0]) and shapely.Point(250, 30).within(ribbons[0])
+
+
+def _steep_hill(slope=0.45) -> Terrain:
+    """A hillside rising `slope` to the south, as a 90 m relief draws a mountain's flank."""
+    r, _ = np.mgrid[0:300, 0:300]
+    return Terrain(slope * (-1500 + 10.0 * r), (-1500, -1500), (10, 10))
+
+
+def _slopes(tris):
+    """The slope of each triangle (rise over run) and its area on the map."""
+    t = tris.astype(float)
+    n = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+    return np.hypot(n[:, 0], n[:, 2]) / np.maximum(np.abs(n[:, 1]), 1e-9), np.abs(n[:, 1]) / 2
+
+
+def test_a_street_along_a_steep_hillside_is_no_steeper_across_than_cross_and_is_built_up_on_its_low_side():
+    """On a 45 % hillside a street along the contour would lie 45 % across if it followed the ground under its
+    kerbs: it slopes CROSS instead, LIFT over the ground at its high kerb and over the ground at its low one."""
+    from contravia.streets import CROSS
+
+    t = _steep_hill()
+    j = [(-200.0, 0.0), (200.0, 0.0)]
+    (ribbons, *_), (tris, _, edges, *_) = (lambda p: (p, mesh(*p, t)))(build(dict(make_graph(j, [(0, 1), (1, 0)]).a), WIDTHS))
+    slope, area = _slopes(tris)
+    assert slope[area > 0.05].max() < CROSS + 1e-3
+    p = tris.reshape(-1, 3).astype(float)
+    over = p[:, 1] - t.height(p[:, 0], p[:, 2])
+    width = ribbons[0].bounds[3] - ribbons[0].bounds[1]
+    assert over.min() > LIFT - 2e-3                                        # the ground never shows through
+    assert abs(over.max() - (LIFT + (0.45 - CROSS) * width)) < 0.02        # the low kerb, built up
+    along = edges[np.abs(edges[:, :, 0]).max(axis=1) < 199]                # its skirt, but for the two dead ends,
+    assert len(along) and (along[:, :, 2] < 0).all()                       # runs along the low side
+
+
+def test_a_junction_on_a_steep_hillside_is_no_steeper_than_slope_and_clears_the_ground():
+    from contravia.streets import SLOPE
+
+    t = _steep_hill()
+    (_, _, _, rings, _, _), (tris, _, _, _, _, _) = _cross(t)
+    centres = tris[:, :, [0, 2]].mean(axis=1)
+    junction = shapely.contains_xy(rings[0].buffer(-0.05), centres[:, 0], centres[:, 1])
+    slope, area = _slopes(tris[junction])
+    assert junction.any() and slope[area > 0.05].max() < SLOPE + 1e-3
+    p = tris[junction].reshape(-1, 3).astype(float)
+    assert (p[:, 1] - t.height(p[:, 0], p[:, 2])).min() > LIFT - 2e-3
