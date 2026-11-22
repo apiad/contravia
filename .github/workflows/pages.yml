@@ -1,11 +1,12 @@
 # The landing page on GitHub Pages: site/ with the branding and fonts it loads by relative path, and a root that
-# sends the visitor to site/.
+# sends the visitor to site/. The manual and the developer's guide, built by docs.yml, go in site/manual/ and site/dev/.
 name: pages
 
 on:
   push:
     branches: [main]
-    paths: ["site/**", "branding/**", "assets/fonts/**", ".github/workflows/pages.yml"]
+    paths: ["site/**", "branding/**", "assets/fonts/**", "docs/manual/**", "docs/dev/**", "contravia/**",
+            ".github/workflows/pages.yml", ".github/workflows/docs.yml"]
   workflow_dispatch:
 
 permissions:
@@ -18,17 +19,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  books:
+    uses: ./.github/workflows/docs.yml
+
   deploy:
+    needs: books
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v5
+        with:
+          name: books
+          path: books
       - name: Lay out the page
         run: |
           mkdir -p _site/assets
           cp -r site branding _site/
+          cp -r books/manual books/dev _site/site/
           cp -r assets/fonts _site/assets/
           printf '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=site/"><link rel="canonical" href="site/"><title>Contravía</title><a href="site/">Contravía</a>\n' > _site/index.html
       - uses: actions/upload-pages-artifact@v5
