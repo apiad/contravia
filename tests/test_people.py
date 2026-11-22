@@ -19,14 +19,50 @@ def test_crowd_bodies_stay_under_the_heavy_limit_and_are_the_same_for_a_seed():
     assert repr(rules.body(5)) == repr(rules.body(5))
 
 
-def test_an_outfit_is_the_same_for_a_seed_and_zone_and_changes_with_the_zone():
-    assert repr(rules.outfit(3, 0, 0.2)) == repr(rules.outfit(3, 0, 0.2))
-    assert len({repr(rules.outfit(3, z, 0.2)) for z in range(3)}) == 3
+def test_crowd_bodies_span_the_whole_range_of_each_measure():
+    from manifoldx.modeling.assets.human import HumanParams
+
+    spec = HumanParams.ranges()
+    bodies = [rules.body(seed) for seed in range(300)]
+    for name in ("build", "muscle", "shoulders", "hips", "leg_ratio"):
+        lo, hi = spec[name]["min"], spec[name]["max"]
+        got = [getattr(b, name) for b in bodies]
+        assert min(got) < lo + 0.03 * (hi - lo) and max(got) > hi - 0.03 * (hi - lo), name  # sample keeps 10-90 %
+    for b in bodies:
+        b.validate()
+
+
+def test_an_outfit_is_the_same_for_a_seed():
+    assert repr(rules.outfit(3, 0.2)) == repr(rules.outfit(3, 0.2))
+    assert len({repr(rules.outfit(s, 0.2)) for s in range(10)}) == 10
+
+
+def test_a_palette_is_the_zones_and_the_same_for_the_same_draw():
+    from manifoldx.modeling.assets.human import SKIN_TONES
+    from manifoldx.modeling.assets.human_dress import SLOTS
+
+    a, b = rules.palette(np.random.default_rng(1), 0, False), rules.palette(np.random.default_rng(1), 0, False)
+    assert a.shape == (8, 3) and np.array_equal(a, b)
+    tops = {z: {tuple(rules.palette(np.random.default_rng(s), z, False)[SLOTS.index("top")]) for s in range(200)}
+            for z in range(3)}
+    for z in range(3):
+        assert {tuple(int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)) for h in rules.TOPS[z]} == tops[z]
+    skins = {tuple(rules.palette(np.random.default_rng(s), 1, False)[0]) for s in range(100)}
+    assert skins == {tuple(map(float, t)) for t in SKIN_TONES.values()}
+
+
+def test_a_walkers_size_keeps_to_its_range_and_the_statures():
+    g = np.random.default_rng(0)
+    for stature in (1.45, 1.7, 1.95):
+        for _ in range(50):
+            tall, wide = rules.size(g, stature)
+            assert rules.SIZE[0] <= tall <= rules.SIZE[1] and rules.SIZE[0] <= wide <= rules.SIZE[1]
+            assert 1.45 - 1e-9 <= tall * stature <= 1.95 + 1e-9
 
 
 def test_men_wear_no_skirts_blouses_or_long_hair():
     for seed in range(60):
-        o = rules.outfit(seed, seed % 3, 0.9)
+        o = rules.outfit(seed, 0.9)
         assert o.bottom != "skirt" and o.top != "blouse" and o.hair not in ("long", "bun")
 
 
@@ -49,7 +85,7 @@ def test_every_npc_builds_at_every_level(npc):
 
 
 def test_a_clip_baked_from_level_2_is_the_clip_of_level_0():
-    p, o, _ = people.Figures.body(None, 4)
+    p, o = people.Figures.params_of(4)
     far, near = build_human(p, outfit=o, level=2), build_human(p, outfit=o, level=0)
     assert np.allclose(bake_cycle(far, "walk", 1.3, 8), bake_cycle(near, "walk", 1.3, 8), atol=1e-5)
 
@@ -69,7 +105,10 @@ class FakeEngine:
     def __init__(self):
         self.state, self.clips = {}, []
 
-    def bake_poses(self, frames):
+    def bake_poses(self, frames, into=None):
+        if into is not None:
+            self.into = getattr(self, "into", []) + [into]
+            return into
         self.clips.append(np.asarray(frames).shape)
         return len(self.clips) - 1
 
@@ -78,14 +117,15 @@ def test_figures_hand_out_bodies_once_built_and_put_up_few_results_a_frame():
     e = FakeEngine()
     f = people.Figures(e, 2)
     try:
-        assert f.ready(0) == [] and f.mesh(0, 0) is None
+        assert f.ready() == [] and f.mesh(0, 0) is None
         deadline = time.monotonic() + 120
         while f.waiting and time.monotonic() < deadline:
             assert f.step() <= people.UPLOADS
             time.sleep(0.01)
         assert not f.waiting
-        assert f.ready(0) == [0] and f.ready(1) == [1] and f.ready(2) == []
-        assert f.counts() == {"bodies": 2, "meshes": 6, "clips": 2 * len(rules.CLIPS), "waiting": 0}
+        assert f.ready() == [0, 1] and f.seed_of == [people.SEED, people.SEED + 1]
+        assert f.counts() == {"bodies": 2, "meshes": 6, "clips": 2 * len(rules.CLIPS), "waiting": 0,
+                              "renewed": 0, "retired": 0}
         assert e.clips[0] == (people.FRAMES + 1, 19, 4, 4)
         assert f.clip(1, "run", rules.RUN[0]) is not None
         assert f.builder.cache == {}  # the store holds every result, the builder none
@@ -95,6 +135,7 @@ def test_figures_hand_out_bodies_once_built_and_put_up_few_results_a_frame():
 
 def test_a_mesh_not_built_at_its_level_falls_back_to_the_nearest_coarser_first():
     f = people.Figures.__new__(people.Figures)
+    f.seed_of = [0]
     f.store = {("figure", 0, 2): "far", ("figure", 0, 0): "near"}
     assert f.mesh(0, 1) == "far"
     assert f.mesh(0, 0) == "near"
@@ -114,16 +155,16 @@ def test_the_pool_survives_a_reload_in_the_same_engine():
         f.close()
     g = people.Figures(e, 1)
     try:
-        assert not g.waiting and g.ready(0) == [0]
+        assert not g.waiting and g.ready() == [0]
     finally:
         g.close()
 
 
 # ------------------------------------------------------------------------------------------------- lanes, crowd
 
-from types import SimpleNamespace  # noqa: E402
+from types import SimpleNamespace
 
-from contravia import walks  # noqa: E402
+from contravia import walks
 
 TOP = walks.paint(0, walks.TOP)
 
@@ -183,7 +224,7 @@ def crowd():
     while c.figures.waiting and time.monotonic() < deadline:
         c.figures.step()
         time.sleep(0.01)
-    c.clips = c.figures.clip_table()
+    c.clips = c.figures.table
     yield e, c
     c.close()
 
@@ -221,7 +262,7 @@ def test_walkers_move_at_their_buckets_speed(crowd):
     still = c.mode[walking] == people.WALK
     moved = np.abs(c.s[walking] - s0)[still]
     moved = np.minimum(moved, c.t_length[c.lane[walking]][still] - moved)  # a loop wraps
-    want = np.array(rules.CLIPS)[c.clip[walking][still], 1].astype(float) * 0.1
+    want = np.array(rules.CLIPS)[c.clip[walking][still], 1].astype(float) * np.sqrt(c.tall[walking][still]) * 0.1
     assert np.allclose(moved, want, atol=1e-6)
 
 
@@ -284,8 +325,74 @@ def test_figures_start_nothing_while_the_game_says_not_to_build():
     try:
         for _ in range(5):
             assert f.step(build=False) == 0
-        assert f.builder.jobs == {} and len(f.waiting) == len(people.work(0))
+        assert f.builder.jobs == {} and len(f.waiting) == len(people.work(people.SEED))
         f.step()  # now the first job starts, and only it
         assert len(f.builder.jobs) == 1
     finally:
         f.close()
+
+
+def _built(f, deadline=120):
+    end = time.monotonic() + deadline
+    while f.waiting and time.monotonic() < end:
+        f.step()
+        time.sleep(0.01)
+    assert not f.waiting
+
+
+def test_the_pool_renews_its_oldest_body_and_frees_a_retired_one_once_nobody_plays_it():
+    e = FakeEngine()
+    f = people.Figures(e, 2)
+    now = [0.0]
+    f.clock = lambda: now[0]
+    f.born = [0.0, -1.0]  # slot 1 is the older
+    try:
+        _built(f)
+        f.step()  # the first step that builds starts the clock
+        assert not f.coming
+        now[0] += people.RENEW
+        f.step()
+        assert list(f.coming) == [1] and f.seed_of[f.coming[1]] == people.SEED + 2
+        assert not f.filling  # a renewal's jobs do not hold an offline shot
+        old = f.slots[1]
+        _built(f)
+        assert f.slots[1] != old and f.retired == {old} and f.born[1] == now[0]
+        assert f.ready() == [0, f.slots[1]] and f.counts()["renewed"] == 1
+        assert f.collect([old]) == 0 and f.retired == {old}  # a walker still plays it
+        clips = sorted(int(c) for c in f.table[old])
+        assert f.collect([]) == 1
+        assert f.seed_of[old] is None and (f.table[old] == -1).all() and sorted(f.free_clips) == clips
+        assert not [k for k in f.store if k[1] == people.SEED + 1]
+        now[0] += people.RENEW
+        f.step()  # the next renewal takes the freed row and bakes into the freed clips
+        assert f.coming == {0: old}
+        _built(f)
+        assert sorted(e.into) == clips and not f.free_clips
+    finally:
+        f.close()
+
+
+def test_walkers_wear_their_own_colours_and_sizes_on_shared_bodies(crowd):
+    e, c = crowd
+    run(c, 30)
+    live = np.flatnonzero(c.alive & ~c.leaving & (c.ent >= 0))
+    assert len(live) > 3 and len(set(c.body[live].tolist())) < len(live)  # bodies are shared
+    assert len({c.pal[w].tobytes() for w in live}) == len(live)  # colours are not
+    pal = e.store._components["Palette"]
+    tr = e.store._components["Transform"]
+    for w in live:
+        assert np.allclose(pal[c.ent[w]], c.pal[w], atol=1e-6)
+        assert np.allclose(tr[c.ent[w], 7:10], (c.wide[w], c.tall[w], c.tall[w]), atol=1e-6)
+    assert (c.tall[live] >= rules.SIZE[0]).all() and (c.tall[live] <= rules.SIZE[1]).all()
+
+
+def test_a_walkers_cadence_slows_by_the_root_of_its_height(crowd):
+    from manifoldx.humanoid.cycles import cadence
+
+    _, c = crowd
+    run(c, 5)
+    w = int(np.flatnonzero(c.alive & ~c.leaving & (c.mode == people.WALK))[0])
+    seed = c.figures.seed_of[int(c.body[w])]
+    v = rules.CLIPS[int(c.clip[w])][1]
+    want = cadence("walk", v, c.figures.params_of(seed)[0]) / np.sqrt(c.tall[w])
+    assert c.rate[w] == pytest.approx(want)

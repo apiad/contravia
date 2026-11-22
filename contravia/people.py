@@ -2,8 +2,10 @@
 
 A crowd does not get one body per person: a body costs about 350 ms over its three levels and 280 ms of clips, so
 300 unique people would take minutes. A preset builds a pool of bodies instead (Figures), each a
-rules.people.body dressed for one zone, at levels 2, 1 and 0, with the clips of rules.people.CLIPS, and every walker
-plays one of them. The work runs on a Builder thread of its own, in an order that lets the crowd show early: every
+rules.people.body in the shapes of rules.people.outfit, at levels 2, 1 and 0, with the clips of rules.people.CLIPS,
+shared by every zone, and every walker plays one of them in colours of its own (a manifoldx Palette drawn by its
+lane's zone) at a size of its own. Once the game builds, the pool replaces its oldest body every RENEW seconds, so
+the shapes change as one drives. The work runs on a Builder thread of its own, in an order that lets the crowd show early: every
 body's level 2 and walk clips first, then level 1, then level 0 and the other clips. The GPU uploads (a Mesh, a
 baked clip) happen on the frame thread, a few per frame, as results arrive.
 
@@ -30,46 +32,83 @@ from contravia import kept as keep
 from contravia.garage import Builder
 from contravia.rules import people as rules
 
-SEED = 1000  # body i of the pool is rules.people.body(SEED + i)
-ZONES = 3  # body i dresses for zone i % ZONES
+SEED = 1000  # the pool's first body is rules.people.body(SEED), the next SEED + 1, and so on
+ZONES = 3  # the lanes' zones (contravia.walks): they set a walker's density and colours, not its body
 LEVELS = (2, 1, 0)
 UPLOADS = 2  # results put on the GPU per frame at most
 FRAMES = 32  # poses per baked cycle
+RENEW = 1.5  # seconds between two renewals of the pool's oldest body, once the game builds
 
 
-def work(i: int) -> list[tuple]:
-    """Every job of body i, as (stage, item): stage orders the jobs of the whole pool."""
-    walk = [("clip", i, "walk", v) for v in rules.WALK]
-    rest = [("clip", i, k, v) for k, v in rules.CLIPS if k != "walk"]
-    return ([(0, ("figure", i, 2))] + [(1, j) for j in walk] + [(2, ("figure", i, 1))]
-            + [(3, ("figure", i, 0))] + [(4, j) for j in rest])
+def work(seed: int) -> list[tuple]:
+    """Every job of body seed, as (stage, item): stage orders the jobs of the whole pool."""
+    walk = [("clip", seed, "walk", v) for v in rules.WALK]
+    rest = [("clip", seed, k, v) for k, v in rules.CLIPS if k != "walk"]
+    return ([(0, ("figure", seed, 2))] + [(1, j) for j in walk] + [(2, ("figure", seed, 1))]
+            + [(3, ("figure", seed, 0))] + [(4, j) for j in rest])
 
 
 class Figures:
-    """The pool of bodies of one preset: their meshes at three levels and their clips, built off the frame."""
+    """The pool of bodies of one preset: their meshes at three levels and their clips, built off the frame.
+
+    The pool has a slot per body. Each slot holds a row (a body seed's place in `table`, the clip ids by
+    rules.CLIPS); a walker plays a row. Once the pool is built and the game builds, every RENEW seconds the slot
+    whose body is oldest gets a fresh seed: its jobs run one at a time like the others', and when its level 2 and
+    walking clips are up the slot plays it and the old row retires. Walkers on a retired row keep it; `collect`
+    frees it once none does, releasing its meshes and keeping its clip ids for the next bodies to bake into.
+    """
 
     def __init__(self, engine, bodies: int):
         self.engine = engine
         stamp = (keep.source(rules.__file__), keep.source(__file__))
         self.store = keep.kept(engine.state, "people", stamp, dict)  # item -> what the frame thread made of it
-        self._figs = {}  # body -> its level 2 Figure, written and read on the worker thread only
+        self._figs = {}  # seed -> its level 2 Figure, written and read on the worker thread only
         self.builder = Builder(make=self._make, key_of=repr, cached=1 << 30, name="people")
         self.waiting: deque = deque()
-        self.n = 0
+        self.table = np.zeros((0, len(rules.CLIPS)), np.int64)
+        self.seed_of: list = []  # row -> its seed, None once freed
+        self.row_of: dict = {}  # seed -> row
+        self.slots: list = []  # slot -> the row it hands out
+        self.born: list = []  # slot -> when its row began to be handed out
+        self.coming: dict = {}  # slot -> the row being built to replace its own
+        self.retired: set = set()
+        self.free_clips: list = []
+        self.clock, self._renewed = perf_counter, None
+        self.next_seed, self.n = SEED, 0
         self.resize(bodies)
 
-    def body(self, i: int):
-        """Body i's HumanParams, Outfit and zone."""
-        params = rules.body(SEED + i)
-        zone = i % ZONES
-        return params, rules.outfit(SEED + i, zone, params.build), zone
+    def body(self, row: int):
+        """Row's HumanParams and Outfit."""
+        return self.params_of(self.seed_of[row])
+
+    @staticmethod
+    def params_of(seed: int):
+        params = rules.body(seed)
+        return params, rules.outfit(seed, params.build)
+
+    def _row(self) -> int:
+        """A row for the next seed, its clip ids from the store where an earlier life of this pool baked them."""
+        seed, self.next_seed = self.next_seed, self.next_seed + 1
+        free = [r for r, s in enumerate(self.seed_of) if s is None]
+        row = free[0] if free else len(self.seed_of)
+        if row == len(self.seed_of):
+            self.seed_of.append(None)
+            self.table = np.vstack([self.table, np.full((1, len(rules.CLIPS)), -1, np.int64)])
+        self.seed_of[row], self.row_of[seed] = seed, row
+        self.table[row] = [self.store.get(("clip", seed, k, v), -1) for k, v in rules.CLIPS]
+        return row
 
     def resize(self, bodies: int) -> None:
         """Hold a pool of this many bodies, queueing the jobs of the bodies not built yet. A smaller pool keeps
         what it built; its extra bodies are only not handed out."""
-        new = range(self.n, bodies)
+        new = []
+        while len(self.slots) < bodies:
+            self.slots.append(self._row())
+            self.born.append(self.clock())
+            new.append(self.seed_of[self.slots[-1]])
         self.n = bodies
-        jobs = sorted((s, k, item) for k, i in enumerate(new) for s, item in work(i))
+        self._filled_to = self.next_seed
+        jobs = sorted((st, k, item) for k, seed in enumerate(new) for st, item in work(seed))
         for _, _, item in jobs:
             if item not in self.store:
                 self.waiting.append(item)  # submitted one at a time by step, so it never floods the thread
@@ -80,25 +119,30 @@ class Figures:
         from manifoldx.modeling.assets.human import build_human
 
         if item[0] == "figure":
-            _, i, level = item
-            params, outfit, _ = self.body(i)
+            _, seed, level = item
+            params, outfit = self.params_of(seed)
             f = build_human(params, outfit=outfit, level=level)
             if level == 2:
-                self._figs[i] = f
-            return f.mesh.to_geometry()
-        _, i, kind, speed = item
-        f = self._figs.get(i)
+                self._figs[seed] = f
+            return f.paletted_geometry()
+        _, seed, kind, speed = item
+        f = self._figs.get(seed)
         if f is None:  # its level 2 job ran in an earlier life of this object
-            params, outfit, _ = self.body(i)
-            f = self._figs[i] = build_human(params, outfit=outfit, level=2)
+            params, outfit = self.params_of(seed)
+            f = self._figs[seed] = build_human(params, outfit=outfit, level=2)
+        if item == ("clip", seed, *rules.CLIPS[-1]):  # its last job: the worker forgets the figure
+            self._figs.pop(seed, None)
         return bake_cycle(f, kind, speed, FRAMES)
 
     def step(self, build: bool = True) -> int:
         """On the frame thread: start the next job if none is running, and put up to UPLOADS finished results on
         the GPU. Jobs go to the worker one at a time, so the pool never holds the thread long. With build false
-        nothing new starts (the game waits for its world to load first). Returns how many results were put up."""
+        nothing new starts (the game waits for its world to load first), nor does the pool renew. Returns how
+        many results were put up."""
         from manifoldx.components import Mesh
 
+        if build:
+            self._renew()
         done = 0
         while self.waiting and done < UPLOADS:
             item = self.waiting[0]
@@ -109,41 +153,95 @@ class Figures:
                 break
             self.waiting.popleft()
             self.builder.cache.pop(repr(item), None)  # the store holds it now
-            self.store[item] = Mesh(got) if item[0] == "figure" else self.engine.bake_poses(got)
+            if item[0] == "figure":
+                self.store[item] = Mesh(got)
+            else:
+                into = self.free_clips.pop() if self.free_clips else None
+                cid = self.store[item] = (self.engine.bake_poses(got) if into is None
+                                          else self.engine.bake_poses(got, into=into))
+                if item[1] in self.row_of:
+                    self.table[self.row_of[item[1]], rules.CLIPS.index(item[2:])] = cid
             done += 1
+        if done and self.coming:
+            self._promote()
         return done
 
-    def nearest(self, i: int, level: int):
-        """(level, Mesh) of body i at level, or at the nearest level built, coarser first; (-1, None) while none
+    @property
+    def filling(self) -> bool:
+        """Whether the pool's own bodies still have jobs waiting (a renewal's jobs do not count)."""
+        return any(item[1] < self._filled_to for item in self.waiting)
+
+    def _renew(self) -> None:
+        """Every RENEW seconds once nothing waits, start a fresh seed for the slot whose body is oldest."""
+        now = self.clock()
+        if self.waiting or self.coming or not self.n:
+            return
+        if self._renewed is None or now - self._renewed >= RENEW:
+            if self._renewed is not None:
+                slot = min(range(self.n), key=lambda i: self.born[i])
+                row = self.coming[slot] = self._row()
+                self.waiting.extend(item for _, item in work(self.seed_of[row]) if item not in self.store)
+            self._renewed = now
+
+    def _promote(self) -> None:
+        for slot, row in list(self.coming.items()):
+            if self._ready(row):
+                self.retired.add(self.slots[slot])
+                self.slots[slot], self.born[slot] = row, self.clock()
+                del self.coming[slot]
+
+    def collect(self, used) -> int:
+        """Free the retired rows no walker in `used` (rows) plays: release their meshes, keep their clip ids for
+        the next bakes. Returns how many rows were freed."""
+        used = set(np.asarray(used, np.int64).tolist())
+        freed = 0
+        for row in sorted(self.retired - used):
+            seed = self.seed_of[row]
+            for item in [k for k in self.store if k[1] == seed]:
+                got = self.store.pop(item)
+                if item[0] == "clip":
+                    self.free_clips.append(int(got))
+                elif getattr(got, "_geometry_id", None) is not None:
+                    self.engine._geometry_registry.release(got._geometry_id)
+            self.retired.discard(row)
+            self.seed_of[row] = None
+            self.row_of.pop(seed, None)
+            self.table[row] = -1
+            freed += 1
+        return freed
+
+    def nearest(self, row: int, level: int):
+        """(level, Mesh) of row's body at level, or at the nearest level built, coarser first; (-1, None) while none
         is."""
+        seed = self.seed_of[row]
         for lv in sorted(LEVELS, key=lambda lv: (abs(lv - level), -lv)):
-            m = self.store.get(("figure", i, lv))
+            m = self.store.get(("figure", seed, lv))
             if m is not None:
                 return lv, m
         return -1, None
 
-    def mesh(self, i: int, level: int):
-        """Body i's Mesh at level, or at the nearest level built, coarser first; None while none is."""
-        return self.nearest(i, level)[1]
+    def mesh(self, row: int, level: int):
+        """Row's Mesh at level, or at the nearest level built, coarser first; None while none is."""
+        return self.nearest(row, level)[1]
 
-    def clip_table(self) -> np.ndarray:
-        """(bodies, len(rules.CLIPS)) clip ids, -1 where not baked yet."""
-        return np.array([[c if (c := self.clip(i, k, v)) is not None else -1 for k, v in rules.CLIPS]
-                         for i in range(self.n)], np.int64).reshape(self.n, len(rules.CLIPS))
+    def clip(self, row: int, kind: str, speed: float):
+        """The id of row's baked clip of kind at speed, or None while it is not baked."""
+        c = int(self.table[row, rules.CLIPS.index((kind, speed))])
+        return None if c < 0 else c
 
-    def clip(self, i: int, kind: str, speed: float):
-        """The id of body i's baked clip of kind at speed, or None while it is not baked."""
-        return self.store.get(("clip", i, kind, speed))
+    def _ready(self, row: int) -> bool:
+        return self.mesh(row, 2) is not None and all(self.clip(row, "walk", v) is not None for v in rules.WALK)
 
-    def ready(self, zone: int) -> list[int]:
-        """The bodies of zone a walker can play now: one level built and every walking clip baked."""
-        return [i for i in range(zone, self.n, ZONES)
-                if self.mesh(i, 2) is not None and all(self.clip(i, "walk", v) is not None for v in rules.WALK)]
+    def ready(self) -> list[int]:
+        """The rows a new walker can play now: its slot's, with one level built and every walking clip baked."""
+        return [r for r in self.slots[: self.n] if self._ready(r)]
 
     def counts(self) -> dict:
-        built = [k for k in self.store if k[1] < self.n]
+        live = {self.seed_of[r] for r in self.slots[: self.n]}
+        built = [k for k in self.store if k[1] in live]
         return {"bodies": self.n, "meshes": sum(k[0] == "figure" for k in built),
-                "clips": sum(k[0] == "clip" for k in built), "waiting": len(self.waiting)}
+                "clips": sum(k[0] == "clip" for k in built), "waiting": len(self.waiting),
+                "renewed": self.next_seed - SEED - len(self.slots), "retired": len(self.retired)}
 
     def close(self) -> None:
         self.builder.close()
@@ -314,7 +412,7 @@ def yaw_quat(d: np.ndarray) -> np.ndarray:
 FIELDS = (("alive", bool), ("leaving", bool), ("lane", np.int64), ("local", np.int64), ("s", float),
           ("dir", float), ("mode", np.int64), ("timer", float), ("clip", np.int64), ("body", np.int64),
           ("phase", float), ("level", np.int64), ("shown", np.int64), ("ent", np.int64), ("ghost", np.int64),
-          ("t0", float), ("fading", bool))
+          ("t0", float), ("fading", bool), ("tall", float), ("wide", float))
 
 
 class Crowd:
@@ -331,7 +429,7 @@ class Crowd:
 
         Person = engine.component(Person)  # registered now: the system below queries it before any person exists
         self.engine, self.city, self.Person = engine, city, Person
-        self.material = StandardMaterial("#ffffff", roughness=0.8, vertex_colors=True, faded=True)
+        self.material = StandardMaterial("#ffffff", roughness=0.8, vertex_colors=True, faded=True, paletted=True)
         self._pool = ThreadPoolExecutor(1, thread_name_prefix="lanes")
         self._pending: dict[tuple[int, int], Future] = {}
         self.lanes: dict[tuple[int, int], Lanes] = {}
@@ -367,7 +465,7 @@ class Crowd:
             if had:
                 new[:m] = getattr(self, name)[:m]
             setattr(self, name, new)
-        for name, width in (("pos", 3), ("rot", 4), ("rate", 0)):
+        for name, width in (("pos", 3), ("rot", 4), ("rate", 0), ("pal", 24)):
             new = np.zeros((n, width) if width else n)
             if name == "rot":
                 new[:, 3] = 1.0
@@ -400,8 +498,10 @@ class Crowd:
     def update(self, cells, eye, dt: float, hour: float = 12.0, rain: float = 0.0, build: bool = True) -> None:
         """Follow the cells drawn in full, keep the walker count, move everyone, change levels, pose them."""
         self._frame += 1
-        if self.figures.step(build):
-            self.clips = self.figures.clip_table()
+        self.figures.step(build)
+        self.clips = self.figures.table
+        if self._frame % EVERY == 0 and self.figures.retired:
+            self.figures.collect(self.body[self.alive])
         eye = np.asarray(eye, float)
         changed = self._follow(set(cells))
         if changed:
@@ -513,16 +613,19 @@ class Crowd:
                 self._spawn(int(w))
 
     def _spawn(self, w: int) -> None:
-        """Put walker w at a lane sample within the last band but past the first, drawn by weight, on a ready body
-        of its zone."""
+        """Put walker w at a lane sample within the last band but past the first, drawn by weight, on a ready body,
+        with its own size and the colours of its lane's zone."""
         pool = self._spawnable
         k = int(pool[self.rng.choice(len(pool), p=self.p_weight[pool] / self.p_weight[pool].sum())])
         lane = int(self.p_lane[k])
         s = [min(float(self.p_s[k]), float(self.t_length[lane]))]
-        bodies = self.figures.ready(int(self.t_zone[lane]))
+        bodies = self.figures.ready()
         if not bodies:
             return
         body = int(self.rng.choice(bodies))
+        params = self.figures.body(body)[0]
+        self.tall[w], self.wide[w] = rules.size(self.rng, params.stature)
+        self.pal[w] = rules.palette(self.rng, int(self.t_zone[lane]), params.age == "elder").reshape(-1)
         r = self.rng.random()
         mode = WALK if r < SHARES[0] else IDLE if r < SHARES[0] + SHARES[1] else RUN
         if mode == RUN and (body >= len(self.clips) or (self.clips[body, len(rules.WALK):len(rules.WALK) + len(rules.RUN)] < 0).any()):
@@ -582,19 +685,25 @@ class Crowd:
         xyz, d = self._at(self.lane[ws], self.s[ws])
         self.pos[ws], self.rot[ws] = xyz, yaw_quat(d * self.dir[ws, None])
 
-    def _speed(self, ws) -> np.ndarray:
+    def _speed(self, ws, scaled: bool = True) -> np.ndarray:
+        """Walkers ws's speed: their clip's, times the root of their height scale (scaled), as their cadence is
+        divided by it, so a stride grows with the walker and a planted foot stays planted."""
         m = self.mode[ws]
         bucket = np.array(rules.CLIPS)[self.clip[ws], 1].astype(float)
-        return np.where(m == IDLE, 0.0, np.where(m == CROSS, rules.CROSS, bucket))
+        v = np.where(m == IDLE, 0.0, np.where(m == CROSS, rules.CROSS, bucket))
+        return v * np.sqrt(self.tall[ws]) if scaled else v
 
     def _rate(self, w: int) -> float:
         from manifoldx.humanoid.cycles import cadence
 
-        key = (int(self.body[w]), int(self.mode[w]), float(self._speed(np.array([w]))[0]))
+        seed = self.figures.seed_of[int(self.body[w])]
+        key = (seed, int(self.mode[w]), float(self._speed(np.array([w]), scaled=False)[0]))
         r = self.rates.get(key)
         if r is None:
-            r = self.rates[key] = cadence(KIND[key[1]], key[2], self.figures.body(key[0])[0])
-        return r
+            if len(self.rates) > 4096:
+                self.rates.clear()
+            r = self.rates[key] = cadence(KIND[key[1]], key[2], self.figures.params_of(seed)[0])
+        return r / np.sqrt(self.tall[w])
 
     def _advance(self, dt: float) -> None:
         live = np.flatnonzero(self.alive & ~self.leaving)
@@ -651,7 +760,7 @@ class Crowd:
 
     def _swap(self, w: int, level: int) -> None:
         """Walker w's figure becomes level (HIDDEN: none), fading in over the pixels the old one leaves."""
-        from manifoldx.components import Fade, Material, Transform
+        from manifoldx.components import Fade, Material, Palette, Transform
 
         shown, mesh = self.figures.nearest(int(self.body[w]), level) if level < HIDDEN else (-1, None)
         if self.ghost[w] >= 0:
@@ -659,8 +768,11 @@ class Crowd:
         self.ghost[w], self.ent[w] = self.ent[w], -1
         self.level[w], self.shown[w] = level, shown
         if mesh is not None:
-            h = self.engine.spawn(mesh, Material(self.material), Transform(pos=self.pos[w], rot=self.rot[w]),
-                                  self.Person(k=float(w)), Fade(value=0.0))
+            pal = self.pal[w].reshape(8, 3)
+            h = self.engine.spawn(mesh, Material(self.material),
+                                  Transform(pos=self.pos[w], rot=self.rot[w],
+                                            scale=(self.wide[w], self.tall[w], self.tall[w])),
+                                  self.Person(k=float(w)), Fade(value=0.0), Palette(**{f"c{k}": pal[k] for k in range(8)}))
             self.ent[w] = h.index
         if self.ent[w] >= 0 or self.ghost[w] >= 0:
             self.t0[w], self.fading[w] = self.clock(), True
