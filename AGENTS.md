@@ -262,7 +262,10 @@ shore's grid (`rules.shore.vegetated`). The
   round it; the next run checks again only the cells whose fingerprint changed (after `contravia streets` or `walks`
   on a province, the cells they changed), and all of them when the island's relief or files (`ISLAND`) or a module
   the last run loaded changed. The modules that build the data (`BUILDERS`) are left out of that, since their work
-  is in the cells; `--fresh` checks everything again, which a release does. What keeps them clean: a
+  is in the cells; `--fresh` checks everything again, which a release does. `--quick` is the loop of a fix: it
+  checks again only the cells where the last run found something (2 % of the cells with streets) and those whose
+  data changed, whatever code or files changed since, and keeps its findings apart (`streets-check.quick`); it
+  cannot see a fault a change brought to a cell that was clean, which the next full run does. What keeps them clean: a
   bridge's two carriageways are one deck (`streets._split_twins`, `_share_twins`), a cut starts where its street
   first dips under the ground (`structures._below`), a street laid on the ground is raised clear of every crease
   of the drawn ground (`streets._clear_ground`), no trunk reaches the streets round its cell
