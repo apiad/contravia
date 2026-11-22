@@ -665,4 +665,24 @@ def main(pbf, out, dem=None, provinces=None, resume: bool = False, jobs: int = 1
 
         reports["water"] = water.write(pbf, out)
         print("water", json.dumps(reports["water"]), flush=True)
+    if todo and sum((Path(out) / f"{slug}.npz").exists() for _, slug in PROVINCES) > 1:
+        reports["island_ground"] = _on_island_ground(out, [slug for _, slug in todo], jobs)
     return reports
+
+
+def _on_island_ground(out, slugs, jobs: int) -> dict:
+    """Each province's streets and walks built again on the ground the island draws (world.island_ground): in a
+    cell two provinces hold that is the lowest one's relief, which the first build, on the province's own, cannot
+    know. The island's index is written for it, and again after, from the streets built now."""
+    import time
+
+    from contravia import streets, walks
+    from contravia.world import index
+
+    t0 = time.perf_counter()
+    index(out)
+    for slug in slugs:
+        streets.main(Path(out) / f"{slug}.npz", jobs)
+        walks.main(Path(out) / f"{slug}.npz", jobs)
+    index(out)
+    return {"provinces": len(slugs), "seconds": round(time.perf_counter() - t0, 1)}
