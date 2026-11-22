@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import tifffile
 
 from contravia.citydata import CityData
@@ -137,3 +138,28 @@ def test_relief_command_raises_a_built_province_in_place(city, tmp_path):
     assert main(tmp_path / "x.npz") == {"samples": 16, "raised": 8}
     h = CityData.load(tmp_path / "x.npz").terrain.heights
     assert (h[:, :2] == LAND).all() and (h[:, 2:] == 0.0).all()
+
+
+def test_two_provinces_reliefs_hold_the_same_points_where_their_grids_overlap(tmp_path):
+    """Two boxes that overlap, read at the provinces' 90 m: both grids start on the lattice, so over rough
+    ground they give the same height at any point well inside both, between the samples too."""
+    import tifffile
+
+    from contravia.geo import to_local
+    from contravia.terrain import LATTICE, _tile_name, read_terrain
+
+    rng = np.random.default_rng(3)
+    n = 360
+    rough = rng.uniform(0.0, 400.0, (n // 12, n // 12)).astype(np.float32)
+    tifffile.imwrite(tmp_path / _tile_name(20, -76), np.kron(rough, np.ones((12, 12), np.float32)))
+    a = read_terrain(tmp_path, (20.30, -75.80, 20.60, -75.45), stride=3, fetch=False)
+    b = read_terrain(tmp_path, (20.41, -75.63, 20.70, -75.30), stride=3, fetch=False)
+    for t in (a, b):
+        assert t.step == (90.0, 90.0) and t.origin[0] % LATTICE == 0 and t.origin[1] % LATTICE == 0
+    assert (a.origin[0] - b.origin[0]) % 90 == 0 and a.origin != b.origin
+    lat, lon = rng.uniform(20.47, 20.54, 400), rng.uniform(-75.57, -75.51, 400)
+    xz = to_local(lat, lon)
+    ha, hb = a.height(xz[:, 0], xz[:, 1]), b.height(xz[:, 0], xz[:, 1])
+    assert np.ptp(ha) > 50 and np.abs(ha - hb).max() < 1e-3
+    with pytest.raises(ValueError):
+        read_terrain(tmp_path, (20.30, -75.80, 20.60, -75.45), stride=2, fetch=False)
