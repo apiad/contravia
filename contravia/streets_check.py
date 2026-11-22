@@ -45,6 +45,7 @@ from contravia.landmarks import cached
 from contravia.mesh import lattice
 from contravia.rules.ground import drawn
 from contravia.shore import of as shore_of
+from contravia.streets import MIN_WIDTH
 from contravia.structures import MEDIAN
 from contravia.walks import BEVEL, KERB
 from contravia.walks import SIMPLIFY as WALK_SIMPLIFY
@@ -254,8 +255,10 @@ class Check:
     def _climbs(self, i: int, j: int, tris: np.ndarray) -> np.ndarray:
         """Whether each of cell (i, j)'s street triangles (K, 3, 3), steeper than STEEP, only climbs with the
         relief: across the road it lies on (the nearest road segment of the 3 x 3 cells, within ROAD of its
-        edge) it slopes no more than STEEP, and along it no more than the drawn ground under the triangle
-        does, the same way, by more than ALONG. A triangle with no road near is not excused."""
+        edge) it slopes no more than STEEP, and along it no more than the drawn ground does, the same way, by
+        more than ALONG. The ground is read under the triangle and a half and a whole road's width to either
+        side, the steepest of them: a street built up on a hillside follows the ground under its high kerb
+        (streets._follow), not the ground under each triangle. A triangle with no road near is not excused."""
         out = np.zeros(len(tris), bool)
         if not len(tris):
             return out
@@ -276,14 +279,20 @@ class Check:
             m = np.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0])
             return -m[:, [0, 2]] / np.where(np.abs(m[:, [1]]) < 1e-12, 1e-12, m[:, [1]])
 
+        own = gradient(tris[:, :, 1])
+        along = (own * d).sum(axis=1)
+        across = np.abs(own[:, 0] * -d[:, 1] + own[:, 1] * d[:, 0])
         # the ground a hair inside each corner: a corner on the cell's far border belongs to the next cell's grid
         q = tris[:, :, [0, 2]] + (c[:, None] - tris[:, :, [0, 2]]) * 1e-3
-        ground = self._ground(i, j, q[..., 0].ravel(), q[..., 1].ravel())[0].reshape(-1, 3)
-        own, under = gradient(tris[:, :, 1]), gradient(ground)
-        along, along_ground = (own * d).sum(axis=1), (under * d).sum(axis=1)
-        across = np.abs(own[:, 0] * -d[:, 1] + own[:, 1] * d[:, 0])
-        return ((dist[np.arange(len(c)), r] <= ROAD) & (across <= STEEP) & (along * along_ground > 0)
-                & (np.abs(along) <= np.abs(along_ground) + ALONG))
+        side = np.stack([-d[:, 1], d[:, 0]], axis=1) * np.maximum(roads[r, 4], MIN_WIDTH)[:, None]
+        climb = np.zeros(len(tris))  # the most the ground climbs along the road, the way the triangle does
+        for u in (0.0, 0.5, -0.5, 1.0, -1.0):
+            at = q + u * side[:, None]
+            # the drawn ground, whatever cell the shifted corner falls in (the shore's grid is this cell's alone)
+            ground = (self._ground(i, j, at[..., 0].ravel(), at[..., 1].ravel())[0] if u == 0.0
+                      else drawn(self.city.terrain, at[..., 0].ravel(), at[..., 1].ravel())).reshape(-1, 3)
+            climb = np.maximum(climb, (gradient(ground) * d).sum(axis=1) * np.sign(along))
+        return (dist[np.arange(len(c)), r] <= ROAD) & (across <= STEEP) & (np.abs(along) <= climb + ALONG)
 
     def _surface(self, i: int, j: int, levels: Levels) -> list:
         """The cell's own street triangles: ground over them, steps between them and steep ones."""
