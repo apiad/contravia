@@ -6,9 +6,10 @@ pieces), and its coastline sometimes wraps them in a thin strip of land and some
 relief, at 90 m, never sees them. Drawn from the data alone, the asphalt lies under the water plane and a car
 that leaves it sinks.
 
-`read` finds them instead by where a road runs: every drivable OSM road that is not a bridge or a tunnel, near the
-coast (NEAR_COAST), at the points where it lies outside the coast's land, or where the relief there is sea (under
-rules.ground.SEA), or where the land under it is a strip with sea within ACROSS metres on both sides. A service
+`read` finds them instead by where a road runs: every drivable OSM road that is not a bridge or a tunnel, at the
+points where it lies outside the coast's land (however far from the coastline: the middle of the causeway to Cayo
+Santa María is kilometres out), or, near the coast (NEAR_COAST), where the relief there is sea (under
+rules.ground.SEA) or the land under it is a strip with sea within ACROSS metres on both sides. A service
 road outside the coast's land is a pier or a dock and stays out; on the land (a dike, a breakwater) it counts.
 Runs of such
 points on one road are its pieces; pieces that join into a causeway shorter than MIN_LENGTH are left out (a road
@@ -117,10 +118,11 @@ def detect(lines, widths, crossings, land, height=None, piers=None) -> tuple[lis
     lines = np.asarray(lines, dtype=object)
     dense = shapely.segmentize(lines, STEP)
     xz, which = shapely.get_coordinates(dense, return_index=True)
-    near = near_coast(land, xz[:, 0], xz[:, 1])
+    shapely.prepare(land)
+    sea = ~shapely.contains_xy(land, xz[:, 0], xz[:, 1])
+    near = near_coast(land, xz[:, 0], xz[:, 1]) | sea  # out at sea is near enough: a long causeway's middle
     keep = np.unique(which[near])
     report["near_coast"] = len(keep)
-    shapely.prepare(land)
     bounds = np.searchsorted(which, np.arange(len(lines) + 1))
     pieces = []
     for k in keep:
@@ -130,7 +132,7 @@ def detect(lines, widths, crossings, land, height=None, piers=None) -> tuple[lis
         t = np.gradient(p, axis=0)
         t /= np.maximum(np.linalg.norm(t, axis=1, keepdims=True), 1e-9)
         n = np.c_[-t[:, 1], t[:, 0]] * ACROSS
-        outside = ~shapely.contains_xy(land, p[:, 0], p[:, 1])
+        outside = sea[bounds[k]:bounds[k + 1]]
         strip = (~shapely.contains_xy(land, p[:, 0] + n[:, 0], p[:, 1] + n[:, 1])
                  & ~shapely.contains_xy(land, p[:, 0] - n[:, 0], p[:, 1] - n[:, 1]))
         over = outside | strip
