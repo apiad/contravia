@@ -11,7 +11,7 @@ Contravía has four layers, each with its own licence (`REUSE.toml` maps every p
 | Code | GPL-3.0-or-later | `contravia/`, `havana/`, `tests/`, `packaging/` and the build files |
 | Map data | ODbL-1.0 | `data/`, `contravia/places.json`, `contravia/towns.json` |
 | Core assets and docs | CC-BY-NC-SA-4.0 | `assets/`, `branding/`, `docs/`, `know-how/` |
-| Paid packs | all rights reserved | not in this repository |
+| Paid extras (mods and assets, never mechanics or essential content) | all rights reserved | not in this repository |
 
 Inbound equals outbound: what you send comes in under the licence of the path it touches. There is no contributor
 licence agreement. Fonts keep their own licence (OFL-1.1), and `uvx reuse lint` checks every path in CI, so a new
@@ -72,7 +72,7 @@ By making a contribution to this project, I certify that:
 ## En español
 
 Contravía tiene cuatro capas con su licencia cada una: el código (GPLv3 o posterior), los datos del mapa (ODbL), el
-arte, la música, la historia y la documentación (CC BY-NC-SA 4.0) y los packs pagados, que no están en este
+arte, la música, la historia y la documentación (CC BY-NC-SA 4.0) y los extras de pago (mods y assets, nunca mecánicas ni contenido esencial), que no están en este
 repositorio. Lo que envías entra con la licencia de la ruta que toca, sin firmar ningún acuerdo aparte. Los arreglos
 de calles y edificios van a OpenStreetMap. Lo que entra al repositorio es del juego común y gratis para todos; lo que
 distribuyes aparte es un mod, sigue siendo tuyo y `MODS.md` dice cómo puedes venderlo. Firma cada commit con

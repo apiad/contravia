@@ -107,13 +107,13 @@ figcaption{font-family:var(--font-mono);font-size:11px;color:var(--faint);margin
   <a href="#nongoals">Non-goals and open questions</a>
 </nav>
 <main>
-<h1>Licensing and business model: an open core, a protected brand, paid packs on top</h1>
-<div class="meta"><span>docs/superpowers/specs/2026-11-21-licensing-business-model-design.html</span><span>·</span><span>proposed, not legal advice</span></div>
-<p class="lede">Contravía's code goes out under GPLv3 and its map data under ODbL, so anyone can read, fix and extend the game, and the whole of Cuba with its main story stays free for good. The hand-made core assets use CC BY-NC-SA, so no one can repackage the game and sell it. A short Mod Licence lets anyone sell creative mods anywhere. The maintainer earns from paid packs (activities, story chapters, cars, music), from an official store that takes a commission, and from the registered name.</p>
+<h1>Licensing and business model: an open core, a protected brand, paid extras on top</h1>
+<div class="meta"><span>docs/superpowers/specs/2026-11-21-licensing-business-model-design.html</span><span>·</span><span>proposed, not legal advice · free/paid line revised 2026-11-22</span></div>
+<p class="lede">Contravía's code goes out under GPLv3 and its map data under ODbL, so anyone can read, fix and extend the game, and the whole of Cuba with its main story stays free for good. The hand-made core assets use CC BY-NC-SA, so no one can repackage the game and sell it. A short Mod Licence lets anyone sell creative mods anywhere. Every mechanic and all essential content stay free. What is sold is extra content, such as mods and assets, that anyone may buy and sell; the maintainer earns from its own extras, from an official store that takes a commission, and from the registered name.</p>
 
 <h2 id="delivers"><span class="n">01</span>What this decides</h2>
 <div class="stats">
-  <div class="stat"><div class="v">4</div><div class="k">licence layers: code, map data, core assets, paid packs</div></div>
+  <div class="stat"><div class="v">4</div><div class="k">licence layers: code, map data, core assets, paid extras</div></div>
   <div class="stat"><div class="v">0</div><div class="k">contributor agreements to sign: contributions come in under the project's own licences</div></div>
   <div class="stat"><div class="v">16</div><div class="k">provinces that stay free, with the main story to its end</div></div>
 </div>
@@ -156,8 +156,8 @@ figcaption{font-family:var(--font-mono);font-size:11px;color:var(--faint);margin
 <tr><td>Core asset licence</td><td>CC BY-NC-SA 4.0</td><td class="why">Blocks commercial repackaging; the Mod Licence carves out mods.</td><td><span class="who ag">agent</span></td></tr>
 <tr><td>Map data licence</td><td>ODbL 1.0</td><td class="why">Required by OSM for the derived database.</td><td><span class="who ag">agent</span></td></tr>
 <tr><td>Mods may be sold</td><td>anywhere</td><td class="why">Easier to defend as a social project; the official store wins on convenience and trust, not obligation.</td><td><span class="who">maintainer</span></td></tr>
-<tr><td>Contributor agreement</td><td>none (inbound = outbound)</td><td class="why">Every change can be accepted without paperwork. Paid packs are the maintainer's own content, so no one else's code ever needs relicensing.</td><td><span class="who ag">agent</span></td></tr>
-<tr><td>Free and paid line</td><td>section 08</td><td class="why">Whole island, main story, base cars, photo mode, a sample of each activity and local multiplayer are free.</td><td><span class="who">maintainer</span></td></tr>
+<tr><td>Contributor agreement</td><td>none (inbound = outbound)</td><td class="why">Every change can be accepted without paperwork. The maintainer's paid extras are its own content, so no one else's code ever needs relicensing.</td><td><span class="who ag">agent</span></td></tr>
+<tr><td>Free and paid line</td><td>section 08</td><td class="why">Whole island, main story, base cars, garage, photo mode, every mechanic and activity, and local multiplayer are free. Paid content is extras such as mods and assets, never new mechanics or essential content (revised 2026-11-22).</td><td><span class="who">maintainer</span></td></tr>
 <tr><td>Trademark</td><td>register "Contravía" and the logo</td><td class="why">The barrier that actually stops clones in stores.</td><td><span class="who ag">agent</span></td></tr>
 <tr><td>Payments</td><td>out of scope for now</td><td class="why">The seller is in Cuba; how it collects is decided later.</td><td><span class="who">maintainer</span></td></tr>
 </tbody></table></div>
@@ -167,8 +167,8 @@ figcaption{font-family:var(--font-mono);font-size:11px;color:var(--faint);margin
 <svg viewBox="0 0 640 330" role="img" aria-label="Four licence layers stacked, with mods beside them">
   <style>.l{font-family:'JBM',monospace;font-size:13px;fill:#f1ede2}.s{font-family:'Inter',sans-serif;font-size:11.5px;fill:#8a867b}</style>
   <rect x="10" y="10" width="440" height="66" rx="8" fill="#1d1b17" stroke="#e0a872"/>
-  <text x="26" y="36" class="l">Paid packs · proprietary</text>
-  <text x="26" y="58" class="s">activities, chapters, cars, music: the maintainer's own</text>
+  <text x="26" y="36" class="l">Paid extras · proprietary</text>
+  <text x="26" y="58" class="s">cars, paint, music, asset packs: the maintainer's own</text>
   <rect x="10" y="88" width="440" height="66" rx="8" fill="#1d1b17" stroke="#9fb4d0"/>
   <text x="26" y="114" class="l">Core assets · CC BY-NC-SA 4.0</text>
   <text x="26" y="136" class="s">landmarks, base cars, UI, base music, free story</text>
@@ -192,7 +192,7 @@ figcaption{font-family:var(--font-mono);font-size:11px;color:var(--faint);margin
   <li>Code: GPLv3. Covers <code>contravia/</code>, <code>havana/rules</code>, the build and packaging scripts and the pack loader. Others may sell it, but must publish their source.</li>
   <li>Map data: ODbL. The <code>.src</code>, <code>coast.src</code> and <code>cover.src</code> files and what <code>contravia build</code> writes from them. The game shows the attributions on a credits screen.</li>
   <li>Core assets: CC BY-NC-SA 4.0. Hand-modelled landmarks, base cars, icons, logo artwork, base music, the free story's text and voices. The name and logo are also trademarks, which CC does not license.</li>
-  <li>Paid packs: all rights reserved, sold by the maintainer. Each one is a separate download loaded as data.</li>
+  <li>Paid extras: all rights reserved, sold by the maintainer. Each one is a separate download loaded as data, and never a mechanic or essential content.</li>
 </ul>
 
 <h2 id="mods"><span class="n">06</span>The Mod Licence</h2>
@@ -233,30 +233,30 @@ figcaption{font-family:var(--font-mono);font-size:11px;color:var(--faint);margin
 <ul>
   <li>Inbound equals outbound: code sent to the repo comes in under GPLv3, assets under CC BY-NC-SA, map edits go to OpenStreetMap itself. No CLA.</li>
   <li>The line: what goes into the repo belongs to the common core and every player gets it free; what ships separately is a mod and its author keeps it.</li>
-  <li>The maintainer can accept every change because paid packs never contain contributed code or assets. Each pack is the maintainer's own content, or content licensed for it from its author.</li>
+  <li>The maintainer can accept every change because paid extras never contain contributed code or assets. Each extra is the maintainer's own content, or content licensed for it from its author.</li>
   <li>Each commit carries a <code>Signed-off-by</code> line (the Developer Certificate of Origin), so a contributor states they had the right to send it. This is lighter than a CLA.</li>
 </ul>
 
 <h2 id="freepaid"><span class="n">08</span>Free and paid</h2>
 <div class="scroll"><table class="tbl">
-<thead><tr><th>Free, always</th><th>Paid, in packs</th></tr></thead>
+<thead><tr><th>Free, always</th><th>Paid, as extras</th></tr></thead>
 <tbody>
-<tr><td>The whole island, 16 provinces, free drive</td><td class="why">Activity packs by place, such as gliding, balloons and flights over Viñales, then boats along the coast and missions on foot as the engine gains them</td></tr>
-<tr><td>The main story, to its end</td><td class="why">Side story chapters with their own characters</td></tr>
-<tr><td>Base cars</td><td class="why">More cars that feel different, never faster than the free ones</td></tr>
-<tr><td>Photo mode, with a small Contravía mark</td><td class="why">Music by Cuban artists, licensed with a revenue share</td></tr>
-<tr><td>One sample of each activity type</td><td class="why">Cosmetics (paint, accessories), a minor line that grows with photos and multiplayer</td></tr>
-<tr><td>Local multiplayer over LAN or wifi, when it exists</td><td class="why">Curated community mods sold through the official store</td></tr>
+<tr><td>The whole island, 16 provinces, free drive</td><td class="why">More cars that feel different, never faster than the free ones</td></tr>
+<tr><td>The main story, to its end</td><td class="why">Cosmetics: paint and accessories</td></tr>
+<tr><td>Base cars and the garage</td><td class="why">Music by Cuban artists, licensed with a revenue share</td></tr>
+<tr><td>Photo mode, with a small Contravía mark</td><td class="why">Asset packs: buildings, props, textures</td></tr>
+<tr><td>Every mechanic and activity, such as gliding, balloons, flights, boats and missions on foot, as the engine gains them</td><td class="why">Community mods, sold anywhere or through the official store</td></tr>
+<tr><td>Local multiplayer over LAN or wifi, when it exists</td><td class="why"></td></tr>
 </tbody></table></div>
 <h3>Two rules</h3>
 <ul>
-  <li>Downward: nothing free today becomes paid, and the free story never ends in "buy to see the ending".</li>
-  <li>Upward: community mods may do any activity; the maintainer's packs compete on story, curation and quality, and the store sells the good mods too.</li>
+  <li>Downward: nothing free today becomes paid, no mechanic and no essential content is ever sold, and the free story never ends in "buy to see the ending".</li>
+  <li>Upward: anyone may make and sell extras; the maintainer's compete on curation and quality, and the store sells the good mods too.</li>
 </ul>
 
 <h2 id="business"><span class="n">09</span>How it earns</h2>
 <ul>
-  <li>Paid packs sold by the maintainer. Activity packs tied to a place are the main line.</li>
+  <li>Extra content sold by the maintainer, like anyone else's: mods and assets such as cars, paint, accessories and music. Never new mechanics or essential content.</li>
   <li>A commission on mods sold through the official store, which offers verification, one-click install and visibility. Selling elsewhere stays allowed.</li>
   <li>The trademark: only the maintainer ships "Contravía", and only its store is official.</li>
   <li>Photos shared on social networks carry the mark: free advertising.</li>
@@ -278,13 +278,14 @@ figcaption{font-family:var(--font-mono);font-size:11px;color:var(--faint);margin
   <li>Licence files, the fonts' OFL and the credits screen, in one PR.</li>
   <li>Make the repository public, with a CONTRIBUTING.md that explains the layers and the DCO.</li>
   <li>The pack format and loader, with one free sample activity built as a pack to prove it.</li>
-  <li>The first paid activity pack and the store, once payments are decided.</li>
+  <li>The first paid extra and the store, once payments are decided.</li>
 </ol>
 
 <h2 id="nongoals"><span class="n">12</span>Non-goals and open questions</h2>
 <ul>
   <li>Not decided: how the seller in Cuba collects payments, and which stores are possible.</li>
   <li>Not decided: the store's commission and its review rules for mods.</li>
+  <li>Open: whether side story chapters with their own characters are an extra or essential content. Until decided, they are planned as free.</li>
   <li>Open: whether a court would treat the shipped <code>.src</code> files as a derivative database or a produced work. This spec assumes the former, the safer reading.</li>
   <li>Open: the Mod Licence's definitions (clause 1 and 2a) are where disputes tend to arise and need the lawyer's wording.</li>
   <li>Not in scope: online multiplayer, accounts, any always-online check.</li>
