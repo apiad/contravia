@@ -38,7 +38,7 @@ print(type(city).__name__, "with", len(city.cells()), "cells")
 
 The game never holds the whole island as one mesh. It divides the ground into square cells of `contravia.geo.CELL` metres a side and keeps each feature in the cell it falls in, so opening the cells around the car is a lookup, not a search. Here is the fixture again, with its cells outlined, its roads in red and its building in black:
 
-```python {run continue}
+```python {run continue echo=false}
 import io
 
 import matplotlib
