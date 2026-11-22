@@ -114,9 +114,11 @@ def main(argv: list[str] | None = None) -> None:
 
     p = sub.add_parser("streets", help="rebuild the street surface of a prepared data file in place")
     p.add_argument("--data", default="data/cuba/la-habana.npz")
+    p.add_argument("--jobs", type=int, default=os.cpu_count() or 1, help="processes to build on; every core by default")
 
     p = sub.add_parser("walks", help="rebuild the pavements and building platforms of a prepared data file in place")
     p.add_argument("--data", default="data/cuba/la-habana.npz")
+    p.add_argument("--jobs", type=int, default=os.cpu_count() or 1, help="processes to build on; every core by default")
 
     p = sub.add_parser("parks", help="give a prepared data file's parks the towns' kinds (urban, plaza, organic) and "
                        "rebuild its walks and park motifs, written to --out")
@@ -307,11 +309,11 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "streets":
         from contravia.streets import main as streets
 
-        streets(args.data)
+        streets(args.data, args.jobs)
     elif args.command == "walks":
         from contravia.walks import main as walks
 
-        walks(args.data)
+        walks(args.data, args.jobs)
     elif args.command == "parks":
         from contravia.parks import main as parks
 

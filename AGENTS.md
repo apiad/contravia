@@ -120,9 +120,11 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   and the flow empties it. Provinces prepared before this lack those pieces (Bacunayagua's bridge among them).
 - `contravia prepare` then builds the street surface from that graph (`contravia/streets.py`): avenues' two carriageways
   joined, junctions merged and rounded, each junction on the plane that fits the ground under it and each street
-  5 cm over the ground, tilted with it across, cut per cell and triangulated. The cells draw
+  5 cm over the ground, tilted with it across up to 8 % (`streets.CROSS`; on a steeper hillside it is built up on
+  its low side, and a junction's plane is no steeper than `SLOPE`), cut per cell and triangulated. The cells draw
   it and the wheels stand on the same triangles (`contravia/surface.py`). `contravia streets` rebuilds it in an existing
-  data file in about 3 minutes, without reading OSM again. Data without it draws the old
+  data file in about a minute, without reading OSM again: `--jobs` processes, every core by default (`streets.pmap`
+  forks them; `prepare` and `build`, which run several provinces at once, keep one each). Data without it draws the old
   per-segment ribbons.
 - Bridges and tunnels come from OSM's bridge, tunnel and layer tags (`g_layer`): each level of streets is built
   apart, a bridge stands 6 m over what it crosses, a tunnel runs 8 m under the ground or 14 m under the sea, and the
@@ -141,7 +143,8 @@ rules per zone, on manifoldx, for the desktop. It is a technical demo for studen
   its street. Every raised edge is bevelled so a wheel rolls up it, and outside dense blocks a street edge that
   stands 10 cm or more over the ground gets a verge: a 0.5 m shoulder at its height, then a 2.5 m slope down. The
   cells draw them with manifoldx's pavement patterns and the wheels stand on them. `contravia walks` rebuilds them
-  in an existing data file in about 5 minutes; the verges read the streets, so after `contravia streets` run it too.
+  in an existing data file in about a minute (`--jobs`, as `streets`); the verges read the streets, so after
+  `contravia streets` run it too.
 - `contravia prepare` turns blocks with few or no buildings into parks (`contravia/parks.py`, spec
   `docs/superpowers/specs/2026-11-18-parks-design.html`): city parks with paths, plaza and centrepiece, paseos, the paved
   Prado and wild parks outside the city, some with a lake. Outside La Habana's eight municipios a park is urban when
