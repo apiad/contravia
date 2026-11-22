@@ -139,6 +139,22 @@
   .card h3 { font-family: "Contravia Logo"; font-weight: normal; font-size: 32px; margin: 0 0 10px; }
   .card ul { margin: 0; padding-left: 20px; }
   .card li { margin: 4px 0; }
+  .card p { margin: 6px 0 0; }
+  .card a { color: var(--cv-red); font-weight: bold; }
+
+  /* ---------- Download, how to play, contribute ---------- */
+  .get { background: var(--cv-yellow); color: var(--cv-ink); }
+  .get h2 { color: var(--cv-ink); text-shadow: 4px 4px 0 var(--cv-paper); }
+  .get .lede { color: #2b2824; }
+  .get .ctas { justify-content: flex-start; margin-top: 30px; animation: none; }
+  .get .btn-main { background: var(--cv-ink); color: var(--cv-yellow); box-shadow: 6px 6px 0 var(--cv-red); }
+  .get .note { margin: 18px 0 0; font-size: 15px; color: #3a3630; }
+  .get .note a { color: var(--cv-ink); }
+  .keys { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 34px; margin: 36px 0 0; padding: 0; list-style: none; max-width: 980px; }
+  .keys li { display: flex; gap: 14px; align-items: baseline; border-bottom: 2px dashed rgba(244, 239, 228, .2); padding: 8px 0; }
+  .keys kbd { flex: 0 0 9.5em; font-family: "Contravia Tag"; text-transform: uppercase; letter-spacing: .08em; font-size: 15px; color: var(--cv-yellow); }
+  .play .lists { margin-top: 44px; }
+  .help-links { margin-top: 30px; }
 
   /* ---------- Night finale ---------- */
   .finale { min-height: 80vh; display: grid; place-items: center; text-align: center; overflow: hidden; isolation: isolate; }
@@ -177,6 +193,8 @@
     .comic { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 46vw;
              grid-template-areas: "cap cap" "cho tri" "tcl mot" "san par" "met met" "noc noc"; }
     .lists { grid-template-columns: minmax(0, 1fr); }
+    .keys { grid-template-columns: minmax(0, 1fr); }
+    .keys kbd { flex-basis: 7.5em; }
     /* The route turns vertical on a phone. */
     .route { padding: 0; }
     .route::before { left: 9px; right: auto; top: 0; bottom: 0; width: 18px; height: auto; border-block: 0; border-inline: 3px solid var(--cv-paper); }
@@ -298,7 +316,8 @@
     <p class="hero-sub">La isla a tamaño real: 110 000 km², 73 000 km de calles y carreteras, sin una pantalla de carga.</p>
     <div class="stamp">Demo técnica · en desarrollo</div>
     <div class="ctas">
-      <a class="btn btn-main" href="#tamano"><span>¿Qué tan grande?</span></a>
+      <a class="btn btn-main" href="#descargar"><span>Descargar</span></a>
+      <a class="btn btn-alt" href="#tamano"><span>¿Qué tan grande?</span></a>
       <a class="btn btn-alt" href="#que-hay"><span>Qué hay</span></a>
     </div>
   </div>
@@ -496,7 +515,7 @@
   <div class="wrap">
     <p class="kicker tag reveal">Para que nadie se embulle de más</p>
     <h2 class="reveal">Todavía es<br>una demo técnica.</h2>
-    <p class="lede reveal">La isla está, las calles están y el carro anda. Lo demás se está haciendo, y por ahora el juego se enseña solo en funciones privadas.</p>
+    <p class="lede reveal">La isla está, las calles están y el carro anda. Lo demás se está haciendo, y ya puedes descargarla y probar lo que hay.</p>
     <div class="lists">
       <div class="card reveal"><h3>Ya se puede</h3><ul>
         <li>Manejar por cualquier calle de las 16 provincias.</li>
@@ -515,18 +534,81 @@
   </div>
 </section>
 
+<section id="descargar" class="get">
+  <div class="wrap">
+    <p class="kicker tag reveal">Gratis, para Linux y Windows</p>
+    <h2 class="reveal">Descárgalo<br>y maneja.</h2>
+    <p class="lede reveal">Un solo archivo trae el juego y los datos de las 16 provincias. La primera vez que lo abres construye la isla en tu máquina: toma un buen rato y unos 6 GB de disco. Después arranca directo.</p>
+    <div class="ctas reveal">
+      <a class="btn btn-main" href="https://github.com/apiad/contravia/releases/latest/download/contravia.exe"><span>Windows</span></a>
+      <a class="btn btn-main" href="https://github.com/apiad/contravia/releases/latest/download/contravia"><span>Linux</span></a>
+      <a class="btn btn-alt" href="https://github.com/apiad/contravia/releases/latest"><span>Todas las versiones</span></a>
+    </div>
+    <div class="lists">
+      <div class="card reveal"><h3>En Windows</h3><ul>
+        <li>Descarga <code>contravia.exe</code> y ábrelo.</li>
+        <li>Si Windows avisa que el programa no está firmado, toca «Más información» y «Ejecutar de todas formas».</li>
+      </ul></div>
+      <div class="card reveal"><h3>En Linux</h3><ul>
+        <li>Descarga <code>contravia</code>.</li>
+        <li>Dale permiso de ejecución y ábrelo: <code>chmod +x contravia</code> y <code>./contravia</code>.</li>
+      </ul></div>
+    </div>
+    <p class="note reveal">Hace falta una tarjeta gráfica con Vulkan. Es una demo técnica: puede fallar, y si falla nos ayuda que nos cuentes en <a href="https://github.com/apiad/contravia/issues">los issues</a>.</p>
+  </div>
+</section>
+
+<section id="jugar" class="play dots">
+  <div class="wrap">
+    <p class="kicker tag reveal">Cómo se juega</p>
+    <h2 class="reveal">Escoge, arranca<br>y a la calle.</h2>
+    <p class="lede reveal">En el menú, «Modo libre» te deja escoger dónde empezar, la hora, el tiempo y si hay tráfico. Desde ahí manejas por donde quieras: no hay paredes invisibles ni pantallas de carga entre provincias.</p>
+    <ul class="keys reveal">
+      <li><kbd>↑ / W</kbd><span>Acelerar</span></li>
+      <li><kbd>↓ / S</kbd><span>Frenar y dar marcha atrás</span></li>
+      <li><kbd>← → / A D</kbd><span>Doblar</span></li>
+      <li><kbd>Espacio</kbd><span>Freno de mano</span></li>
+      <li><kbd>R</kbd><span>Volver a la calle más cercana</span></li>
+      <li><kbd>T</kbd><span>Saltar a una calle cualquiera de la isla</span></li>
+      <li><kbd>F</kbd><span>Sacar la cámara y fotografiar un lugar cercano</span></li>
+      <li><kbd>L</kbd><span>Cambiar la ayuda al manejo</span></li>
+      <li><kbd>Esc</kbd><span>Pausa: mapa, garaje, álbum y opciones</span></li>
+      <li><kbd>Ratón</kbd><span>Mirar alrededor del carro</span></li>
+    </ul>
+    <div class="lists">
+      <div class="card reveal"><h3>El mapa</h3><p>Desde la pausa abres el mapa de Cuba: acércate con la rueda del ratón hasta ver las calles y escoge dónde caer.</p></div>
+      <div class="card reveal"><h3>El álbum</h3><p>Hay 750 lugares para fotografiar. Cuando estés cerca de uno, su nombre sale abajo: toca F y saca la foto.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="colaborar" class="how">
+  <div class="wrap">
+    <p class="kicker tag reveal">El código es abierto</p>
+    <h2 class="reveal">Ayuda a<br>hacerlo.</h2>
+    <p class="lede reveal">Contravía es software libre: el código está bajo la GPLv3 en <a href="https://github.com/apiad/contravia">GitHub</a>. Cualquiera puede leerlo, arreglarlo y mejorarlo, y lo que entra es del juego común, gratis para todos.</p>
+    <div class="lists">
+      <div class="card reveal"><h3>Cuenta lo que falla</h3><p>Una calle en el aire, un carro atravesando una casa, algo que no arranca: abre un <a href="https://github.com/apiad/contravia/issues/new">issue</a> con el lugar, lo que hiciste y una captura si puedes.</p></div>
+      <div class="card reveal"><h3>Arregla el mapa</h3><p>Las calles, los edificios y los lugares salen de <a href="https://www.openstreetmap.org">OpenStreetMap</a>. Corrígelos allí: el juego reconstruye Cuba desde ese mapa, y el arreglo le sirve a todo el que lo usa.</p></div>
+      <div class="card reveal"><h3>Manda código, arte o datos</h3><p>Haz un fork, cambia lo que quieras y abre un pull request. Firma cada commit con <code>git commit -s</code>. Lo que mandas entra con la licencia de la carpeta que tocas: lee <a href="https://github.com/apiad/contravia/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>.</p></div>
+      <div class="card reveal"><h3>Haz un mod</h3><p>Lo que distribuyes aparte del juego es un mod: sigue siendo tuyo y hasta puedes venderlo. <a href="https://github.com/apiad/contravia/blob/main/MODS.md">MODS.md</a> dice cómo.</p></div>
+    </div>
+  </div>
+</section>
+
 <section class="finale">
   <div class="finale-bg"></div>
   <div class="wrap">
     <h2 class="reveal">Métete en contravía.</h2>
-    <p class="lede reveal">Del faro de San Antonio al faro de Maisí. Pronto.</p>
-    <div class="ctas reveal"><a class="btn btn-main" href="#tamano"><span>Otra vuelta</span></a></div>
+    <p class="lede reveal">Del faro de San Antonio al faro de Maisí.</p>
+    <div class="ctas reveal"><a class="btn btn-main" href="#descargar"><span>Descargar</span></a><a class="btn btn-alt" href="#tamano"><span>Otra vuelta</span></a></div>
   </div>
 </section>
 
 <footer>
   <div class="wrap">
     <div class="cv-logo"><div class="cv-sign"></div><div class="cv-word">CONTRAVÍA</div><div class="cv-tag"></div></div>
+    <p><a href="https://github.com/apiad/contravia">Código en GitHub</a> · <a href="https://github.com/apiad/contravia/releases/latest">Descargas</a> · <a href="https://github.com/apiad/contravia/blob/main/CONTRIBUTING.md">Cómo colaborar</a> · Código bajo GPLv3, datos del mapa bajo ODbL, arte y textos bajo CC BY-NC-SA 4.0.</p>
     <p>Contravía es una demo técnica hecha con manifoldx. La ciudad no está modelada a mano: se genera a partir de datos abiertos y de reglas de construcción por zona, y cada cuadra se arma cuando el carro llega a ella.</p>
     <p>Calles, edificios, lugares y costa: © OpenStreetMap contributors, bajo la Open Database License. Relieve: Copernicus GLO-30 Digital Elevation Model, © DLR e.V. 2010-2014 y © Airbus Defence and Space GmbH 2014-2018, provisto bajo COPERNICUS por la Unión Europea y la ESA. Cobertura del suelo en el mapa: © ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium, bajo CC BY 4.0.</p>
   </div>
