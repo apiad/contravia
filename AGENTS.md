@@ -253,7 +253,8 @@ shore's grid (`rules.shore.vegetated`). The
   rule; tests/test_walls.py checks the same rule on the fixture city).
 - Every street is clean (`contravia/streets_check.py`): `contravia streets-check [--province X] [--around X,Z,R]
   [--out findings.json]` walks a built island's cells and counts, on the street surface the cells draw, the ground
-  or water standing over it, steps and steep triangles in it, the walls the car hits inside it by source (the
+  or water standing over it, steps and steep triangles in it (over 30 %, unless the street only climbs along
+  itself what the ground climbs there, `Check._climbs`: across, 30 % holds), the walls the car hits inside it by source (the
   segments `walls.parts` gives the car), bridge and tunnel walls across it at the car's height, and bridge
   dressing, pavements and park motifs drawn in the 3.5 m over the asphalt. An avenue's median (`structures.MEDIAN`
   paints: kerb, paving, lamps, Boyeros' wall as `BARRIER`) is no part of the surface. Every count must read 0; a province
