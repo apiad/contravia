@@ -118,6 +118,9 @@ def read_osm(path, boundary: str = "La Habana", box=HAVANA_BOX, keep_ways: bool 
 
         def area(self, a):
             tags = a.tags
+            if not ("building" in tags or "boundary" in tags or "place" in tags or _tagged(tags, GREEN)
+                    or _tagged(tags, NOT_BUILT) or _tagged(tags, NO_PARK)):
+                return  # nothing below keeps it: its rings are not worth building
             rings = [[(n.lat, n.lon) for n in ring] for ring in a.outer_rings()]
             if not rings or not near([p for r in rings for p in r]):
                 return
@@ -152,7 +155,8 @@ def read_osm(path, boundary: str = "La Habana", box=HAVANA_BOX, keep_ways: bool 
             if len(got) == 3:
                 raw.restrictions.append((got["from"], got["via"], got["to"], r.tags["restriction"]))
 
-    Handler().apply_file(str(path), locations=True)
+    # an untagged node is only a way's point, which the locations index keeps: node() never sees it
+    Handler().apply_file(str(path), locations=True, filters=[osmium.filter.EmptyTagFilter().enable_for(osmium.osm.NODE)])
     return raw
 
 
