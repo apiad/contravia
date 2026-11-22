@@ -103,6 +103,7 @@ class Check:
     def __init__(self, city):
         self.city, self.landmarks, self.shore = city, cached(city), shore_of(city)
         self._streets: dict = {}  # cell -> (all street triangles, those in the open, its medians' footprints)
+        self._joined: dict = {}  # cell -> (its own streets joined at every level, in the open, its medians joined)
         self._inner: dict = {}  # cell -> (the streets' inside there at every level, in the open)
         self._digests: dict = {}  # cell -> the digest of its data
 
@@ -155,6 +156,19 @@ class Check:
     def _around(self, i: int, j: int, which: int) -> np.ndarray:
         return np.concatenate([self.streets(i + di, j + dj)[which] for di in (-1, 0, 1) for dj in (-1, 0, 1)])
 
+    def joined(self, i: int, j: int) -> tuple:
+        """Cell (i, j)'s own street triangles joined into one shape: those of every level, those in the open, and
+        its medians' footprints. Each cell's inside is cut from the shapes of its 3 x 3 cells, so a cell joins
+        its triangles once, not once for each of the nine cells that ask."""
+        def make(i, j):
+            every, open_, median = self.streets(i, j)
+
+            def join(t):
+                return shapely.union_all(shapely.make_valid(shapely.polygons(t))) if len(t) else _NONE
+            a = join(every[:, :, [0, 2]])
+            return a, a if len(open_) == len(every) else join(open_[:, :, [0, 2]]), join(median)
+        return self._held(self._joined, (i, j), make)
+
     def inner(self, i: int, j: int) -> tuple:
         """The part of cell (i, j) that lies inside a street by more than EDGE, as a prepared polygon: over the
         streets of every level, and over those in the open. The streets are joined across the cell's borders
@@ -163,17 +177,17 @@ class Check:
             if not len(self.streets(i, j)[0]):
                 return _NONE, _NONE
             cell = shapely.box(i * CELL, j * CELL, (i + 1) * CELL, (j + 1) * CELL)
+            reach = cell.buffer(4 * EDGE)
+            around = [self.joined(i + di, j + dj) for di in (-1, 0, 1) for dj in (-1, 0, 1)]
             out = []
             for which in (0, 1):
-                if which and all(len(self.streets(i + di, j + dj)[0]) == len(self.streets(i + di, j + dj)[1])
-                                 for di in (-1, 0, 1) for dj in (-1, 0, 1)):
+                if which and all(a[0] is a[1] for a in around):
                     out.append(out[0])  # no tunnel near: one answer for both
                     continue
-                t = self._around(i, j, which)[:, :, [0, 2]]
-                near = shapely.union_all(shapely.make_valid(shapely.polygons(t))).intersection(cell.buffer(4 * EDGE))
-                median = self._around(i, j, 2)
-                if len(median):
-                    near = near.difference(shapely.union_all(shapely.make_valid(shapely.polygons(median))))
+                near = shapely.union_all([a[which].intersection(reach) for a in around if not a[which].is_empty])
+                median = [a[2].intersection(reach) for a in around if not a[2].is_empty]
+                if median:
+                    near = near.difference(shapely.union_all(median))
                 piece = near.buffer(-EDGE).intersection(cell)
                 shapely.prepare(piece)
                 out.append(piece)
