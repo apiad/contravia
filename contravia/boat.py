@@ -22,6 +22,8 @@ from contravia.geo import CELL
 
 STEP = 1 / 120  # seconds: the physics' step
 AGROUND_DRAG = 20.0  # times the water's drag on a hull aground
+PROBE_EVERY = 1.0  # metres the bow or the middle moves before the water under them is read again: a read costs
+# about a millisecond, so reading it every 1/120 s step would cost more than the rest of the frame
 DEEP = -10.0  # metres: the floor the boat sees in open sea, away from the shore's cells
 
 
@@ -50,8 +52,8 @@ class Water:
     open sea away from the shore's cells, where Shore.floor reads the relief (0 m at sea) and the boat would be
     aground everywhere: there the floor is DEEP."""
 
-    def __init__(self, shore, sea_below: float):
-        self.shore, self.sea_below = shore, sea_below
+    def __init__(self, shore, sea_below: float, sea: float = 0.1):
+        self.shore, self.sea_below, self.sea = shore, sea_below, sea
 
     def level(self, x, z) -> np.ndarray:
         return np.asarray(self.shore.level(x, z), float)
@@ -81,6 +83,7 @@ class Boat:
         self.vx = self.vz = self.r = 0.0
         self.steer, self.throttle = 0.0, 0.0
         self.aground = False
+        self._probed = None  # (bow x, bow z, middle x, middle z) where the water was last read
         self.state = self._read()
         return self.state
 
@@ -88,13 +91,25 @@ class Boat:
         """Metres of water at (x, z)."""
         return float(self.water.level(x, z)[0] - self.water.floor(x, z)[0])
 
+    def _probe(self) -> tuple[float, float, float]:
+        """The water's level and depth under the middle and the bow, read again once either moved PROBE_EVERY."""
+        hx, hz = math.cos(self.yaw), math.sin(self.yaw)
+        bx, bz = self.x + hx * self.spec.length / 2, self.z + hz * self.spec.length / 2
+        p = self._probed
+        if p is None or max(abs(bx - p[0]), abs(bz - p[1]), abs(self.x - p[2]), abs(self.z - p[3])) > PROBE_EVERY:
+            x, z = np.array([self.x, bx]), np.array([self.z, bz])
+            level, floor = self.water.level(x, z), self.water.floor(x, z)
+            self._probed = (bx, bz, self.x, self.z)
+            self._water = (float(level[0]), float(level[0] - floor[0]), float(level[1] - floor[1]))
+        return self._water
+
     def _sub(self, c: Controls, dt: float) -> None:
         s = self.spec
         self.steer += max(-dt / s.steer_rise, min(dt / s.steer_rise, c.steer - self.steer))
         hx, hz = math.cos(self.yaw), math.sin(self.yaw)
         u, v = self.vx * hx + self.vz * hz, -self.vx * hz + self.vz * hx
-        bow = self.depth(self.x + hx * s.length / 2, self.z + hz * s.length / 2) < s.draft
-        mid = self.depth(self.x, self.z) < s.draft
+        _, under, ahead = self._probe()
+        bow, mid = ahead < s.draft, under < s.draft
         self.aground = bow or mid
         push = c.throttle * s.thrust - c.brake * s.reverse * s.thrust
         if bow and push > 0:
@@ -127,11 +142,12 @@ class Boat:
         return self.state
 
     def swell(self, x, z) -> np.ndarray:
-        """The swell's height at points (x, z): on the sea only, none on a river or a lake over it."""
+        """The water's height at points (x, z) round the hull: the level under its middle, with the swell on
+        the sea and none on a river or a lake that stands over it."""
         x, z = np.asarray(x, float), np.asarray(z, float)
-        level = self.water.level(x, z)
+        level = self._probe()[0]
         wave = 0.6 * np.sin(0.21 * x + 1.1 * self.t) + 0.4 * np.sin(0.17 * z + 0.8 * self.t + 1.0)
-        on_sea = np.abs(level - float(np.min(level))) < 0.05
+        on_sea = abs(level - getattr(self.water, "sea", level)) < 0.05
         return level + self.spec.swell * wave * on_sea
 
     def _read(self) -> CarState:
@@ -164,6 +180,7 @@ class Boat:
     def restore(self, snap: dict) -> CarState:
         for k in self.FIELDS:
             setattr(self, k, float(snap[k]))
+        self._probed = None
         self.state = self._read()
         return self.state
 

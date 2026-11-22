@@ -132,3 +132,16 @@ def test_water_reads_the_shore_near_it_and_deep_sea_away_from_it():
     w = Water(FakeShore(), sea_below=0.3)
     assert w.floor([5.0], [5.0])[0] == pytest.approx(-1.9)  # a shore cell: its own floor
     assert w.floor([5000.0], [5000.0])[0] == DEEP  # open sea: the relief's 0 is not the floor
+
+
+def test_the_water_is_read_about_once_a_metre_not_every_step():
+    class Counting(Beach):
+        reads = 0
+
+        def floor(self, x, z):
+            Counting.reads += 1
+            return super().floor(x, z)
+
+    b = Boat(Counting(), -3000.0, 0.0, 0.0)
+    s = b.run(FULL, 60)  # about 650 m at up to 12 m/s, 7 200 steps of 1/120 s
+    assert Counting.reads <= (s.x + 3000.0) / 1.0 * 1.1 + 5
