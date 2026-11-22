@@ -253,6 +253,33 @@ def test_a_street_along_a_steep_hillside_is_no_steeper_across_than_cross_and_is_
     assert len(along) and (along[:, :, 2] < 0).all()                       # runs along the low side
 
 
+def test_a_street_built_up_on_a_hillside_settles_slowly_past_a_bend_and_banks_meanwhile():
+    """A street along the contour of a 35 % hillside is built up on its low kerb by (0.35 - CROSS) of its width;
+    where it bends to climb straight up, its heading asks for none. Dropped within the bend, that height would
+    add its fall to the grade of the kerb: each kerb's comes down SETTLE along the street instead, and the street
+    lies across as its kerbs stand meanwhile, no steeper than BANK, back to level on the straight climb."""
+    from contravia.streets import BANK, CROSS, SETTLE, heights
+
+    t = _steep_hill(0.35)
+    parts = build(dict(make_graph([(-300.0, 0.0), (0.0, 0.0), (0.0, 300.0)], [(0, 1), (1, 2), (2, 1), (1, 0)]).a), WIDTHS)
+    ribbons, _, axes, _, _, chains = parts
+    assert len(ribbons) == 1
+    _, ((s, h),), (tilt,), _ = heights(*parts, t)
+    q, at, half = axes[0], arclen(axes[0]), chains[0].w / 2
+    c = np.stack([np.interp(s, at, q[:, 0]), np.interp(s, at, q[:, 1])], axis=1)
+    d = np.gradient(c, axis=0)
+    left = np.stack([-d[:, 1], d[:, 0]], axis=1) / np.hypot(*d.T)[:, None] * half
+    built = [h + side * tilt * half - LIFT - t.height(*(c + side * left).T) for side in (1, -1)]
+    contour = s < 200                                                          # well before the bend
+    assert abs(tilt[contour] - CROSS).max() < 1e-3 and abs(built[0][contour]).max() < 0.02
+    assert abs(built[1][contour] - (0.35 - CROSS) * 2 * half).max() < 0.02     # the low kerb, built up
+    assert np.abs(tilt).max() < BANK + 1e-6 and np.abs(tilt).max() > CROSS + 0.05  # banked past the bend
+    for b in built:
+        assert b.min() > -0.03                                                 # the ground never shows through
+        assert np.abs(np.diff(b) / np.diff(s))[np.abs(tilt[1:]) < BANK - 1e-6].max() < SETTLE + 5e-3
+    assert max(abs(b[s > s[-1] - 100]).max() for b in built) < 0.03            # and it is back on its ground
+
+
 def test_a_junction_on_a_steep_hillside_is_no_steeper_than_slope_and_clears_the_ground():
     from contravia.streets import SLOPE
 
