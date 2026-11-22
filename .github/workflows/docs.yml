@@ -1,8 +1,7 @@
 # The player's manual (docs/manual, Spanish) and the developer's guide (docs/dev): both render as a web site and a
-# PDF, and every block that the freeze cache does not hold runs here. Blocks that need the GPU or the built island
-# run on the GPU machine and their output is committed in docs/*/.scriptorium/freeze.json; if one of them changed
-# and was not run again there, it runs here, finds no island and fails the build. The artifact "books" holds both
-# sites with their PDFs, for pages.yml to publish.
+# PDF, and every block runs here, on the CPU, from the test fixtures and the tables in contravia/ (about 3 minutes).
+# The screenshots that need the GPU machine and the built island are not in the books yet (#105). The artifact
+# "books" holds both sites with their PDFs, for pages.yml to publish.
 name: docs
 
 on:

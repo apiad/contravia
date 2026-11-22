@@ -8,3 +8,4 @@ bench/out/
 docs/*/site/
 docs/*/build/
 docs/*/*.pdf
+docs/*/.scriptorium/
