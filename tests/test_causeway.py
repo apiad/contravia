@@ -54,6 +54,19 @@ def test_a_causeway_mapped_in_pieces_keeps_the_ones_far_out_at_sea():
     assert middle and np.allclose(middle[0][np.abs(middle[0][:, 0] - 4500) < 100, 1], 1000)
 
 
+def test_the_ground_streets_are_built_on_has_the_bank_on_it():
+    """Banked answers the higher of the ground and the bank, so a street or a bridge built on it lies on the crown."""
+    pieces, _ = causeway.detect([line((-200, 1000), (1700, 1000))], [10.0], [], LAND)
+    cw = Causeways(pieces)
+    sea_floor = SimpleNamespace(height=lambda x, z: np.full(np.broadcast(x, z).shape, -2.0))
+    banked = causeway.Banked(sea_floor, cw)
+    rng = np.random.default_rng(1)
+    x, z = rng.uniform(-300, 1800, 4000), rng.uniform(900, 1100, 4000)
+    assert np.allclose(banked.height(x, z), np.maximum(-2.0, cw.top(x, z)))
+    assert banked.height(np.array([750.0]), np.array([1000.0]))[0] == pytest.approx(CROWN)
+    assert banked.height(np.array([750.0]), np.array([2500.0]))[0] == -2.0  # far from it, the ground
+
+
 def test_a_road_on_land_and_one_along_the_shore_are_not():
     inland = line((-2000, 500), (-500, 2500))
     shore_road = line((-15, 200), (-15, 2800))  # on the land, the sea only on its east side
