@@ -30,6 +30,7 @@ from contravia.car import CarState, Controls, Driven, settle
 from contravia.driving_help import DEFAULT, DrivingHelp, Road, brake_reach, chassis_strengths, road_assists
 from contravia.forest import Forest
 from contravia.graveyard import Graveyard
+from contravia.people import Crowd
 from contravia.geo import CELL, to_local
 from contravia.grass import Grass
 from contravia.hud import Hud, pilot_line
@@ -132,6 +133,8 @@ class Game:
         self.grass = Grass(engine, city, self.walls.landmarks)
         # The cemeteries' plots and pantheons: rows per cell, drawn as instances by level of detail (graveyard.py).
         self.graveyard = Graveyard(engine, city, self.walls.landmarks)
+        # The people on the pavements: walkers on lanes of the cells drawn in full, by level of detail (people.py).
+        self.crowd = Crowd(engine, city)
         engine.state.teleport = {"to": None, "error": None}
         if self.walls.landmarks.mesh is not None:  # drawn once, not streamed: they are few and seen from afar
             from manifoldx.components import Material, Mesh, Transform
@@ -217,6 +220,7 @@ class Game:
         engine.on("quality")(self.quality_event)
         engine.on("hlod")(self.set_hlod)
         engine.on("vehicle")(self._vehicle_event)
+        engine.on("people")(self._people_event)
         engine.on("shutdown")(self._shutdown)
         # The quality preset (contravia/quality.py): Alto until the options or a --quality flag say otherwise; a
         # reload under contravia dev keeps the one the old game had.
@@ -734,6 +738,15 @@ class Game:
                 "eye": self.eye.tolist() if hasattr(self, "eye") else [car.x, car.y + 3.0, car.z],
                 "driven": self.driven.snapshot()}
 
+    def _people_event(self, payload=None) -> None:
+        """`manifoldx emit people '{"count": 0}'`: at most that many walkers (null: the preset's); `{"seed": 7}`
+        sends everyone away and draws the crowd again from that seed, so a screenshot is the same every time."""
+        p = payload or {}
+        if "count" in p:
+            self.crowd.set_limit(None if p["count"] is None else int(p["count"]))
+        if "seed" in p:
+            self.crowd.reseed(int(p["seed"]))
+
     def _vehicle_event(self, payload=None) -> None:
         """`manifoldx emit vehicle '{"kind": "boat"}'`: steer a boat from the nearest water deeper than 1 m within
         300 m; `{"kind": "car"}` puts the player back in the car, on the nearest shore. state.craft says how it
@@ -1198,6 +1211,7 @@ class Game:
         self.forest.close()
         self.grass.close()
         self.graveyard.close()
+        self.crowd.close()
         self.walls.close()
         if self.layer:
             self.runner.stop()
@@ -1565,6 +1579,9 @@ class Game:
         self.forest.update(full, self.eye)
         self.grass.update(full, self.eye, (self.car.x, self.car.z))
         self.graveyard.update(full, self.eye)
+        when, weather = getattr(self, "when_now", None), getattr(self, "weather_now", None)
+        self.crowd.update(full, self.eye, self._dt, when.hour + when.minute / 60 if when else 12.0,
+                          weather.rain if weather is not None and self.rain_on else 0.0)
         tiles = self.streamer.stats()
         with self._state_lock:
             st = self.engine.state
@@ -1572,6 +1589,7 @@ class Game:
             st.cells_built = tiles["built"]
             st.cells_waiting = self.waiting()
             st.car_node = self._car_node()
+            st.people = self.crowd.counts()
         if self.curtain is not None:
             self.waiting_now = self.waiting_round()
 
