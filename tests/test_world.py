@@ -48,6 +48,25 @@ def test_a_folder_of_provinces_is_one_island(island):
     assert w.summary(LEVELS, 0, 0) is not None and any((folder / "summary").iterdir())
 
 
+def test_a_province_of_an_island_is_built_on_the_ground_the_island_draws(island, tmp_path, city_npz):
+    """In a cell both hold, Artemisa's streets go on La Habana's relief (flat), not on its own (5 m)."""
+    from contravia.world import island_ground
+
+    folder, border = island
+    for f in ("la-habana.npz", "artemisa.npz"):
+        shutil.copy(folder / f, tmp_path / f)
+    art = CityData.load(tmp_path / "artemisa.npz")
+    art.a["heights"] = np.full((3, 3), 5.0, np.float32)
+    art.a["heights_origin"], art.a["heights_step"] = np.array([-100_000.0, -100_000.0]), np.array([200_000.0, 200_000.0])
+    art.save(tmp_path / "artemisa.npz")
+    assert island_ground(tmp_path / "artemisa.npz") is None  # not indexed yet
+    World.load(tmp_path)  # writes the index
+    x, z = np.array([(border[0] + 0.5) * 200.0]), np.array([(border[1] + 0.5) * 200.0])
+    assert CityData.load(tmp_path / "artemisa.npz").terrain.height(x, z) == pytest.approx(5.0)
+    assert island_ground(tmp_path / "artemisa.npz").height(x, z) == pytest.approx(0.0)
+    assert island_ground(city_npz) is None  # a lone data file keeps its own relief
+
+
 def test_a_province_read_ahead_is_the_one_a_start_there_opens(island):
     folder, _ = island
     w = World.load(folder)

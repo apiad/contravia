@@ -1858,11 +1858,15 @@ def main(path, jobs: int = 1) -> dict:
 
     from contravia.citydata import CityData
     from contravia.prepare import WIDTHS
+    from contravia.world import island_ground
 
     global JOBS
     JOBS = jobs
     t0 = time.perf_counter()
     city = CityData.load(path)
+    ground = island_ground(path)
+    if ground is not None:
+        city._terrain = ground  # built on the ground the island draws; the file keeps its own relief
     report = add_to(city, WIDTHS)
     city.save(path)
     report["seconds"] = round(time.perf_counter() - t0, 1)

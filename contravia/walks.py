@@ -491,10 +491,14 @@ def main(path, jobs: int = 1) -> dict:
 
     from contravia import streets
     from contravia.citydata import CityData
+    from contravia.world import island_ground
 
     streets.JOBS = jobs
     t0 = time.perf_counter()
     city = CityData.load(path)
+    ground = island_ground(path)
+    if ground is not None:
+        city._terrain = ground  # built on the ground the island draws; the file keeps its own relief
     covered = parks.drop_covered(city)  # before the walks, which pave the parks left
     report = {**covered, **add_to(city), **parks.add_to(city)}
     city.save(path)
