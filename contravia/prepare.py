@@ -387,32 +387,61 @@ def add_walks(city: CityData) -> dict:
 
 def green_pieces(green) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Green areas, as (polygon, seed) in local metres, cut along the cell grid and triangulated: (T, 3, 2)
-    triangles, the seed of each and its (T, 2) cell."""
-    import shapely
+    triangles, the seed of each and its (T, 2) cell. Each polygon is one task of streets.pmap."""
+    from contravia.streets import pmap
 
-    tris, seeds, keys = [], [], []
-    for poly, seed in green:
-        if poly.is_empty:
-            continue  # all of it was a park
-        x0, z0, x1, z1 = poly.bounds
-        ii, jj = np.meshgrid(np.arange(np.floor(x0 / CELL), np.floor(x1 / CELL) + 1),
-                             np.arange(np.floor(z0 / CELL), np.floor(z1 / CELL) + 1))
-        ii, jj = ii.ravel().astype(np.int64), jj.ravel().astype(np.int64)
-        boxes = shapely.box(ii * CELL, jj * CELL, (ii + 1) * CELL, (jj + 1) * CELL)
-        shapely.prepare(poly)
-        pieces = shapely.intersection(boxes, poly)
-        for k in np.flatnonzero(~shapely.is_empty(pieces) & (shapely.area(pieces) > 1.0)):
-            for part in shapely.get_parts(pieces[k]):
-                if part.geom_type != "Polygon" or part.area <= 1.0:
-                    continue  # an edge or a corner the box only touches
-                for t in shapely.get_parts(shapely.constrained_delaunay_triangles(part)):
-                    c = shapely.get_coordinates(shapely.get_exterior_ring(t))[:3]
-                    if len(c) == 3:
-                        tris.append(c)
-                        seeds.append(seed)
-                        keys.append((ii[k], jj[k]))
+    parts = pmap(_green_piece, [(poly, seed) for poly, seed in green if not poly.is_empty], chunk=4)
+    tris = [t for p in parts for t in p[0]]
+    seeds = [s for p in parts for s in p[1]]
+    keys = [k for p in parts for k in p[2]]
     return (np.array(tris, np.float32).reshape(-1, 3, 2), np.array(seeds, np.int64),
             np.array(keys, np.int64).reshape(-1, 2))
+
+
+def _green_piece(item) -> tuple[list, list, list]:
+    """One green polygon's triangles, seeds and cells, as green_pieces gives them."""
+    import shapely
+
+    poly, seed = item
+    x0, z0, x1, z1 = poly.bounds
+    i0, j0 = int(np.floor(x0 / CELL)), int(np.floor(z0 / CELL))
+    i1, j1 = int(np.floor(x1 / CELL)) + 1, int(np.floor(z1 / CELL)) + 1
+    cells: list = []
+    _halve(shapely.intersection(poly, shapely.box(i0 * CELL, j0 * CELL, i1 * CELL, j1 * CELL)), i0, j0, i1, j1, cells)
+    tris, seeds, keys = [], [], []
+    for key, piece in cells:
+        for part in shapely.get_parts(piece):
+            if part.geom_type != "Polygon" or part.area <= 1.0:
+                continue  # an edge or a corner the box only touches
+            for t in shapely.get_parts(shapely.constrained_delaunay_triangles(part)):
+                c = shapely.get_coordinates(shapely.get_exterior_ring(t))[:3]
+                if len(c) == 3:
+                    tris.append(c)
+                    seeds.append(seed)
+                    keys.append(key)
+    return tris, seeds, keys
+
+
+def _halve(piece, i0: int, j0: int, i1: int, j1: int, out: list) -> None:
+    """Append ((i, j), the piece of cell (i, j)) for the cells of the block i0 <= i < i1, j0 <= j < j1, piece
+    already clipped to the block: the block is halved along its longer side and the piece clipped to each half,
+    so every clip carries only its half, not the whole polygon (a forest tens of kilometres across took minutes
+    clipped to each of its cells)."""
+    import shapely
+
+    if piece.is_empty or piece.area <= 1.0:
+        return  # no cell in it keeps a piece over a square metre
+    if i1 - i0 == 1 and j1 - j0 == 1:
+        out.append(((i0, j0), piece))
+        return
+    if i1 - i0 >= j1 - j0:
+        m = (i0 + i1) // 2
+        halves = ((i0, j0, m, j1), (m, j0, i1, j1))
+    else:
+        m = (j0 + j1) // 2
+        halves = ((i0, j0, i1, m), (i0, m, i1, j1))
+    for a, b, c, d in halves:
+        _halve(shapely.intersection(piece, shapely.box(a * CELL, b * CELL, c * CELL, d * CELL)), a, b, c, d, out)
 
 
 def base_city(raw: Raw, terrain: Terrain | None = None) -> tuple[CityData, dict]:

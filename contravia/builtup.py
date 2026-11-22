@@ -12,6 +12,8 @@ there, like the relief's. Its licence (CC BY 4.0) asks for contravia.cover.CREDI
 """
 
 import math
+import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -21,6 +23,7 @@ from contravia.geo import to_latlon, to_local
 
 STEP = 20.0  # metres a side of a grid square: against WorldCover's 10 m it keeps 96 % of the parks' verdicts
 BUILT = 50  # WorldCover's code for built-up
+BLOCK = 64  # rows of the grid projected at once, one task of read's threads
 
 
 class BuiltUp:
@@ -91,6 +94,7 @@ def read(cache, box) -> BuiltUp:
     rows = math.ceil((xz[:, 1].max() - z0) / STEP)
     mask = np.zeros((rows, cols), bool)
     xs = x0 + (np.arange(cols) + 0.5) * STEP
+    tiles = []
     for s in range(3 * math.floor(south / 3), 3 * math.floor(north / 3) + 1, 3):
         for w in range(3 * math.floor(west / 3), 3 * math.floor(east / 3) + 1, 3):
             name = tile_name(s, w)
@@ -100,12 +104,20 @@ def read(cache, box) -> BuiltUp:
             with tifffile.TiffFile(path) as tif:
                 levels = tif.series[0].levels
                 k = max(i for i in range(len(levels)) if levels[0].shape[0] / levels[i].shape[0] * 10.0 <= STEP)
-                img = levels[k].asarray()
+                tiles.append((s, w, levels[k].asarray()))
+    def block(r0: int) -> None:  # BLOCK rows projected once (the projection's inverse iterates), read in every tile
+        r1 = min(r0 + BLOCK, rows)
+        zs = z0 + (np.arange(r0, r1) + 0.5) * STEP
+        ll = to_latlon(np.stack(np.broadcast_arrays(xs[None, :], zs[:, None]), axis=-1).reshape(-1, 2))
+        part = np.zeros(len(ll), bool)
+        for s, w, img in tiles:
             n = img.shape[0]
-            for r in range(rows):
-                ll = to_latlon(np.c_[xs, np.full(cols, z0 + (r + 0.5) * STEP)])
-                pr = np.floor((s + 3 - ll[:, 0]) / 3 * n).astype(np.int64)
-                pc = np.floor((ll[:, 1] - w) / 3 * n).astype(np.int64)
-                ok = (pr >= 0) & (pr < n) & (pc >= 0) & (pc < n)
-                mask[r, ok] |= img[pr[ok], pc[ok]] == BUILT
+            pr = np.floor((s + 3 - ll[:, 0]) / 3 * n).astype(np.int64)
+            pc = np.floor((ll[:, 1] - w) / 3 * n).astype(np.int64)
+            ok = (pr >= 0) & (pr < n) & (pc >= 0) & (pc < n)
+            part[ok] |= img[pr[ok], pc[ok]] == BUILT
+        mask[r0:r1] = part.reshape(r1 - r0, cols)
+
+    with ThreadPoolExecutor(os.cpu_count() or 1) as pool:  # numpy on threads: this Python has no GIL
+        list(pool.map(block, range(0, rows, BLOCK)))
     return BuiltUp.of(mask, (x0, z0))
