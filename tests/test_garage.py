@@ -152,3 +152,21 @@ def test_the_garaje_browses_designs_saves_and_drives(city_npz, tmp_path, monkeyp
     assert menu.current == "garage" and game.mode == "garage"
     menu.press("Escape")  # back to the pause, the design still driven
     assert menu.current == "pause" and menu.chosen.name == "Mi ruso 1"
+
+
+def test_a_builder_takes_its_own_build_function_and_key():
+    import time
+
+    from contravia.garage import Builder
+
+    b = Builder(make=lambda n: n * n, key_of=str, cached=2, name="test")
+    try:
+        assert b.want(3) is None  # started, not ready
+        deadline = time.monotonic() + 5
+        while (v := b.want(3)) is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert v == 9
+        assert b.now(4) == 16
+        assert list(b.cache) == ["3", "4"]
+    finally:
+        b.close()
