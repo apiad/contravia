@@ -64,6 +64,7 @@ KINDS = ("ground", "water", "step", "steep", "building", "landmark", "park", "tr
 _NONE = shapely.Polygon()
 KEPT = "streets-check.kept"  # the last run's findings by cell, beside index.npz
 KEPT_VERSION = 1
+QUICK = "streets-check.quick"  # what the quick runs kept, beside it: never read by a full run
 AROUND = 2  # cells round a cell whose data its findings may read (the check itself reads one): its fingerprint
 # what the fingerprint of the island holds besides each province's relief: the files every cell reads
 ISLAND = ("coast.src", "shore.src", "cover.src", "causeways.src", "water.src", "regions.src", "landmarks.pkl")
@@ -379,8 +380,22 @@ def load_kept(folder, island: bytes) -> dict:
     return kept["cells"]
 
 
-def save_kept(folder, island: bytes, modules, cells: dict) -> None:
-    path = Path(folder) / KEPT
+def load_quick(folder) -> dict:
+    """{cell: (fingerprint, findings)} for a quick run: the newer of what the last full run and the last quick
+    run kept in folder, whatever island and code they ran on, or {} when there is neither."""
+    for path in sorted((Path(folder) / n for n in (KEPT, QUICK) if (Path(folder) / n).exists()),
+                       key=lambda q: -q.stat().st_mtime):
+        try:
+            kept = pickle.loads(path.read_bytes())
+        except (pickle.UnpicklingError, EOFError, AttributeError, ValueError):
+            continue
+        if kept.get("version") == KEPT_VERSION:
+            return kept["cells"]
+    return {}
+
+
+def save_kept(folder, island: bytes, modules, cells: dict, name: str = KEPT) -> None:
+    path = Path(folder) / name
     part = path.with_name(path.name + ".part")
     part.write_bytes(pickle.dumps({"version": KEPT_VERSION, "island": island, "modules": sorted(modules),
                                    "code": code_stamp(modules), "cells": cells}))
@@ -394,25 +409,26 @@ def loaded() -> list[str]:
 
 _check: Check | None = None
 _kept: dict = {}
+_quick = False
 
 
-def _start(data: str, kept: dict | None = None) -> None:
-    global _check, _kept
+def _start(data: str, kept: dict | None = None, quick: bool = False) -> None:
+    global _check, _kept, _quick
     from contravia.world import World
 
-    _check, _kept = Check(World.load(data)), kept or {}
+    _check, _kept, _quick = Check(World.load(data)), kept or {}, quick
 
 
 def _run(cells: list) -> tuple[list, dict, list]:
     """(findings, what to keep for the cells checked again, the modules loaded) over cells: a cell whose
-    fingerprint is the kept one gives its kept findings."""
+    fingerprint is the kept one gives its kept findings; in a quick run, only when it kept none."""
     found, fresh = [], {}
     for i, j in cells:
         if not len(_check._around(i, j, 0)):
             continue
         mark = _check.fingerprint(i, j)
         old = _kept.get((i, j))
-        if old is not None and old[0] == mark:
+        if old is not None and old[0] == mark and not (_quick and old[1]):
             found += old[1]
             continue
         fresh[(i, j)] = (mark, _check.cell(i, j))
@@ -433,11 +449,17 @@ def cells_of(world, province: str | None = None, around: tuple | None = None) ->
 
 
 def main(data: str, province: str | None = None, around: tuple | None = None, jobs: int = 1,
-         out: str | None = None, fresh: bool = False) -> int:
+         out: str | None = None, fresh: bool = False, quick: bool = False) -> int:
     """Print the counts and the worst of each kind, write every finding to out as JSON; the exit status is 1
     when any count is above 0. An island in a folder keeps each cell's findings with the fingerprint of its data
     (KEPT): the next run checks again only the cells whose data changed, all of them when the island's relief or
-    files or the code did, or with fresh."""
+    files or the code did, or with fresh.
+
+    A quick run is the loop of a fix: it checks again the cells where the last run, full or quick, found
+    something and those whose data changed, and takes the rest as that run left them, clean, even though the
+    island's files or the code changed since. It tells whether a fix worked in minutes; it cannot see a fault a
+    change brought to a cell that was clean, which the next full run does. What it keeps goes to QUICK, so a
+    full run never reads it."""
     from concurrent.futures import ProcessPoolExecutor
 
     from contravia.world import World
@@ -445,23 +467,27 @@ def main(data: str, province: str | None = None, around: tuple | None = None, jo
     world = World.load(data)
     cells = cells_of(world, province, around)
     island = island_stamp(world.folder) if world.folder is not None else None
-    kept = {} if island is None or fresh else load_kept(world.folder, island)
+    quick = quick and island is not None and not fresh
+    kept = {} if island is None or fresh else load_quick(world.folder) if quick else load_kept(world.folder, island)
     rows = max(1, len(cells) // (jobs * 16) or 1)
     chunks = [cells[k:k + rows] for k in range(0, len(cells), rows)]
     found, again, modules = [], {}, set()
-    with ProcessPoolExecutor(jobs, initializer=_start, initargs=(data, kept)) as pool:
+    with ProcessPoolExecutor(jobs, initializer=_start, initargs=(data, kept, quick)) as pool:
         for part, new, mods in pool.map(_run, chunks):
             found += part
             again.update(new)
             modules.update(mods)
     served = sum(c in kept and c not in again for c in cells)
-    if island is not None:
+    if quick:
+        save_kept(world.folder, island, modules, {**kept, **again}, QUICK)
+    elif island is not None:
         if fresh:  # the cells not asked for keep what an earlier run found, when it still holds
             kept = load_kept(world.folder, island)
         save_kept(world.folder, island, modules, {**kept, **again})
     counts = Counter({k: 0 for k in KINDS})
     counts.update(f[0] for f in found)
-    print(f"{len(cells)} cells, {len(again)} checked, {served} kept from the last run")
+    print(f"{len(cells)} cells, {len(again)} checked, {served} kept from the last run"
+          + (" (quick: only the cells with findings and those that changed)" if quick else ""))
     for kind in KINDS:
         worst = max((f for f in found if f[0] == kind), key=lambda f: f[3], default=None)
         where = "" if worst is None else "  worst {:.2f} at {:.5f},{:.5f}".format(

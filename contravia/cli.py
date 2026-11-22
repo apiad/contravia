@@ -213,6 +213,8 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2), help="processes at once")
     p.add_argument("--out", help="write every finding to this JSON file")
     p.add_argument("--fresh", action="store_true", help="check every cell again, whatever the last run kept")
+    p.add_argument("--quick", action="store_true", help="check again only the cells where the last run found something "
+                   "and those whose data changed, even after the code changed: the loop of a fix, not a release's check")
 
     p = sub.add_parser("timelapse", help="render a day of sky over the Capitolio as a video")
     p.add_argument("out")
@@ -346,7 +348,7 @@ def main(argv: list[str] | None = None) -> None:
         from contravia.streets_check import main as streets_check
 
         around = tuple(float(v) for v in args.around.split(",")) if args.around else None
-        sys.exit(streets_check(args.data, args.province, around, args.jobs, args.out, args.fresh))
+        sys.exit(streets_check(args.data, args.province, around, args.jobs, args.out, args.fresh, args.quick))
     elif args.command == "climate":
 
         from contravia.climate import main as climate

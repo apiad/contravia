@@ -261,3 +261,33 @@ def test_what_a_run_keeps_holds_while_the_island_and_the_code_do(tmp_path, monke
     assert streets_check.island_stamp(tmp_path) != island           # the relief changed
     monkeypatch.setattr(streets_check, "code_stamp", lambda modules: "other code")
     assert streets_check.load_kept(tmp_path, island) == {}          # a module the run loaded changed
+
+
+def test_a_quick_run_checks_again_only_the_cells_with_findings_and_those_that_changed(built, monkeypatch):
+    bench = np.array([[[-150.0, 0.5, -1.0], [-149.0, 0.5, -1.0], [-150.0, 0.5, 1.0]]], np.float32)
+    city = _with(built, "park_tris", bench, (-1, -1))
+    found, first = _scan(city, {})
+    dirty = {c for c, (_, f) in first.items() if f}
+    assert dirty and len(dirty) < len(first) and [f[0] for f in found] == ["motif"]
+    monkeypatch.setattr(streets_check, "_quick", True)
+    again, second = _scan(city, first)
+    assert set(second) == dirty and again == found            # the clean cells are taken as the last run left them
+    fixed, third = _scan(built, first)                        # the bench gone: the cells that read it changed
+    near = {c for c in first if max(abs(c[0] + 1), abs(c[1] + 1)) <= streets_check.AROUND}
+    assert fixed == [] and set(third) == near
+
+
+def test_a_quick_run_reads_the_newer_of_the_two_kept_files_whatever_code_wrote_it(tmp_path, monkeypatch):
+    import os
+
+    full = {(0, 0): (b"m" * 16, [("step", 1.0, 2.0, 0.3)])}
+    quick = {(0, 0): (b"m" * 16, [])}
+    assert streets_check.load_quick(tmp_path) == {}
+    streets_check.save_kept(tmp_path, b"island", ["contravia.streets_check"], full)
+    monkeypatch.setattr(streets_check, "code_stamp", lambda modules: "other code")
+    assert streets_check.load_kept(tmp_path, b"island") == {} and streets_check.load_quick(tmp_path) == full
+    streets_check.save_kept(tmp_path, b"island", ["contravia.streets_check"], quick, streets_check.QUICK)
+    os.utime(tmp_path / streets_check.KEPT, (1, 1))
+    assert streets_check.load_quick(tmp_path) == quick
+    os.utime(tmp_path / streets_check.QUICK, (0, 0))
+    assert streets_check.load_quick(tmp_path) == full          # a full run since: it is the one to start from
