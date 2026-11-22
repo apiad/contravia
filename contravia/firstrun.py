@@ -259,7 +259,8 @@ class Build:
             while waiting or children:
                 while waiting and len(children) < self.parallel:
                     p = waiting.pop(0)
-                    children[p] = ctx.Process(target=_child, args=(p, *self._args(p), events), daemon=True)
+                    cores = max(1, (os.cpu_count() or 1) // max(1, min(self.parallel, len(todo))))
+                    children[p] = ctx.Process(target=_child, args=(p, *self._args(p), events, cores), daemon=True)
                     children[p].start()
                     self._running[p] = (0, time.perf_counter())
                     self._show()
@@ -292,11 +293,14 @@ class ProvinceError(Exception):
     """A province's build failed in its child process; the message is the child's error."""
 
 
-def province(src: Path, work: Path, target: Path, step) -> dict:
+def province(src: Path, work: Path, target: Path, step, cores: int = 1) -> dict:
     """One province's four steps, each leaving a checkpoint in work; returns its report. step(kind, k) is told
-    when step k begins, finishes or is skipped."""
+    when step k begins, finishes or is skipped. Its streets and walks run on `cores` forked processes
+    (streets.JOBS): only in a child of its own, since a fork of the game's process would copy its threads."""
     from contravia import prepare, source
+    from contravia import streets as streets_mod
 
+    streets_mod.JOBS = cores
     work.mkdir(parents=True, exist_ok=True)
     base, streets = work / "buildings.npz", work / "streets.npz"
     info_p = work / "info.pkl"
@@ -343,10 +347,10 @@ def _save(city: CityData, path: Path) -> None:
     os.replace(tmp, path)
 
 
-def _child(p: int, src: Path, work: Path, target: Path, events) -> None:
-    """Province p built in a child process, its steps, report or error sent through events."""
+def _child(p: int, src: Path, work: Path, target: Path, events, cores: int = 1) -> None:
+    """Province p built in a child process on `cores` cores, its steps, report or error sent through events."""
     try:
-        events.put((p, "report", province(src, work, target, lambda kind, k: events.put((p, kind, k)))))
+        events.put((p, "report", province(src, work, target, lambda kind, k: events.put((p, kind, k)), cores)))
     except Exception as e:  # noqa: BLE001 - any failure goes to the parent, which shows it
         events.put((p, "error", f"{type(e).__name__}: {e}"))
 
