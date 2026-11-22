@@ -5,6 +5,7 @@ only what the rules need: road centrelines with a width, building footprints wit
 blocks that OSM left empty (they get filler boxes, or become parks: contravia.parks), and tree points.
 """
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -584,16 +585,18 @@ def province_boxes(pbf) -> dict:
     return {k: (s - BOX_MARGIN, w - BOX_MARGIN, n + BOX_MARGIN, e + BOX_MARGIN) for k, (s, w, n, e) in boxes.items()}
 
 
-def _province(pbf, out, dem, name: str, slug: str, box, worldcover=None) -> dict:
+def _province(pbf, out, dem, name: str, slug: str, box, worldcover=None, cores: int = 1) -> dict:
     """Build one province into out/<slug>.npz and return its report; a worker process runs it when jobs > 1.
+    Its streets and walks run on `cores` processes (streets.JOBS).
 
     The file is written under a temporary name and renamed when complete, so a crash never leaves a half-written
     province that resume would take as built."""
     import time
 
-    from contravia import coast
+    from contravia import coast, streets
     from contravia.terrain import read_terrain
 
+    streets.JOBS = cores
     t0 = time.perf_counter()
     land = coast.load(Path(out) / coast.NAME) if (Path(out) / coast.NAME).exists() else None
     terrain = read_terrain(dem, box, stride=TERRAIN_STRIDE.get(name, 3), land=land) if dem else None
@@ -643,13 +646,14 @@ def main(pbf, out, dem=None, provinces=None, resume: bool = False, jobs: int = 1
             continue
         todo.append((name, slug))
     Path(out).mkdir(parents=True, exist_ok=True)
+    cores = max(1, (os.cpu_count() or 1) // max(1, min(jobs, len(todo))))  # each province's share, for its streets
     if jobs <= 1:
         for name, slug in todo:
-            reports[name] = _province(pbf, out, dem, name, slug, boxes[name], worldcover)
+            reports[name] = _province(pbf, out, dem, name, slug, boxes[name], worldcover, cores)
             print(name, json.dumps(reports[name]), flush=True)
     else:
         with ProcessPoolExecutor(jobs, mp_context=multiprocessing.get_context("spawn")) as pool:
-            running = {pool.submit(_province, pbf, out, dem, name, slug, boxes[name], worldcover): name
+            running = {pool.submit(_province, pbf, out, dem, name, slug, boxes[name], worldcover, cores): name
                        for name, slug in todo}
             for done in as_completed(running):
                 name = running[done]
@@ -666,7 +670,7 @@ def main(pbf, out, dem=None, provinces=None, resume: bool = False, jobs: int = 1
         reports["water"] = water.write(pbf, out)
         print("water", json.dumps(reports["water"]), flush=True)
     if todo and sum((Path(out) / f"{slug}.npz").exists() for _, slug in PROVINCES) > 1:
-        reports["island_ground"] = _on_island_ground(out, [slug for _, slug in todo], jobs)
+        reports["island_ground"] = _on_island_ground(out, [slug for _, slug in todo], os.cpu_count() or 1)
     return reports
 
 
