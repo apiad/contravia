@@ -98,18 +98,18 @@ NPCS = (
     Npc("bicitaxista",
         HumanParams(stature=1.74, build=1.0, weight=0.85, muscle=1.15, age="adult", skin="brown"),
         Outfit(top="tank", sleeves=0.0, bottom="shorts", bottom_length=0.45, shoes="sandals", hair="short",
-               hat="cap", top_color="#f2ede0", bottom_color="#3b4a5c", hat_color="#d23a2f",
-               stripe=(0.35, 0.55, "#2f6fb0")),
+               hat="cap", top_color="#2fb5a8", bottom_color="#8fdcc8", hat_color="#d23a2f",
+               stripe=(0.35, 0.6, "#f0c14b")),
         seed=102, place="M061"),  # Calle Obispo
     Npc("manisero",
         HumanParams(stature=1.66, build=1.0, weight=0.9, age="elder", skin="dark"),
         Outfit(top="shirt", sleeves=0.35, bottom="trousers", shoes="shoes", hair="short", hat="brim",
-               top_color="#ffffff", bottom_color="#5c5a50", hair_color="#c9c2b5", hat_color="#e0c98f"),
+               top_color="#ffffff", bottom_color="#8fdcc8", hair_color="#c9c2b5", hat_color="#e0c98f"),
         seed=103, place="M004", does="loop"),  # Malecón
     Npc("senora-jaba",
         HumanParams(stature=1.58, build=0.0, weight=1.3, hips=1.12, age="elder", skin="medium"),
         Outfit(top="blouse", sleeves=0.2, bottom="skirt", bottom_length=0.7, looseness=0.03, shoes="sandals",
-               hair="bun", top_color="#d94f70", bottom_color="#d94f70", shoe_color="#e8613c",
+               hair="bun", top_color="#7fd3c8", bottom_color="#7fd3c8", shoe_color="#b8bcc0",
                hair_color="#8a8178"),
         seed=104, place="M069"),  # Bulevar de San Rafael, Centro Habana
     Npc("estudiante",  # a secondary-school pupil, built as the smallest adult body: there are no children
@@ -120,18 +120,17 @@ NPCS = (
     Npc("jubilado",
         HumanParams(stature=1.68, build=1.0, weight=1.05, age="elder", skin="light"),
         Outfit(top="shirt", sleeves=0.3, bottom="trousers", shoes="shoes", hair="short", hat="cap",
-               top_color="#a9cbe0", bottom_color="#d9cfb8", hair_color="#c9c2b5", hat_color="#5c5a50"),
+               top_color="#8fdcd8", bottom_color="#d9cfb8", hair_color="#c9c2b5", hat_color="#c9b88f"),
         seed=106, place="L0382"),  # Línea y G, Vedado
     Npc("turista",
         HumanParams(stature=1.80, build=0.9, weight=1.1, age="adult", skin="light"),
         Outfit(top="tshirt", sleeves=0.25, bottom="shorts", bottom_length=0.5, shoes="shoes", hair="short",
-               hat="brim", top_color="#7fc8a9", bottom_color="#b7a27a", shoe_color="#e8e2d0",
+               hat="brim", top_color="#f0c14b", bottom_color="#8fdcc8", shoe_color="#f2ede0",
                hair_color="#5a4030", hat_color="#f2ede0"),
         seed=107, place="M007", does="loop"),  # Plaza de Armas
     Npc("joven",
         HumanParams(stature=1.76, build=1.0, weight=0.95, muscle=1.1, age="adult", skin="brown"),
         Outfit(top="tshirt", sleeves=0.25, bottom="trousers", shoes="shoes", hair="short", hat="cap",
-               top_color="#e8613c", bottom_color="#2f4a7a", shoe_color="#ffffff", hat_color="#1f2a3a",
-               stripe=(0.55, 0.65, "#ffffff")),
+               top_color="#a8ecd8", bottom_color="#6f8fbf", shoe_color="#f2ede0", hat_color="#e8613c"),
         seed=108, place="L0381"),  # Monumento a las víctimas del Maine, Malecón at Línea
 )
