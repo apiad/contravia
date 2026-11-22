@@ -78,39 +78,41 @@ def key(design: Design) -> str:
 
 
 class Builder:
-    """Builds vehicles on one worker thread, keeping the last CACHED by their design."""
+    """Builds on one worker thread, keeping the last `cached` results by their key. By default it builds vehicles
+    from designs; contravia.people gives it its own function and key for figures, on a thread of its own."""
 
-    def __init__(self):
-        self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="garaje")
+    def __init__(self, make=build, key_of=key, cached: int = CACHED, name: str = "garaje"):
+        self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix=name)
+        self.make, self.key_of, self.cached = make, key_of, cached
         self.cache: dict[str, object] = {}
         self.jobs: dict[str, Future] = {}
 
-    def want(self, design: Design):
-        """The design's Vehicle if it is built, else None after starting (or continuing) its build. A build that
+    def want(self, design):
+        """What design builds if it is built, else None after starting (or continuing) its build. A build that
         fails raises here, once."""
-        k = key(design)
+        k = self.key_of(design)
         if k in self.cache:
             self.cache[k] = self.cache.pop(k)  # most recent last
             return self.cache[k]
         job = self.jobs.get(k)
         if job is None:
-            self.jobs[k] = self.pool.submit(build, design)
+            self.jobs[k] = self.pool.submit(self.make, design)
             return None
         if not job.done():
             return None
         del self.jobs[k]
         vehicle = job.result()
         self.cache[k] = vehicle
-        while len(self.cache) > CACHED:
+        while len(self.cache) > self.cached:
             self.cache.pop(next(iter(self.cache)))
         return vehicle
 
-    def now(self, design: Design):
-        """The design's Vehicle, built here and now if it has to be."""
-        k = key(design)
+    def now(self, design):
+        """What design builds, built here and now if it has to be."""
+        k = self.key_of(design)
         if k not in self.cache:
             job = self.jobs.pop(k, None)
-            self.cache[k] = job.result() if job else build(design)
+            self.cache[k] = job.result() if job else self.make(design)
         return self.cache[k]
 
     def close(self) -> None:
