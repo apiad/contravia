@@ -80,9 +80,11 @@ class IslandTerrain:
     of the same land differ between their samples (La Habana's are 30 m apart, the others' 90 m, each on its own
     lattice). So a point takes the relief of the province that holds its cell's features (the lowest in the
     island's order where two do), which keeps the ground under what stands on it. A cell no province holds
-    takes the grid its centre lies deepest inside. Within BLEND of an edge between cells of different provinces
-    the reliefs mix, each by the share of the square of BLEND round the point that lies in its cells, so the
-    ground has no step there."""
+    takes the relief of the province that holds a cell beside it (the lowest of them), when its centre lies
+    inside that grid, and else the grid its centre lies deepest inside. Within BLEND of an edge between cells of
+    different provinces the reliefs mix, each by the share of the square of BLEND round the point that lies in
+    its cells, so the ground has no step there; with the bare cells round a held one on its relief, that band
+    is a cell away from anything built, not over the street that runs along the cell's edge."""
 
     def __init__(self, world: World):
         self.world = world
@@ -105,17 +107,38 @@ class IslandTerrain:
             out, best = np.where(take, k, out), np.where(take, edge, best)
         return out
 
-    def owner(self, i, j) -> np.ndarray:
-        """The province whose relief cells (i, j) take: the one that holds the cell, else the grid its centre
-        lies deepest inside, else -1."""
-        i, j = np.asarray(i, np.int64), np.asarray(j, np.int64)
+    def _holder_of(self, i, j) -> np.ndarray:
+        """The province that holds each cell (i, j), -1 where none does."""
+        if not len(self._held):
+            return np.full(np.shape(i), -1, np.int64)
         key = (i << 32) | (j & 0xFFFFFFFF)
-        n = np.minimum(np.searchsorted(self._held, key), max(len(self._held) - 1, 0))
-        found = (self._held[n] == key) if len(self._held) else np.zeros(key.shape, bool)
-        out = np.where(found, self._holder[n] if len(self._held) else -1, -1)
-        if not found.all():
-            bare = ~found
-            out[bare] = self._deepest((i[bare] + 0.5) * CELL, (j[bare] + 0.5) * CELL)
+        n = np.minimum(np.searchsorted(self._held, key), len(self._held) - 1)
+        return np.where(self._held[n] == key, self._holder[n], -1)
+
+    def owner(self, i, j) -> np.ndarray:
+        """The province whose relief cells (i, j) take: the one that holds the cell, else the lowest of those
+        that hold one of the eight cells round it and whose grid its centre lies inside, else the grid its
+        centre lies deepest inside, else -1."""
+        i, j = np.asarray(i, np.int64), np.asarray(j, np.int64)
+        out = self._holder_of(i, j)
+        bare = out < 0
+        if bare.any():
+            bi, bj = i[bare], j[bare]
+            x, z = (bi + 0.5) * CELL, (bj + 0.5) * CELL
+            boxes = np.asarray(self.world._grids, float).reshape(-1, 4)
+            beside = np.full(bi.shape, -1, np.int64)
+            for a in (-1, 0, 1):
+                for b in (-1, 0, 1):
+                    if not (a or b):
+                        continue
+                    k = self._holder_of(bi + a, bj + b)
+                    x0, z0, x1, z1 = boxes[np.maximum(k, 0)].T
+                    take = (k >= 0) & ((beside < 0) | (k < beside)) & (x > x0) & (x < x1) & (z > z0) & (z < z1)
+                    beside = np.where(take, k, beside)
+            far = beside < 0
+            if far.any():
+                beside[far] = self._deepest(x[far], z[far])
+            out[bare] = beside
         return out
 
     def height(self, x, z, near=None) -> np.ndarray:

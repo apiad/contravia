@@ -100,6 +100,21 @@ def test_the_ground_of_a_cell_is_the_relief_of_the_province_that_holds_it():
     assert t.height(9000.0, 0.0) == 0.0 and t.height(np.zeros((2, 3)), np.zeros((2, 3))).shape == (2, 3)
 
 
+def test_a_bare_cell_beside_a_held_one_takes_its_relief_so_the_mix_is_a_cell_away_from_what_is_built():
+    """Cell (0, 1) holds nothing and lies deepest inside province 1's grid, but it is beside cell (0, 0), which
+    province 0 holds: a street of province 0 along that edge must find province 0's ground on both sides of it."""
+    from contravia.world import BLEND
+
+    t = two_reliefs()
+    assert t.owner(np.array([0, -1, 0, 2, 1]), np.array([1, 0, -1, 0, 1])).tolist() == [0, 0, 0, 1, 0]
+    assert t.owner(np.array([0, 3]), np.array([2, 0])).tolist() == [1, 1]  # a cell further off: the deepest grid
+    z = np.array([200.0 - BLEND, 200.0 - 1.0, 200.0, 200.0 + BLEND])
+    assert t.height(np.full(4, 100.0), z).tolist() == pytest.approx([10.0] * 4)  # no mix on the held cell's edge
+    assert t.height(100.0, 400.0) == pytest.approx(15.0)  # the mix is on the far edge of the bare cell
+    t.world._grids[0] = (-500.0, -500.0, 500.0, 190.0)  # province 0's grid ends short of the bare cell's centre
+    assert t.owner(np.array([0]), np.array([1])).tolist() == [1]
+
+
 def test_an_island_of_one_province_keeps_its_relief(city):
     w = World(city)
     xz = city.a["roads"][:50, :2].astype(float)
