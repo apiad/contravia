@@ -1,19 +1,20 @@
 """Who walks the pavements: how each zone dresses, how fast people go, how many are out, and the eight NPCs.
 
 manifoldx gives the body (`HumanParams`) and the clothes (`Outfit`); which bodies and clothes a Cuban street has is
-the game's choice and lives here. A body of the crowd is `HumanParams.sample(seed)` dressed by `outfit(seed, zone)`,
-where zone is contravia.walks' (0 the old centre, 1 Vedado and Playa, 2 the rest). The eight NPCs are the people of
+the game's choice and lives here. A body of the crowd is `body(seed)` dressed in the shapes of `outfit(seed, build)`;
+the colours are not the body's: every walker draws its own `palette` by the zone of its lane (contravia.walks' zones:
+0 the old centre, 1 Vedado and Playa, 2 the rest), and `size` gives it its own height and width. The eight NPCs are the people of
 kind `npc` in assets/reference/catalog.json, each with a fixed body and outfit and the place of contravia/places.json
 where it stands. Spec: docs/superpowers/specs/2026-11-22-pedestrians-in-game-design.html.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 import numpy as np
-from manifoldx.modeling.assets.human import HumanParams
-from manifoldx.modeling.assets.human_dress import Outfit
+from manifoldx.modeling.assets.human import SKIN_TONES, HumanParams
+from manifoldx.modeling.assets.human_dress import SLOTS, Outfit
 
 WALK = (1.1, 1.3, 1.5)  # m/s: the walking speeds a clip is baked at; a walker moves at its bucket's exactly
 RUN = (3.0, 3.5)  # m/s: the running speeds
@@ -23,6 +24,7 @@ CLIPS = tuple(("walk", v) for v in WALK) + tuple(("run", v) for v in RUN) + (("i
 DENSITY = (1.0, 0.6, 0.25)  # walkers per lane metre, relative, in zones 0, 1 and 2
 SIDE = 0.5  # aprons and park paths carry this share of their zone's density
 HEAVY = 0.8  # the crowd's bodies keep weight under this: heavier figures still show manifoldx's open defects
+SIZE = (0.92, 1.08)  # a walker's height and width scale over its body's
 
 # Clothes by zone, sRGB. The old centre is bright, Vedado paler, the rest plainer and darker.
 TOPS = (
@@ -41,21 +43,60 @@ HATS = ("#d9c48a", "#e8613c", "#2f3e56", "#f2ede0")
 
 
 def body(seed: int) -> HumanParams:
-    """The crowd's body for seed: HumanParams.sample with the weight held under HEAVY."""
-    p = HumanParams.sample(seed)
-    return replace(p, weight=min(p.weight, HEAVY))
+    """The crowd's body for seed: every measure drawn over its whole range (HumanParams.sample keeps to the middle
+    80 %), stature around 1.63 m or 1.75 m by build, one in four old, and the weight held under HEAVY."""
+    g = np.random.default_rng((seed, 11))
+    spec = HumanParams.ranges()
+
+    def full(name):
+        return round(float(g.uniform(spec[name]["min"], spec[name]["max"])), 3)
+
+    build = full("build")
+    lo, hi = spec["stature"]["min"], spec["stature"]["max"]
+    stature = float(np.clip(g.normal(1.63 + 0.12 * build, 0.08), lo, hi))
+    return HumanParams(stature=round(stature, 3), build=build,
+                       **{n: full(n) for n in ("muscle", "shoulders", "hips", "leg_ratio")},
+                       weight=min(full("weight"), HEAVY), age="elder" if g.random() < 0.25 else "adult")
 
 
-def outfit(seed: int, zone: int, build: float) -> Outfit:
-    """What a body of the given build (0 female to 1 male) wears in zone, the same for the same seed."""
-    g = np.random.default_rng((seed, zone, 7))
+def size(g: np.random.Generator, stature: float) -> tuple[float, float]:
+    """A walker's (height, width) scale over a body of this stature, within SIZE and the body's stature range."""
+    spec = HumanParams.ranges()["stature"]
+    tall = float(np.clip(g.uniform(*SIZE), spec["min"] / stature, spec["max"] / stature))
+    return tall, float(g.uniform(*SIZE))
+
+
+def palette(g: np.random.Generator, zone: int, elder: bool) -> np.ndarray:
+    """(8, 3) sRGB colours by manifoldx's SLOTS (skin, top, bottom, stripe, shoes, hair, hat) for one walker of zone."""
+    def rgb(h):
+        return [int(h[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+
+    def pick(xs):
+        return xs[int(g.integers(len(xs)))]
+
+    out = np.ones((8, 3))
+    top = pick(TOPS[zone])
+    grey = g.random() < (0.7 if elder else 0.1)
+    for slot, colour in (("skin", None), ("top", top), ("bottom", pick(BOTTOMS[zone])),
+                         ("stripe", pick([t for t in TOPS[zone] if t != top])), ("shoes", pick(SHOES)),
+                         ("hair", pick(HAIR[4:] if grey else HAIR[:4])), ("hat", pick(HATS))):
+        out[SLOTS.index(slot)] = pick(list(SKIN_TONES.values())) if colour is None else rgb(colour)
+    return out
+
+
+def outfit(seed: int, build: float) -> Outfit:
+    """The shapes a body of the given build (0 female to 1 male) wears, the same for the same seed. Its colours
+    are the walker's palette, not the outfit's."""
+    g = np.random.default_rng((seed, 7))
 
     def pick(xs, p=None):
         return xs[int(g.choice(len(xs), p=p))]
 
     woman = build < 0.5
     bottom = pick(("trousers", "shorts", "skirt"), (0.5, 0.2, 0.3) if woman else (0.7, 0.3, 0.0))
-    hot = zone != 2 or g.random() < 0.5  # the centre and the coast dress lighter
+    hot = g.random() < 0.75  # most dress light; the rest wear longer sleeves
+    lo = round(float(g.uniform(0.3, 0.7)), 2)
+    stripe = (lo, lo + 0.12, "#ffffff") if g.random() < 0.2 else None  # a band across the top, in its own colour
     return Outfit(
         top=pick(("tshirt", "shirt", "blouse", "tank"), (0.35, 0.15, 0.4, 0.1) if woman else (0.5, 0.35, 0.0, 0.15)),
         sleeves=round(float(g.uniform(0.1, 0.4) if hot else g.uniform(0.25, 1.0)), 2),
@@ -66,11 +107,7 @@ def outfit(seed: int, zone: int, build: float) -> Outfit:
         hair=pick(("short", "long", "bun", "curly", None), (0.1, 0.4, 0.25, 0.25, 0.0) if woman
                   else (0.65, 0.0, 0.0, 0.2, 0.15)),
         hat=pick((None, "cap", "brim"), (0.8, 0.12, 0.08)),
-        top_color=pick(TOPS[zone]),
-        bottom_color=pick(BOTTOMS[zone]),
-        shoe_color=pick(SHOES),
-        hair_color=pick(HAIR[4:] if g.random() < 0.15 else HAIR[:4]),
-        hat_color=pick(HATS),
+        stripe=stripe,
     )
 
 

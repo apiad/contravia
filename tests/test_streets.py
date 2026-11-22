@@ -302,6 +302,7 @@ def test_pmap_on_forked_processes_gives_what_it_gives_in_line(monkeypatch):
         seen.append(k)  # stays in the worker
         return k, shapely.Point(k, scale * k).buffer(1.0), np.full(2, k)
 
+    monkeypatch.setattr(streets, "JOBS", 1)  # in line, whatever an earlier test in this process left it at
     plain = streets.pmap(fn, range(100), chunk=8)
     assert len(seen) == 100
     monkeypatch.setattr(streets, "JOBS", 3)

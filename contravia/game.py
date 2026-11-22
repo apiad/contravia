@@ -1867,7 +1867,7 @@ def _main(data, builders, at, shot, frames, size, traffic, when, warp, sky, pipe
     game.atmosphere.prepare(wait=True)  # an offline shot waits for the ambient light instead of drawing without it
     t0, n = time.monotonic(), 0
     while n < frames or ((game.waiting() or game.graveyard.waiting() or game.crowd.waiting()
-                          or game.crowd.figures.waiting) and time.monotonic() - t0 < 300):
+                          or game.crowd.figures.filling) and time.monotonic() - t0 < 300):
         img = engine.render_frame(supersample=1)
         n += 1
     for _ in range(30):  # once the pool is built, a second for the crowd to fill in and fade up
