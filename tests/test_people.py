@@ -117,3 +117,163 @@ def test_the_pool_survives_a_reload_in_the_same_engine():
         assert not g.waiting and g.ready(0) == [0]
     finally:
         g.close()
+
+
+# ------------------------------------------------------------------------------------------------- lanes, crowd
+
+from types import SimpleNamespace  # noqa: E402
+
+from contravia import walks  # noqa: E402
+
+TOP = walks.paint(0, walks.TOP)
+
+
+def quad(x0, z0, x1, z1, y):
+    """Two triangles covering a rectangle at height y."""
+    a, b, c, d = (x0, y, z0), (x1, y, z0), (x1, y, z1), (x0, y, z1)
+    return [[a, b, c], [a, c, d]]
+
+
+class FakeCity:
+    """Cell (0, 0): a 40 m square block pavement at 0.15 m, and a 4 m wide pavement cut by the cell's east edge."""
+
+    def __init__(self):
+        tris = quad(20, 20, 60, 60, 0.15) + quad(150, 100, 250, 104, 0.15)
+        self.c = SimpleNamespace(walk_tris=np.array(tris, float), walk_paint=np.full(len(tris), TOP))
+
+    def cell(self, i, j):
+        return self.c if (i, j) == (0, 0) else SimpleNamespace(walk_tris=None, walk_paint=None)
+
+
+def test_a_block_gives_one_looping_lane_inset_from_its_kerb_and_a_cut_pavement_an_open_one():
+    lanes = people.lay(FakeCity(), 0, 0)
+    assert len(lanes) == 2
+    loop = int(np.flatnonzero(lanes.loop)[0])
+    assert lanes.length[loop] == pytest.approx(4 * (40 - 2 * people.INSET), abs=0.5)
+    open_ = 1 - loop
+    pts = lanes.pts[lanes.start[open_]: lanes.start[open_] + lanes.count[open_]]
+    assert pts[:, 0].max() <= 200 - people.BORDER + 1e-6
+    assert np.allclose(lanes.pts[:, 1], 0.15)
+    assert np.all(lanes.step <= people.STEP + 1e-9)
+    assert lanes.zone.tolist() == [0, 0]
+
+
+def test_a_cell_with_no_walks_has_no_lanes():
+    assert len(people.lay(FakeCity(), 3, 3)) == 0
+
+
+def test_the_crowd_follows_the_hour_and_the_rain():
+    assert people.hour_factor(12) == 1.0 and people.hour_factor(21) == 0.5 and people.hour_factor(3) == 0.15
+
+
+def _engine():
+    import manifoldx as mx
+
+    return mx.Engine("crowd", width=64, height=48)
+
+
+Q = SimpleNamespace(people_lod=(10.0, 30.0, 80.0), people=(40, 3, 8, 3))
+
+
+@pytest.fixture(scope="module")
+def crowd():
+    e = _engine()
+    c = people.Crowd(e, FakeCity(), Q, seed=3)
+    deadline = time.monotonic() + 120
+    while c.figures.waiting and time.monotonic() < deadline:
+        c.figures.step()
+        time.sleep(0.01)
+    c.clips = c.figures.clip_table()
+    yield e, c
+    c.close()
+
+
+def run(c, frames, eye=(40.0, 1.7, 40.0), dt=1 / 30, **kw):
+    for _ in range(frames):
+        c.update({(0, 0)}, eye, dt, **kw)
+        while c.waiting():
+            time.sleep(0.01)
+            c.update({(0, 0)}, eye, 0.0, **kw)
+
+
+def test_the_crowd_fills_its_lanes_and_draws_within_the_caps(crowd):
+    e, c = crowd
+    run(c, 30)
+    n = c.counts()
+    weight = c.p_weight[c._near].sum()  # the lanes within the last band
+    assert n["walkers"] == c.target == int(min(Q.people[0], people.RATE * weight))
+    assert n["lod0"] <= Q.people[1] and n["lod1"] <= Q.people[2]
+    live = np.flatnonzero(c.alive & ~c.leaving)
+    assert np.allclose(c.pos[live, 1], 0.15)
+    drawn = live[c.level[live] < people.HIDDEN]
+    assert (c.ent[drawn] >= 0).all()
+    img = e.render_frame(supersample=1)  # skinned, faded and posed from baked clips: it draws
+    assert img.shape == (48, 64, 3)
+
+
+def test_walkers_move_at_their_buckets_speed(crowd):
+    _, c = crowd
+    run(c, 5)
+    walking = np.flatnonzero(c.alive & ~c.leaving & (c.mode == people.WALK) & c.t_loop[c.lane])
+    assert len(walking)
+    s0 = c.s[walking].copy()
+    c.update({(0, 0)}, (40.0, 1.7, 40.0), 0.1)
+    still = c.mode[walking] == people.WALK
+    moved = np.abs(c.s[walking] - s0)[still]
+    moved = np.minimum(moved, c.t_length[c.lane[walking]][still] - moved)  # a loop wraps
+    want = np.array(rules.CLIPS)[c.clip[walking][still], 1].astype(float) * 0.1
+    assert np.allclose(moved, want, atol=1e-6)
+
+
+def test_a_walker_at_an_open_end_looks_stands_and_turns_back(crowd):
+    _, c = crowd
+    run(c, 2)
+    lane = int(np.flatnonzero(~c.t_loop)[0])
+    w = int(np.flatnonzero(c.alive & ~c.leaving)[0])
+    c.lane[w] = lane
+    c.cell[w] = c.cells_open[int(c.t_cell[lane])]
+    c.local[w] = lane - c._offs[c.cell[w]]
+    c.s[w], c.dir[w], c.clip[w] = c.t_length[lane] - people.LOOK - 0.05, 1.0, 1
+    c._mode(np.array([w]), people.WALK)
+    c._place(np.array([w]))
+    seen = set()
+    for _ in range(400):
+        c.update({(0, 0)}, (180.0, 1.7, 110.0), 1 / 30)  # by the open lane, so the walker stays
+        seen.add(int(c.mode[w]))
+        if c.dir[w] < 0 and c.mode[w] == people.WALK:
+            break
+    assert {people.CROSS, people.IDLE} <= seen and c.dir[w] < 0
+
+
+def test_hysteresis_keeps_a_walker_at_a_band_on_its_level(crowd):
+    _, c = crowd
+    run(c, 2)
+    w = int(np.flatnonzero(c.alive & ~c.leaving)[0])
+    c.level[w] = 1
+    eye = c.pos[w] + np.array([Q.people_lod[0] - 1.0, 0.0, 0.0])  # 1 m inside the level 0 band
+    c._levels(eye)
+    assert c.level[w] == 1
+
+
+def test_a_limit_of_zero_sends_everyone_away(crowd):
+    _, c = crowd
+    run(c, 2)
+    c.set_limit(0)
+    run(c, 3)
+    assert c.counts()["walkers"] == 0
+    c.set_limit(None)
+    run(c, 10)
+    assert c.counts()["walkers"] > 0
+
+
+def test_walkers_live_within_the_last_band_and_leave_past_it(crowd):
+    _, c = crowd
+    eye = np.array((40.0, 1.7, 40.0))
+    run(c, 30, eye=tuple(eye))
+    live = np.flatnonzero(c.alive & ~c.leaving)
+    d = np.hypot(c.pos[live, 0] - eye[0], c.pos[live, 2] - eye[2])
+    assert len(live) and (d <= Q.people_lod[2] + people.HYSTERESIS).all()
+    assert (c.level[live] < people.HIDDEN).all()
+    far = (400.0, 1.7, 400.0)  # nothing within reach: everyone leaves
+    run(c, 3, eye=far)
+    assert c.counts()["walkers"] == 0

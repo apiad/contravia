@@ -66,7 +66,7 @@ def test_apply_builds_the_detail_ring_one_past_the_drawn_one():
 
     part = NS(configure=lambda q: None)
     game = NS(streamer=NS(tau=12.0, material=NS(detail=True)), engine=NS(camera=NS(far=0.0), state=NS()),
-              detail=NS(ready_radius=2), layer=None, forest=part, graveyard=part, grass=part, rain=part,
+              detail=NS(ready_radius=2), layer=None, forest=part, graveyard=part, crowd=part, grass=part, rain=part,
               atmosphere=part, hud=NS(configure_quality=lambda q: None))
     apply(game, PRESETS["ultra"], "ultra")
     assert game.detail_radius == 2 and game.detail.ready_radius == 3

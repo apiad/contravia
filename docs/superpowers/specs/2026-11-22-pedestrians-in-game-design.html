@@ -218,7 +218,7 @@ figcaption{font-family:var(--font-mono);font-size:11px;color:var(--faint);margin
 <ol>
   <li>Union the top triangles by part: pavement tops (<code>TOP</code>), apron tops, path tops and plazas. Edges and verges are not walked.</li>
   <li>Buffer each pavement inward by 0.7 m and take its rings as lanes; an apron's lane is its ring buffered by half the apron (0.75 m); a path is its centre line. A piece narrower than 1.2 m gets no lane.</li>
-  <li>Cut lanes at the cell's border. An end that meets a lane of a neighbouring open cell within 0.5 m joins it; an open end is where walkers turn round.</li>
+  <li>Cut lanes 0.8 m inside the cell's border. An open end is where walkers turn round; lanes of neighbouring cells are not joined in this slice: a walker moved to the next cell's lane would jump about 1.6 m.</li>
   <li>Sample each lane every 1 m with its height from the walk triangles, so a walker's <code>y</code> is a lookup, and with the free width to each side, which stepping aside reads.</li>
   <li>Give each lane a weight: its length times its zone's density (old centre 1.0, Vedado and Playa 0.6, the rest 0.25; aprons and paths at half).</li>
 </ol>
@@ -229,8 +229,8 @@ figcaption{font-family:var(--font-mono);font-size:11px;color:var(--faint);margin
   <li>How many: the preset's cap times the hour's factor (1.0 from 8:00 to 20:00, 0.5 in the evening and early morning, 0.15 after midnight) times 0.3 in rain, spread over the open cells' lane weights.</li>
   <li>Spawning: a new walker appears farther than the level 1 band or out of view, and fades in over 0.3 s with manifoldx's <code>Fade</code>, as the trees and tombs do. One that leaves the drawn cells fades out and its slot is reused.</li>
   <li>Moving: <code>s += direction · speed · dt</code> for every walker in one array step; its <code>Transform</code> is the lane's point and tangent. Phase advances by <code>cadence · dt</code>, each walker starting at a random phase so the crowd does not sway in step.</li>
-  <li>Behaviour, picked from a seeded draw: 80 % walk, 10 % stand idle for 5 to 20 s, 10 % run. At a lane's open end, or at a corner where the lane turns more than 60 degrees, a walker plays cross for about 1.5 s (it looks both ways), then walks on or turns back.</li>
-  <li>Levels every 6 frames with hysteresis, by distance to the camera; a change swaps the mesh with <code>set_geometry</code> and keeps the clip and the phase.</li>
+  <li>Behaviour, picked from a seeded draw: 80 % walk, 10 % stand idle for 5 to 20 s, 10 % run. In the last 3 m before a lane's open end a walker plays cross (it looks both ways), then stands 1 to 3 s and turns back. Corners do not trigger it in this slice.</li>
+  <li>Levels every 6 frames with hysteresis, by distance to the camera; a change spawns the new level's entity, which fades in over the pixels the old one leaves, as the graveyard does, and keeps the clip and the phase (<code>set_geometry</code> overwrites a shared vertex buffer of the same size, so it cannot change level). A walker whose level is not built yet shows the nearest built level and moves to its own once it is.</li>
   <li>One call to <code>engine.set_pose_frames</code> per frame for every drawn walker.</li>
 </ul>
 
