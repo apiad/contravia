@@ -151,6 +151,8 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("bench", help="drive the fixed route and record frame times")
     p.add_argument("--data", default="data/cuba")
     p.add_argument("--time", default="Tue 08:00", help='traffic time for the run, as "Tue 08:00"')
+    p.add_argument("--air", type=lambda v: [float(h) for h in v.split(",")], default=None, metavar="H,H",
+                   help="after the route, fly the flight scene's line at these heights over the ground, in metres")
     p.add_argument("--showcase", action="store_true",
                    help="instead of the route, time the three scenes of bench/showcase.json at a graphics preset")
     p.add_argument("--preset", default="alto", choices=["bajo", "medio", "alto", "ultra", "cine"],
@@ -379,7 +381,7 @@ def main(argv: list[str] | None = None) -> None:
     else:
         from contravia.bench import main as bench
 
-        bench(args.data, when=args.time)
+        bench(args.data, when=args.time, air=args.air)
 
 
 if __name__ == "__main__":

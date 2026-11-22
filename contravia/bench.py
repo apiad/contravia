@@ -154,6 +154,51 @@ def island_scenes(engine, game, scenes: dict) -> dict:
     return out
 
 
+def air_scenes(engine, game, scene: dict, heights: list[float], speed: float = 55.0, shots: Path | None = None) -> dict:
+    """Fly the flight scene's line at each height over the ground, at a small plane's speed, with the vehicle
+    moved under the camera every frame as a flown craft would be. Per height: frame times, the nodes the view
+    selected but has not drawn (holes in view) and a shot every 15 s."""
+    from PIL import Image
+
+    still = Controls(throttle=0.0, brake=1.0, steer=0.0, handbrake=True)
+    game.autopilot = lambda car: still
+    path = flight_path({**scene, "speed": speed})
+    unit = (path[-1] - path[0]) / np.hypot(*(path[-1] - path[0]))
+    yaw = float(np.arctan2(unit[1], unit[0]))
+    sm, out = game.streamer, {}
+    for up in heights:
+        game.teleport(*path[0])
+        while game.waiting():
+            engine.render_frame(supersample=1)
+        ms, holes, t0, shot_at, state = [], [], time.monotonic(), 15.0, {}
+
+        def fly(t0=t0, state=state, up=up):
+            t = min(time.monotonic() - t0, scene["seconds"])
+            k = min(int(t), len(path) - 2)
+            p = path[k] + (path[k + 1] - path[k]) * (t - k)
+            ground = float(np.ravel(game.terrain.height(np.array([p[0]]), np.array([p[1]])))[0])
+            y = state["y"] = state.get("y", ground + up) + (ground + up - state.get("y", ground + up)) * 0.02
+            ahead = p + unit * 600.0
+            game.driven.place(float(p[0]), float(p[1]), yaw)  # the craft's position is what the game streams round
+            return (p[0], y, p[1]), (ahead[0], y - 80.0 * up / 300.0, ahead[1])
+
+        game.camera_override = fly
+        while time.monotonic() - t0 < scene["seconds"]:
+            img = engine.render_frame(supersample=1)
+            ms.append(game.frame_ms)
+            holes.append(len(sm._selected - sm.drawn()))
+            if shots is not None and time.monotonic() - t0 >= shot_at:
+                shots.mkdir(parents=True, exist_ok=True)
+                Image.fromarray(np.asarray(img)).convert("RGB").save(shots / f"air-{int(up)}m-{int(shot_at)}s.jpg", quality=85)
+                shot_at += 15.0
+        h = np.asarray(holes or [0])
+        out[f"{int(up)}m"] = {**_scene_numbers(game, ms[5:] or ms), "speed": speed,
+                              "holes_mean": round(float(h.mean()), 1), "holes_max": int(h.max()),
+                              "frames_with_holes": round(float((h > 0).mean()), 3)}
+    game.camera_override = None
+    return out
+
+
 def _machine(engine) -> dict:
     info = dict(getattr(getattr(engine, "_adapter", None), "info", None) or {})
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], check=False, capture_output=True,
@@ -173,7 +218,8 @@ def _gpu_memory_mb() -> int | None:
     return int(out[0]) if out and out[0].isdigit() else None
 
 
-def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: str = "Tue 08:00") -> dict:
+def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: str = "Tue 08:00",
+         air: list[float] | None = None) -> dict:
     """Drive the route offscreen with traffic at `when` and append the run's numbers to the history."""
     import manifoldx as mx
 
@@ -226,7 +272,10 @@ def main(data: str, route: str = "bench/route.json", size=(1920, 1080), when: st
     result = {**summary(frame_ms[5:] or frame_ms, waits), "frames": len(frame_ms), **_machine(engine)}
     ph = np.asarray(physics_ms[5:] or physics_ms or [0.0], float)
     result["physics_ms"] = {"p50": round(float(np.percentile(ph, 50)), 2), "p95": round(float(np.percentile(ph, 95)), 2)}
-    if len(city.names) > 1:  # the island's scenes need the provinces they visit
+    if air:  # the flight line at these heights instead of the island's scenes
+        result["air"] = air_scenes(engine, game, json.loads(SCENES.read_text())["flight"], air,
+                                   shots=HISTORY.parent / "out" / "air")
+    elif len(city.names) > 1:  # the island's scenes need the provinces they visit
         result["cuba"] = island_scenes(engine, game, json.loads(SCENES.read_text()))
     game.streamer.close()
     if game.layer:
