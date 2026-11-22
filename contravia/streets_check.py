@@ -45,7 +45,7 @@ from contravia.landmarks import cached
 from contravia.mesh import lattice
 from contravia.rules.ground import drawn
 from contravia.shore import of as shore_of
-from contravia.streets import MIN_WIDTH
+from contravia.streets import MIN_WIDTH, RADIUS
 from contravia.structures import MEDIAN
 from contravia.walks import BEVEL, KERB
 from contravia.walks import SIMPLIFY as WALK_SIMPLIFY
@@ -258,7 +258,10 @@ class Check:
         edge) it slopes no more than STEEP, and along it no more than the drawn ground does, the same way, by
         more than ALONG. The ground is read under the triangle and a half and a whole road's width to either
         side, the steepest of them: a street built up on a hillside follows the ground under its high kerb
-        (streets._follow), not the ground under each triangle. A triangle with no road near is not excused."""
+        (streets._follow), not the ground under each triangle. A street rounds its corners (streets.fillet): a
+        triangle that fails by its segment, within the corner's reach of the end where the road goes on, is
+        judged again by the direction the rounded corner has there, between the two segments'. A triangle with
+        no road near is not excused."""
         out = np.zeros(len(tris), bool)
         if not len(tris):
             return out
@@ -267,32 +270,64 @@ class Check:
         if not len(roads):
             return out
         c = tris[:, :, [0, 2]].mean(axis=1)
-        a, ab = roads[:, 0:2], roads[:, 2:4] - roads[:, 0:2]
+        a, b = roads[:, 0:2], roads[:, 2:4]
+        ab = b - a
         t = np.clip(np.einsum("krd,rd->kr", c[:, None] - a[None], ab) / np.maximum((ab * ab).sum(axis=1), 1e-9), 0, 1)
         dist = np.linalg.norm(c[:, None] - (a[None] + t[..., None] * ab[None]), axis=2) - roads[None, :, 4] / 2
         r = dist.argmin(axis=1)
         d = ab[r] / np.maximum(np.linalg.norm(ab[r], axis=1, keepdims=True), 1e-9)
+        width = np.maximum(roads[r, 4], MIN_WIDTH)
+        # the ground a hair inside each corner: a corner on the cell's far border belongs to the next cell's grid
+        q = tris[:, :, [0, 2]] + (c[:, None] - tris[:, :, [0, 2]]) * 1e-3
 
-        def gradient(y):
-            """(dy/dx, dy/dz) of the planes through the triangles' corners at heights y (K, 3)."""
-            p = np.stack([tris[:, :, 0], y, tris[:, :, 2]], axis=-1)
+        def gradient(of, y):
+            """(dy/dx, dy/dz) of the planes through the corners of triangles `of` at heights y (K, 3)."""
+            p = np.stack([tris[of, :, 0], y, tris[of, :, 2]], axis=-1)
             m = np.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0])
             return -m[:, [0, 2]] / np.where(np.abs(m[:, [1]]) < 1e-12, 1e-12, m[:, [1]])
 
-        own = gradient(tris[:, :, 1])
-        along = (own * d).sum(axis=1)
-        across = np.abs(own[:, 0] * -d[:, 1] + own[:, 1] * d[:, 0])
-        # the ground a hair inside each corner: a corner on the cell's far border belongs to the next cell's grid
-        q = tris[:, :, [0, 2]] + (c[:, None] - tris[:, :, [0, 2]]) * 1e-3
-        side = np.stack([-d[:, 1], d[:, 0]], axis=1) * np.maximum(roads[r, 4], MIN_WIDTH)[:, None]
-        climb = np.zeros(len(tris))  # the most the ground climbs along the road, the way the triangle does
-        for u in (0.0, 0.5, -0.5, 1.0, -1.0):
-            at = q + u * side[:, None]
-            # the drawn ground, whatever cell the shifted corner falls in (the shore's grid is this cell's alone)
-            ground = (self._ground(i, j, at[..., 0].ravel(), at[..., 1].ravel())[0] if u == 0.0
-                      else drawn(self.city.terrain, at[..., 0].ravel(), at[..., 1].ravel())).reshape(-1, 3)
-            climb = np.maximum(climb, (gradient(ground) * d).sum(axis=1) * np.sign(along))
-        return (dist[np.arange(len(c)), r] <= ROAD) & (across <= STEEP) & (np.abs(along) <= climb + ALONG)
+        def passes(of, d):
+            """Whether triangles `of` (indices) pass with d (len(of), 2) as their road's direction."""
+            own = gradient(of, tris[of, :, 1])
+            along = (own * d).sum(axis=1)
+            across = np.abs(own[:, 0] * -d[:, 1] + own[:, 1] * d[:, 0])
+            side = np.stack([-d[:, 1], d[:, 0]], axis=1) * width[of, None]
+            climb = np.zeros(len(of))  # the most the ground climbs along the road, the way the triangle does
+            for u in (0.0, 0.5, -0.5, 1.0, -1.0):
+                at = q[of] + u * side[:, None]
+                # the drawn ground, whatever cell the shifted corner falls in (the shore's grid is this cell's alone)
+                ground = (self._ground(i, j, at[..., 0].ravel(), at[..., 1].ravel())[0] if u == 0.0
+                          else drawn(self.city.terrain, at[..., 0].ravel(), at[..., 1].ravel())).reshape(-1, 3)
+                climb = np.maximum(climb, (gradient(of, ground) * d).sum(axis=1) * np.sign(along))
+            return (across <= STEEP) & (np.abs(along) <= climb + ALONG)
+
+        every = np.arange(len(tris))
+        near = dist[every, r] <= ROAD
+        out = near & passes(every, d)
+        # on a rounded corner: the end of the nearest segment the triangle is nearer to, and the segment that goes
+        # on from it the straightest
+        todo = np.flatnonzero(near & ~out)
+        if not len(todo):
+            return out
+        r1, d1 = r[todo], d[todo]
+        length = np.linalg.norm(ab, axis=1)
+        at_b = t[todo, r1] >= 0.5
+        end = np.where(at_b[:, None], b[r1], a[r1])
+        x = np.where(at_b, 1 - t[todo, r1], t[todo, r1]) * length[r1]  # metres from the triangle to that end
+        unit = ab / np.maximum(length, 1e-9)[:, None]
+        joins = (np.abs(a[None] - end[:, None]).max(axis=2) < 1e-3) | (np.abs(b[None] - end[:, None]).max(axis=2) < 1e-3)
+        joins[np.arange(len(todo)), r1] = False
+        cos = np.where(joins, np.abs(unit @ d1.T).T, -1.0)
+        r2 = cos.argmax(axis=1)
+        d2 = unit[r2] * np.where((unit[r2] * d1).sum(axis=1) < 0, -1.0, 1.0)[:, None]  # the same way as d1
+        turn = np.arccos(np.clip((d1 * d2).sum(axis=1), -1, 1))
+        reach = np.minimum.reduce([RADIUS * np.tan(turn / 2), length[r1] / 2, length[r2] / 2])  # streets.fillet
+        on = (cos[np.arange(len(todo)), r2] >= 0) & (x < reach)
+        if on.any():
+            k = ((1 - x[on] / reach[on]) / 2)[:, None]
+            mid = (1 - k) * d1[on] + k * d2[on]
+            out[todo[on]] = passes(todo[on], mid / np.maximum(np.linalg.norm(mid, axis=1, keepdims=True), 1e-9))
+        return out
 
     def _surface(self, i: int, j: int, levels: Levels) -> list:
         """The cell's own street triangles: ground over them, steps between them and steep ones."""
