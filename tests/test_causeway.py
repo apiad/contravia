@@ -43,6 +43,17 @@ def test_a_road_over_the_sea_is_a_causeway_that_climbs_from_the_land():
     assert crown[np.argmin(xz[:, 0])] < BASE + 1.0 and crown[np.argmax(xz[:, 0])] < BASE + 1.0  # ramps at both ends
 
 
+def test_a_causeway_mapped_in_pieces_keeps_the_ones_far_out_at_sea():
+    """The middle of a long causeway is kilometres from any coastline, and OSM often maps it as ways of its own."""
+    far_cay = shapely.box(9000, 0, 12000, 3000)
+    land = shapely.union(MAINLAND, far_cay)
+    ways = [line((-200, 1000), (1000, 1000)), line((1000, 1000), (8000, 1000)), line((8000, 1000), (9200, 1000))]
+    pieces, report = causeway.detect(ways, [10.0] * 3, [], land)
+    assert report["causeways"] == 1 and report["km"] == pytest.approx(9.0, abs=0.1)
+    middle = [xz for xz, _, _ in pieces if xz[:, 0].min() >= 1000 and xz[:, 0].max() <= 8000]
+    assert middle and np.allclose(middle[0][np.abs(middle[0][:, 0] - 4500) < 100, 1], 1000)
+
+
 def test_a_road_on_land_and_one_along_the_shore_are_not():
     inland = line((-2000, 500), (-500, 2500))
     shore_road = line((-15, 200), (-15, 2800))  # on the land, the sea only on its east side
