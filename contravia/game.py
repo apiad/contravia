@@ -156,8 +156,11 @@ class Game:
         self.family, self.driven, self.help_level, self.locked_assists = "moderno", None, DEFAULT, ()
         self.help = None  # the road assists, made on the first frame that needs them
         self.physics_ms = 0.0
+        self.craft = self.craft_entity = None  # a boat the player steers instead of the car (contravia/boat.py)
         if "car" in engine.state:  # a reload under contravia dev: drive on from where the old code left the car
             self._resume(engine.state.car)
+            if (engine.state.get("craft") or {}).get("kind") == "boat":
+                self.board("boat", engine.state.craft.get("snap"))
         else:
             self.teleport(*at)
         self.frame_ms = 0.0
@@ -213,6 +216,7 @@ class Game:
         engine.on("weather")(self.force_weather)
         engine.on("quality")(self.quality_event)
         engine.on("hlod")(self.set_hlod)
+        engine.on("vehicle")(self._vehicle_event)
         engine.on("shutdown")(self._shutdown)
         # The quality preset (contravia/quality.py): Alto until the options or a --quality flag say otherwise; a
         # reload under contravia dev keeps the one the old game had.
@@ -670,7 +674,9 @@ class Game:
         self._follow_province()
 
     def _place(self, at: CarState, speed: float = 0.0) -> None:
-        """The driven car at rest at `at` (on the level nearest at.y), then rolling at speed if one is given."""
+        """The driven car at rest at `at` (on the level nearest at.y), then rolling at speed if one is given. A
+        boat being steered is left behind: the player is in the car again."""
+        self._leave_craft()
         if getattr(self, "driven", None) is None:
             from manifoldx.modeling.assets.car import CarParams
 
@@ -721,10 +727,62 @@ class Game:
         self._recentre()
 
     def saved_car(self) -> dict:
-        """What a reload needs to drive on: the pose, the height, the camera and the physics' state."""
-        return {"pose": [self.car.x, self.car.z, self.car.yaw, self.car.speed], "y": self.car.y,
-                "eye": self.eye.tolist() if hasattr(self, "eye") else [self.car.x, self.car.y + 3.0, self.car.z],
+        """What a reload needs to drive on: the pose, the height, the camera and the physics' state. In a boat,
+        the car's own pose, where it waits."""
+        car = self.driven.state if getattr(self, "craft", None) is not None else self.car
+        return {"pose": [car.x, car.z, car.yaw, car.speed], "y": car.y,
+                "eye": self.eye.tolist() if hasattr(self, "eye") else [car.x, car.y + 3.0, car.z],
                 "driven": self.driven.snapshot()}
+
+    def _vehicle_event(self, payload=None) -> None:
+        """`manifoldx emit vehicle '{"kind": "boat"}'`: steer a boat from the nearest water deeper than 1 m within
+        300 m; `{"kind": "car"}` puts the player back in the car, on the nearest shore. state.craft says how it
+        went."""
+        kind = (payload or {}).get("kind", "car")
+        if kind == "boat":
+            self.board("boat")
+        elif self.craft is not None:
+            self._ashore()  # through _place, which leaves the boat
+            self.engine.state.craft = {"kind": "car", "error": None}
+
+    def board(self, kind: str = "boat", snap: dict | None = None) -> bool:
+        """Leave the car where it stands and steer a boat from the water nearest it (or from snap, a reload's)."""
+        from manifoldx.components import Material, Mesh, Transform
+        from manifoldx.resources import StandardMaterial
+
+        from contravia import boat
+        from contravia.rules.ground import SEA
+
+        shore = getattr(self.surface, "shore", None)
+        if kind != "boat" or shore is None:
+            self.engine.state.craft = {"kind": "car", "error": "no water in this data"}
+            return False
+        water = boat.Water(shore, SEA, WATER_Y)
+        here = self.car
+        at = (here.x, here.z) if snap else boat.nearest_water(water, here.x, here.z)
+        if at is None:
+            self.engine.state.craft = {"kind": "car", "error": "no water 1 m deep within 300 m"}
+            return False
+        self._leave_craft()
+        self.craft = boat.Boat(water, at[0], at[1], here.yaw)
+        if snap:
+            self.craft.restore(snap)
+        self.craft_entity = self.engine.spawn(Mesh(boat.hull_mesh()),
+                                              Material(StandardMaterial("#ffffff", roughness=0.6, vertex_colors=True)),
+                                              Transform(pos=(at[0], 0.0, at[1])))
+        self.car = self.craft.state
+        self.sinking = None
+        self.engine.state.craft = {"kind": "boat", "error": None, "snap": self.craft.snapshot()}
+        return True
+
+    def _leave_craft(self) -> None:
+        """Back in the car: the boat and its entity go."""
+        if getattr(self, "craft", None) is None:
+            return
+        if self.craft_entity is not None:
+            self.craft_entity.destroy()
+        self.craft = self.craft_entity = None
+        self.car = self.driven.state
 
     def _crashes(self):
         """The traffic cars with a body, in the fleet of the car driven now (a new car starts with none)."""
@@ -1325,8 +1383,18 @@ class Game:
             self.place = road.locate(self.car.x, self.car.z, self.car.yaw) if road is not None else None
             if veiled:  # the car stands on its brakes till the curtain lifts
                 c = Controls(0.0, 1.0, 0.0, True)
+            elif self.craft is not None:  # a boat: no road assists
+                c = self.autopilot(self.car) if self.autopilot else self.controls(self._dt)
             else:
                 c = self.autopilot(self.car) if self.autopilot else self.road_help(self.controls(self._dt))
+        if self.mode == "drive" and self.craft is not None:
+            self._before = self.car
+            t0 = time.perf_counter()
+            self.car = self.craft.step(c, self._dt)
+            self.controls_now = c
+            self.physics_ms = (time.perf_counter() - t0) * 1000
+            self.km += math.hypot(self.car.x - self._before.x, self.car.z - self._before.z) / 1000
+        elif self.mode == "drive":
             self._follow_route()
             if getattr(self, "sinking", None) is not None:  # under water the engine is cut and the wheels held
                 c = Controls(0.0, 1.0, 0.0, True)
@@ -1348,12 +1416,14 @@ class Game:
         pose = self.driven.pose()
         if getattr(self, "sinking", None) is not None:
             pose["at"], pose["rotation"] = sea.sunk(pose["at"], pose["rotation"], self.sinking)
-        if self.mode == "aim":  # the photographer stepped out: the camera stands where the car's roof would be
-            pose["at"] = (pose["at"][0], pose["at"][1] - 1000.0, pose["at"][2])
+        if self.mode == "aim" or self.craft is not None:  # the camera stands where the car's roof would be, or
+            pose["at"] = (pose["at"][0], pose["at"][1] - 1000.0, pose["at"][2])  # the car waits out of sight
+        if self.craft is not None:
+            self.craft_entity.transform.pos, self.craft_entity.transform.rot = self.craft.pose()
         place_car(self.handles, self.model, **pose)
         half = -self.car.yaw / 2  # the same turn as the car's, about the vertical
         ground = float(self.surface.height(np.array([self.car.x]), np.array([self.car.z]), near=self.car.y)[0])
-        self.shadow.transform.pos = (self.car.x, ground + SHADOW_LIFT, self.car.z)
+        self.shadow.transform.pos = (self.car.x, ground + SHADOW_LIFT - (1000.0 if self.craft else 0.0), self.car.z)
         self.shadow.transform.rot = (0.0, float(np.sin(half)), 0.0, float(np.cos(half)))
         self._place_arrow()
         self._lay_band()
@@ -1384,7 +1454,7 @@ class Game:
                 left = np.array([-math.sin(yaw), 0.0, math.cos(yaw)]) * GARAGE_SHIFT * dist
                 self.eye, target = self.eye + left, target + left
         else:
-            seen = self.driven.seen()
+            seen = (self.craft or self.driven).seen()
             if self.eye is not self._chased:  # another camera moved the eye: the chase starts from there
                 self.rig, self.mouse_orbit = seen_from(self.eye, seen), Orbit()
             if inp.pointer_captured and not veiled:
@@ -1425,6 +1495,9 @@ class Game:
             self.hud.show_stats(self._stats_lines())
         st = self.engine.state
         st.car = self.saved_car()
+        if self.craft is not None:
+            st.craft = {"kind": "boat", "error": None, "snap": self.craft.snapshot(),
+                        "aground": self.craft.aground, "depth": round(self.craft.depth(self.car.x, self.car.z), 2)}
         st.pos = [round(self.car.x, 1), round(self.car.z, 1)]
         st.cell = [math.floor(self.car.x / CELL), math.floor(self.car.z / CELL)]
         st.speed_kmh = round(abs(self.car.speed) * 3.6, 1)
@@ -1646,7 +1719,7 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
          traffic: str | None = None, when: str | None = None, warp: float = 1.0, sky: str | None = None,
          pipelined: bool = True, with_traffic: bool = False,
          screen: str | None = None, height: float | None = None, yaw: float = 0.0, place: str | None = None,
-         mute: bool = False, audio_out: str | None = None, quality: str | None = None) -> None:
+         mute: bool = False, audio_out: str | None = None, quality: str | None = None, vehicle: str = "car") -> None:
     """Open a window on the main menu, or with `shot`, render offscreen until the city is drawn and save a PNG.
 
     screen opens a menu screen ("main", "free", "options", "pause", "photo", "map", "garage", "design") or "drive"
@@ -1662,13 +1735,14 @@ def main(data: str, at=(0.0, 0.0), shot: str | None = None, frames: int = 120, s
     With screen "map", height (metres) puts the map's camera that high over `at`, turned yaw degrees from north,
     and the car stays at the Capitolio: `at` may be far from any road.
     mute plays no sound (a shot never does); audio_out records the mix, and a WAV per bus beside it, to that path.
-    quality plays at that preset of contravia/quality.py instead of the saved one.
+    quality plays at that preset of contravia/quality.py instead of the saved one. vehicle "boat" drives at once,
+    in a boat on the water nearest `at`.
     """
     os.environ["HAVANA_DATA"] = os.path.abspath(data)
     builders = start_builders()  # first: they load the world while this process does and the menu shows
     try:
         _main(data, builders, at, shot, frames, size, traffic, when, warp, sky, pipelined, with_traffic, screen,
-              height, yaw, place, mute, audio_out, quality)
+              height, yaw, place, mute, audio_out, quality, vehicle)
     except BaseException:
         for b in builders:  # a start that failed (a broken save under contravia dev) leaves no builder behind
             b.close()
@@ -1689,7 +1763,7 @@ def start_builders() -> tuple:
 
 
 def _main(data, builders, at, shot, frames, size, traffic, when, warp, sky, pipelined, with_traffic, screen,
-          height, yaw, place, mute=False, audio_out=None, quality=None) -> None:
+          height, yaw, place, mute=False, audio_out=None, quality=None, vehicle="car") -> None:
     """main's body, with the builders already started."""
     import manifoldx as mx
 
@@ -1712,7 +1786,7 @@ def _main(data, builders, at, shot, frames, size, traffic, when, warp, sky, pipe
         from contravia.quality import PRESETS
 
         game.set_quality(quality, PRESETS[quality], pinned=True)
-    screen = screen or ("drive" if shot else "main")
+    screen = screen or ("drive" if shot or vehicle == "boat" else "main")
     if look:
         from contravia import mapview
 
@@ -1729,6 +1803,10 @@ def _main(data, builders, at, shot, frames, size, traffic, when, warp, sky, pipe
             engine.on("startup")(aim)
     elif "car" in engine.state:  # a reload under contravia dev drives on
         screen = "drive"
+    if vehicle == "boat" and game.craft is None and not game.board("boat"):
+        import sys
+
+        print(f"no boat: {engine.state.craft['error']}", file=sys.stderr)
     from contravia.menu import Menu
     from contravia.settings import FreeDrive, Options
 

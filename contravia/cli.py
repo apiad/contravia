@@ -146,6 +146,8 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--no-pipeline", dest="pipeline", action="store_false",
                    help="run the systems and the render one after the other instead of overlapping them")
     p.add_argument("--mute", action="store_true", help="play no sound")
+    p.add_argument("--vehicle", choices=["car", "boat"], default="car",
+                   help="boat: steer a launch from the water nearest --at (spec 2026-11-21-boats-planes-mvp)")
     p.add_argument("--audio-out", help="record the sound to this WAV, with a WAV per bus beside it")
 
     p = sub.add_parser("bench", help="drive the fixed route and record frame times")
@@ -320,7 +322,8 @@ def main(argv: list[str] | None = None) -> None:
         play(args.data or _city(), at=args.at, shot=args.shot, frames=args.frames, traffic=args.traffic, when=args.time,
              warp=args.warp, sky=args.sky, pipelined=args.pipeline,
              with_traffic=args.with_traffic, screen=args.screen, height=args.height, yaw=args.yaw,
-             place=args.place, mute=args.mute, audio_out=args.audio_out, quality=args.quality)
+             place=args.place, mute=args.mute, audio_out=args.audio_out, quality=args.quality,
+             vehicle=args.vehicle)
     elif args.command == "dev":
         from manifoldx.cli import main as manifoldx
 
