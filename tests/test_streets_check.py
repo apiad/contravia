@@ -293,16 +293,21 @@ def test_a_quick_run_reads_the_newer_of_the_two_kept_files_whatever_code_wrote_i
     assert streets_check.load_quick(tmp_path) == full          # a full run since: it is the one to start from
 
 
-def _hillside_street(heading, tilt=0.0, climb=0.0):
+def _hillside_street(heading, tilt=0.0, climb=0.0, bend=0.0):
     """A cell of a 45 % hillside rising to the south, with one road through it along `heading` (a unit vector)
     and one street triangle on that road, laid on the ground, then tilted `tilt` more across the road and
-    `climb` more along it."""
+    `climb` more along it. With `bend`, the road is two segments that meet under the triangle, turned that many
+    degrees to either side of `heading`: the triangle is on the rounded corner between them."""
     r, _ = np.mgrid[0:300, 0:300]
     terrain = Terrain(0.45 * (-1500 + 10.0 * r), (-1500, -1500), (10, 10))
     h = np.asarray(heading, float)
     side = np.array([-h[1], h[0]])
     mid = np.array([100.0, 100.0])
     road = np.array([[*(mid - 20 * h), *(mid + 20 * h), 8.0]], np.float32)
+    if bend:
+        c, k = np.cos(np.radians(bend)), np.sin(np.radians(bend))
+        before, after = np.array([c * h[0] + k * h[1], c * h[1] - k * h[0]]), np.array([c * h[0] - k * h[1], c * h[1] + k * h[0]])
+        road = np.array([[*(mid - 20 * before), *mid, 8.0], [*mid, *(mid + 20 * after), 8.0]], np.float32)
     xz = np.array([mid - 3 * h - 3 * side, mid + 3 * h - 3 * side, mid + 3 * side])
     y = terrain.height(xz[:, 0], xz[:, 1]) + tilt * ((xz - mid) @ side) + climb * ((xz - mid) @ h)
     y += 0.05 - float((y - terrain.height(xz[:, 0], xz[:, 1])).min())  # its lowest corner 5 cm over the ground
@@ -320,3 +325,15 @@ def test_a_street_that_climbs_with_the_relief_is_not_steep_and_one_tilted_across
     assert _kinds(_hillside_street(up, tilt=0.4)).get("steep") == 1    # along as the ground, but 40 % across
     assert _kinds(_hillside_street(up, climb=0.2)).get("steep") == 1   # 65 % along on ground that climbs 45 %
     assert "steep" not in _kinds(_hillside_street(up, climb=0.03))     # within ALONG of the ground: an eased end
+
+
+def test_on_a_rounded_corner_a_street_s_direction_lies_between_its_road_s_two_segments():
+    """A street banked 20 % on a corner that climbs the hillside heads between the two road segments that meet
+    there. Told along and across by either segment, 30 degrees off, part of its bank reads as a climb the
+    ground does not have."""
+    up = (0.0, 1.0)
+    assert "steep" not in _kinds(_hillside_street(up, tilt=0.2))                       # on a straight road
+    assert "steep" not in _kinds(_hillside_street(up, tilt=0.2, bend=30))              # the same, on a corner
+    assert "steep" not in _kinds(_hillside_street(up, tilt=-0.2, bend=30))
+    assert _kinds(_hillside_street(up, tilt=0.2, climb=0.2, bend=30)).get("steep") == 1  # 65 % along, any way
+    assert _kinds(_hillside_street(up, tilt=0.4, bend=30)).get("steep") == 1             # 40 % across its heading
