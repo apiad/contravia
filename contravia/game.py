@@ -1582,7 +1582,8 @@ class Game:
         self.graveyard.update(full, self.eye)
         when, weather = getattr(self, "when_now", None), getattr(self, "weather_now", None)
         self.crowd.update(full, self.eye, self._dt, when.hour + when.minute / 60 if when else 12.0,
-                          weather.rain if weather is not None and self.rain_on else 0.0)
+                          weather.rain if weather is not None and self.rain_on else 0.0,
+                          build=self.curtain is None)  # people are built once the world has loaded
         tiles = self.streamer.stats()
         with self._state_lock:
             st = self.engine.state

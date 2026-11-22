@@ -277,3 +277,15 @@ def test_walkers_live_within_the_last_band_and_leave_past_it(crowd):
     far = (400.0, 1.7, 400.0)  # nothing within reach: everyone leaves
     run(c, 3, eye=far)
     assert c.counts()["walkers"] == 0
+
+
+def test_figures_start_nothing_while_the_game_says_not_to_build():
+    f = people.Figures(FakeEngine(), 1)
+    try:
+        for _ in range(5):
+            assert f.step(build=False) == 0
+        assert f.builder.jobs == {} and len(f.waiting) == len(people.work(0))
+        f.step()  # now the first job starts, and only it
+        assert len(f.builder.jobs) == 1
+    finally:
+        f.close()
