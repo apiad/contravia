@@ -18,6 +18,7 @@ camera over (x, z or lat, lon) at height h, turned yaw degrees (contravia/menu.p
 
 import math
 import os
+import sys
 import threading
 import time
 
@@ -1866,14 +1867,18 @@ def _main(data, builders, at, shot, frames, size, traffic, when, warp, sky, pipe
     game.tune = False
     game.atmosphere.prepare(wait=True)  # an offline shot waits for the ambient light instead of drawing without it
     t0, n = time.monotonic(), 0
-    while n < frames or ((game.waiting() or game.graveyard.waiting()) and time.monotonic() - t0 < 300):
+    while n < frames or ((game.waiting() or game.graveyard.waiting() or game.crowd.waiting()
+                          or game.crowd.figures.waiting) and time.monotonic() - t0 < 300):
         img = engine.render_frame(supersample=1)
         n += 1
+    for _ in range(30):  # once the pool is built, a second for the crowd to fill in and fade up
+        img = engine.render_frame(supersample=1)
     if place and screen == "card":  # photographed once the city is drawn, as a player would
         menu.took(game.shoot())
         for _ in range(4):  # the photo renders, is read back and saved, and the card draws
             img = engine.render_frame(supersample=1)
     Image.fromarray(img).save(shot)
+    print(f"people: {game.crowd.counts()}", file=sys.stderr)
     game.streamer.close()
     game.detail.close()
     game.forest.close()
