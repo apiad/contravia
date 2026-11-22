@@ -185,3 +185,24 @@ def test_a_cells_land_with_nested_shells_still_cuts_its_verges():
     parts, gi, ci = _pieces(verge, land, box)
     assert len(parts) and gi.tolist() == [0] * len(parts) and ci.tolist() == [0] * len(parts)
     assert shapely.is_valid(parts).all() and 0.05 < shapely.area(parts).sum() <= shapely.area(verge[0]) + 1e-6
+
+
+def test_the_walks_and_park_motifs_built_on_three_processes_are_those_built_on_one(monkeypatch):
+    import numpy as np
+
+    from contravia import parks, streets, walks
+    from contravia.prepare import build_city, read_osm
+
+    city, _ = build_city(read_osm("tests/fixtures/mini.osm"))
+    kinds = [k for k in ("walk_tris", "walk_paint", "park_tris", "park_paint", "park_walls") if k in city.a]
+    one = {k: np.array(city.a[k]) for k in kinds}
+    assert len(one["walk_tris"])
+    monkeypatch.setattr(streets, "JOBS", 3)
+    whole = streets.pmap
+    small = lambda fn, items, chunk=32: whole(fn, items, chunk=2)  # the fixture is small
+    for module in (streets, walks):
+        monkeypatch.setattr(module, "pmap", small)
+    walks.add_to(city)
+    parks.add_to(city)
+    for k in kinds:
+        assert np.array_equal(one[k], city.a[k]), k

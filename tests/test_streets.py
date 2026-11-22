@@ -264,3 +264,45 @@ def test_a_junction_on_a_steep_hillside_is_no_steeper_than_slope_and_clears_the_
     assert junction.any() and slope[area > 0.05].max() < SLOPE + 1e-3
     p = tris[junction].reshape(-1, 3).astype(float)
     assert (p[:, 1] - t.height(p[:, 0], p[:, 2])).min() > LIFT - 2e-3
+
+def test_pmap_on_forked_processes_gives_what_it_gives_in_line(monkeypatch):
+    """A worker is a copy of the process: fn reads its closure, and only what it returns comes back, in order."""
+    from contravia import streets
+
+    scale, seen = 3.0, []
+
+    def fn(k):
+        seen.append(k)  # stays in the worker
+        return k, shapely.Point(k, scale * k).buffer(1.0), np.full(2, k)
+
+    plain = streets.pmap(fn, range(100), chunk=8)
+    assert len(seen) == 100
+    monkeypatch.setattr(streets, "JOBS", 3)
+    forked = streets.pmap(fn, range(100), chunk=8)
+    assert len(seen) == 100 and streets.JOBS == 3 and streets._job is None
+    assert [a[0] for a in forked] == list(range(100))
+    assert all(a[1].equals_exact(b[1], 0.0) and np.array_equal(a[2], b[2]) for a, b in zip(plain, forked, strict=True))
+
+
+def test_the_streets_built_on_three_processes_are_those_built_on_one(monkeypatch):
+    from contravia import streets
+    from contravia.prepare import build_city, read_osm
+
+    city, _ = build_city(read_osm("tests/fixtures/mini.osm"))
+    kinds = ("street_tris", "street_edges", "street_marks", "struct_tris", "struct_walls", "street_cuts", "g_poly_y")
+    one = {k: np.array(city.a[k]) for k in kinds}
+    calls = []
+    real = streets.multiprocessing.get_context
+
+    def counted(method):
+        calls.append(method)
+        return real(method)
+
+    monkeypatch.setattr(streets.multiprocessing, "get_context", counted)
+    monkeypatch.setattr(streets, "JOBS", 3)
+    whole = streets.pmap
+    monkeypatch.setattr(streets, "pmap", lambda fn, items, chunk=32: whole(fn, items, chunk=2))  # the fixture is small
+    streets.add_to(city, WIDTHS)
+    assert calls and set(calls) == {"fork"}  # it did run on workers
+    for k in kinds:
+        assert np.array_equal(one[k], city.a[k]), k

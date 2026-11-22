@@ -24,6 +24,8 @@ prepared up front (built_tree).
 """
 
 import math
+import multiprocessing
+import os
 from collections import defaultdict
 
 import numpy as np
@@ -444,14 +446,12 @@ def network(J, edges, forced, cache, stops=frozenset()):
         chains.append(Edge(a_end, b_end, np.vstack(pts), e0.w, e0.cls, e0.oneway, e0.paired))
 
     def smooth(p):
-        key = p.tobytes()
-        if key not in cache:
-            q = np.asarray(LineString(p).simplify(DP, preserve_topology=False).coords) if len(p) > 2 else p
-            cache[key] = fillet(q)
-        return cache[key]
+        return fillet(np.asarray(LineString(p).simplify(DP, preserve_topology=False).coords) if len(p) > 2 else p)
 
-    for e, p in zip(chains, pmap(smooth, [e.p for e in chains], chunk=128)):
-        e.p = p
+    new = {e.p.tobytes(): e.p for e in chains if e.p.tobytes() not in cache}
+    cache.update(zip(new, pmap(smooth, list(new.values()), chunk=128)))  # the cache is filled here: pmap's fn cannot
+    for e in chains:
+        e.p = cache[e.p.tobytes()]
     return chains, centre
 
 def built_tree(geoms):
@@ -462,14 +462,38 @@ def built_tree(geoms):
     return t
 
 
-def pmap(fn, items, chunk=32):
-    """fn over items, results in order, in this thread.
+JOBS = 1  # processes pmap runs on: `contravia streets --jobs` and `walks --jobs` raise it for the province they build
+_job = None  # what the forked workers of the pmap under way run: (fn, items)
 
-    It ran on a thread pool once (this Python has no GIL), but GEOS keeps a reference count on its shared geometry
-    factory that is not safe across threads: geometries freed in two threads at once crashed the process
-    (GeometryFactory::dropRef). `contravia prepare --jobs` builds provinces in separate processes instead.
-    `chunk` is kept for the callers' sake and does nothing."""
-    return [fn(x) for x in items]
+
+def _span(ab):
+    global JOBS
+    JOBS = 1  # a worker runs any pmap of its own in line
+    fn, items = _job
+    return [fn(x) for x in items[ab[0]:ab[1]]]
+
+
+def pmap(fn, items, chunk=32):
+    """fn over items, results in order: on JOBS forked processes, `chunk` items to a task, or in this one when
+    JOBS is 1, the items are few or the system cannot fork.
+
+    A worker is a copy of this process made as the call starts, so fn may read anything, a closure's variables
+    too, but what it writes stays in the worker: only what it returns comes back (pickled). It ran on a thread
+    pool once (this Python has no GIL), but GEOS keeps a reference count on its shared geometry factory that is
+    not safe across threads: geometries freed in two threads at once crashed the process
+    (GeometryFactory::dropRef). Processes share nothing. `contravia prepare --jobs` builds several provinces at
+    once, each in its own process with JOBS at 1."""
+    global _job
+    items = items if isinstance(items, list | tuple | range | np.ndarray) else list(items)
+    if JOBS <= 1 or len(items) <= chunk or not hasattr(os, "fork"):
+        return [fn(x) for x in items]
+    _job = (fn, items)
+    try:
+        with multiprocessing.get_context("fork").Pool(min(JOBS, -(-len(items) // chunk))) as pool:
+            parts = pool.map(_span, [(a, min(a + chunk, len(items))) for a in range(0, len(items), chunk)], 1)
+    finally:
+        _job = None
+    return [y for part in parts for y in part]
 
 
 def end_widths(chains, ends):
@@ -508,14 +532,12 @@ def trims(chains, cache):
     lens = [arclen(e.p)[-1] for e in chains]
     ew = end_widths(chains, ends)
 
-    def one(es):
-        key = tuple((chains[c].p.tobytes(), chains[c].w, ew[(c, which)], which, chains[c].f == chains[c].t) for c, which in es)
-        if key in cache:
-            return [(es[k], t) for k, t in cache[key]]
-        out = compute(es)
+    def key_of(es):
+        return tuple((chains[c].p.tobytes(), chains[c].w, ew[(c, which)], which, chains[c].f == chains[c].t) for c, which in es)
+
+    def indexed(es):
         index = {x: k for k, x in enumerate(es)}
-        cache[key] = [(index[x], t) for x, t in out]
-        return out
+        return [(index[x], t) for x, t in compute(es)]
 
     def compute(es):
         geo = []
@@ -539,9 +561,12 @@ def trims(chains, cache):
         return out
 
     trim = defaultdict(float)
-    for res in pmap(one, [es for es in ends.values() if len(es) >= 2], chunk=16):
-        for key, t in res:
-            trim[key] = max(trim[key], t)
+    meet = [(es, key_of(es)) for es in ends.values() if len(es) >= 2]
+    new = {key: es for es, key in meet if key not in cache}
+    cache.update(zip(new, pmap(indexed, list(new.values()), chunk=16)))  # the cache is filled here: pmap's fn cannot
+    for es, key in meet:
+        for k, t in cache[key]:
+            trim[es[k]] = max(trim[es[k]], t)
     merge = [(e.f, e.t) for c, e in enumerate(chains)
              if trim[(c, 0)] + trim[(c, 1)] - 2 * CORNER > lens[c] - 1.0 and lens[c] < MERGE_SHORT and e.f != e.t]
     return ends, lens, trim, merge, ew
@@ -668,8 +693,9 @@ def pieces(chains, centre, ends, lens, trim, ew):
         if prev:
             rings[k] = largest(rings[k].difference(shapely.union_all(prev))) or rings[k]
         done.add(k)
-    ribbons = pmap(snap, ribbons, chunk=256)
-    rings = pmap(lambda r: snap(r.simplify(0.02)), rings, chunk=256)
+    # in this process: a geometry's precision grid, which every later cut of it follows, does not survive pickling
+    ribbons = [snap(r) for r in ribbons]
+    rings = [snap(r.simplify(0.02)) for r in rings]
     # a junction absorbs the small holes left between it and its neighbours
     rt, jt = built_tree(ribbons), built_tree(rings)
     snapshot = list(rings)
@@ -1805,14 +1831,16 @@ def add_to(city, widths) -> dict:
             "street_skirt_edges": len(edges), "street_mark_triangles": len(lines)}
 
 
-def main(path) -> dict:
-    """Rebuild the streets of a prepared data file in place and print the counts."""
+def main(path, jobs: int = 1) -> dict:
+    """Rebuild the streets of a prepared data file in place, on `jobs` processes, and print the counts."""
     import json
     import time
 
     from contravia.citydata import CityData
     from contravia.prepare import WIDTHS
 
+    global JOBS
+    JOBS = jobs
     t0 = time.perf_counter()
     city = CityData.load(path)
     report = add_to(city, WIDTHS)

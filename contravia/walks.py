@@ -484,13 +484,15 @@ def add_to(city) -> dict:
     return report
 
 
-def main(path) -> dict:
-    """Rebuild the walks of a prepared data file in place and print the counts."""
+def main(path, jobs: int = 1) -> dict:
+    """Rebuild the walks of a prepared data file in place, on `jobs` processes, and print the counts."""
     import json
     import time
 
+    from contravia import streets
     from contravia.citydata import CityData
 
+    streets.JOBS = jobs
     t0 = time.perf_counter()
     city = CityData.load(path)
     covered = parks.drop_covered(city)  # before the walks, which pave the parks left
