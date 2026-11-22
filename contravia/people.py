@@ -286,6 +286,7 @@ STAND = (1.0, 3.0)  # seconds a walker stands at an open end before it turns bac
 IDLE_FOR = (5.0, 20.0)  # seconds an idle walker stands
 SHARES = (0.8, 0.1, 0.1)  # walk, idle, run
 HIDDEN = 3  # the level of a walker too far to draw
+MOVED = 5.0  # metres the eye moves before the lane samples within reach are found again
 
 
 def hour_factor(hour: float) -> float:
@@ -462,11 +463,17 @@ class Crowd:
             for k in ("count", "step", "length", "loop", "zone", "weight"):
                 setattr(self, "t_" + k, np.concatenate([getattr(ln, k) for ln, _ in parts]))
             self.t_cell = np.concatenate([np.full(len(ln), i) for i, (ln, _) in enumerate(parts)])
+            # each sample's lane, its metres along it, and its share of the lane's weight
+            self.p_lane = np.repeat(np.arange(len(self.t_start)), self.t_count)
+            self.p_s = (np.arange(len(self.t_pts)) - self.t_start[self.p_lane]) * self.t_step[self.p_lane]
+            self.p_weight = (self.t_weight / self.t_count)[self.p_lane]
         else:
             self.t_pts = np.zeros((0, 3))
             self.t_start, self.t_count, self.t_cell, self.t_zone = (np.zeros(0, np.int64) for _ in range(4))
             self.t_step, self.t_length, self.t_weight = np.zeros(0), np.zeros(0), np.zeros(0)
             self.t_loop = np.zeros(0, bool)
+            self.p_lane, self.p_s, self.p_weight = np.zeros(0, np.int64), np.zeros(0), np.zeros(0)
+        self._near = None
         self.cells_open, self._offs = cells, offs
         for w in np.flatnonzero(self.alive & ~self.leaving):
             c = self.cell[w]
@@ -478,24 +485,38 @@ class Crowd:
     # -- how many
 
     def _count(self, eye, hour: float, rain: float) -> None:
-        total = float(self.t_weight.sum())
+        """Keep the walkers within the last band round eye at the count the lanes there, the hour and the rain
+        call for: those past it leave, the farthest go when there are too many, and new ones come in."""
+        reach = self.lod[2]
+        if self._near is None or np.hypot(*(eye[[0, 2]] - self._near_at)) > MOVED:
+            self._near_at = eye[[0, 2]].copy()
+            d = np.hypot(self.t_pts[:, 0] - eye[0], self.t_pts[:, 2] - eye[2]) if len(self.p_s) \
+                else np.zeros(0)
+            self._near = np.flatnonzero(d <= reach)
+            self._spawnable = np.flatnonzero((d <= reach) & (d > self.lod[0]))
+            self._spawnable = self._spawnable if len(self._spawnable) else self._near
+        total = float(self.p_weight[self._near].sum())
         rain = min(max(rain, 0.0), 1.0)
         self.target = int(min(len(self.alive), RATE * total) * hour_factor(hour) * (1.0 - 0.7 * rain))
         live = np.flatnonzero(self.alive & ~self.leaving)
+        d = np.hypot(self.pos[live, 0] - eye[0], self.pos[live, 2] - eye[2])
+        out = d > reach + HYSTERESIS
+        if out.any():
+            self._send_away(live[out], now=False)
+            live, d = live[~out], d[~out]
         if len(live) > self.target:
-            d = np.linalg.norm(self.pos[live] - eye, axis=1)
             self._send_away(live[np.argsort(-d)[: min(SPAWNS, len(live) - self.target)]], now=False)
-        elif len(live) < self.target and total > 0:
+        elif len(live) < self.target and len(self._spawnable):
             for w in np.flatnonzero(~self.alive)[: min(SPAWNS, self.target - len(live))]:
-                self._spawn(int(w), eye)
+                self._spawn(int(w))
 
-    def _spawn(self, w: int, eye) -> None:
-        """Put walker w on a lane, the farthest from eye of four draws, on a ready body of its zone."""
-        lanes = self.rng.choice(len(self.t_weight), size=4, p=self.t_weight / self.t_weight.sum())
-        s = self.rng.random(4) * self.t_length[lanes]
-        xyz, _ = self._at(lanes, s)
-        k = int(np.argmax(np.linalg.norm(xyz - eye, axis=1)))
-        lane = int(lanes[k])
+    def _spawn(self, w: int) -> None:
+        """Put walker w at a lane sample within the last band but past the first, drawn by weight, on a ready body
+        of its zone."""
+        pool = self._spawnable
+        k = int(pool[self.rng.choice(len(pool), p=self.p_weight[pool] / self.p_weight[pool].sum())])
+        lane = int(self.p_lane[k])
+        s = [min(float(self.p_s[k]), float(self.t_length[lane]))]
         bodies = self.figures.ready(int(self.t_zone[lane]))
         if not bodies:
             return
@@ -507,7 +528,7 @@ class Crowd:
         c = self.cells_open[int(self.t_cell[lane])]
         self.cell[w] = c
         self.alive[w], self.leaving[w], self.fading[w] = True, False, False
-        self.lane[w], self.local[w], self.s[w] = lane, lane - self._offs[c], float(s[k])
+        self.lane[w], self.local[w], self.s[w] = lane, lane - self._offs[c], s[0]
         self.dir[w] = 1.0 if self.rng.random() < 0.5 else -1.0
         self.body[w], self.phase[w] = body, self.rng.random()
         if mode == RUN:

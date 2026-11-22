@@ -200,7 +200,7 @@ def test_the_crowd_fills_its_lanes_and_draws_within_the_caps(crowd):
     e, c = crowd
     run(c, 30)
     n = c.counts()
-    weight = c.t_weight.sum()
+    weight = c.p_weight[c._near].sum()  # the lanes within the last band
     assert n["walkers"] == c.target == int(min(Q.people[0], people.RATE * weight))
     assert n["lod0"] <= Q.people[1] and n["lod1"] <= Q.people[2]
     live = np.flatnonzero(c.alive & ~c.leaving)
@@ -230,14 +230,15 @@ def test_a_walker_at_an_open_end_looks_stands_and_turns_back(crowd):
     run(c, 2)
     lane = int(np.flatnonzero(~c.t_loop)[0])
     w = int(np.flatnonzero(c.alive & ~c.leaving)[0])
-    c.lane[w], c.local[w] = lane, lane - c._offs[c.cell[w]] if c.cell[w] in c._offs else 0
+    c.lane[w] = lane
     c.cell[w] = c.cells_open[int(c.t_cell[lane])]
     c.local[w] = lane - c._offs[c.cell[w]]
     c.s[w], c.dir[w], c.clip[w] = c.t_length[lane] - people.LOOK - 0.05, 1.0, 1
     c._mode(np.array([w]), people.WALK)
+    c._place(np.array([w]))
     seen = set()
     for _ in range(400):
-        c.update({(0, 0)}, (40.0, 1.7, 40.0), 1 / 30)
+        c.update({(0, 0)}, (180.0, 1.7, 110.0), 1 / 30)  # by the open lane, so the walker stays
         seen.add(int(c.mode[w]))
         if c.dir[w] < 0 and c.mode[w] == people.WALK:
             break
@@ -263,3 +264,16 @@ def test_a_limit_of_zero_sends_everyone_away(crowd):
     c.set_limit(None)
     run(c, 10)
     assert c.counts()["walkers"] > 0
+
+
+def test_walkers_live_within_the_last_band_and_leave_past_it(crowd):
+    _, c = crowd
+    eye = np.array((40.0, 1.7, 40.0))
+    run(c, 30, eye=tuple(eye))
+    live = np.flatnonzero(c.alive & ~c.leaving)
+    d = np.hypot(c.pos[live, 0] - eye[0], c.pos[live, 2] - eye[2])
+    assert len(live) and (d <= Q.people_lod[2] + people.HYSTERESIS).all()
+    assert (c.level[live] < people.HIDDEN).all()
+    far = (400.0, 1.7, 400.0)  # nothing within reach: everyone leaves
+    run(c, 3, eye=far)
+    assert c.counts()["walkers"] == 0
