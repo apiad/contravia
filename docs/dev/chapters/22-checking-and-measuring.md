@@ -152,6 +152,9 @@ restores every solver array, both interpolation endpoints and the accumulator. T
 8 m/s two-vehicle impact with the same two drawn models, rather than claiming to drive a route. Contact-free
 means no rigid-body wall/body/ground contact resolution; tyre suspension support is still active.
 
+After streaming warmup, the runner constructs a fresh solver at the recorded pose and settles it for exactly
+120 fixed calls. This prevents variable loading duration from changing the reference's initial physics state.
+
 `TIMESTEP=fixed-physics` times only `Driven.step` at 1/60 s after loading and warming the real game. Every call
 must execute two actual 120 Hz solver steps. `TIMESTEP=realtime-frame` instead measures serial offscreen frames
 without vsync, including canvas drawing/readback, with wall-clock dt and smoothing disabled. These are separate

@@ -307,7 +307,7 @@ def worker(args, output):
     import numpy as np
     from PIL import Image
 
-    from contravia.car import Controls
+    from contravia.car import CarState, Controls, Driven
     from contravia.clock import Clock, parse_at
     from contravia.game import WALL_REACH, Game
     from contravia.geo import to_local
@@ -319,6 +319,7 @@ def worker(args, output):
     data = Path(args.data).resolve()
     os.environ["HAVANA_DATA"] = str(data)
     os.environ["CONTRAVIA_CONFIG"] = str(output / "config")
+    os.environ["XDG_CACHE_HOME"] = str(output / "cache-home")
     protect_data(data, output)
     os.environ["CONTRAVIA_PERF_DATA"] = str(data)
     os.environ["CONTRAVIA_PERF_OUTPUT"] = str(output)
@@ -369,6 +370,13 @@ def worker(args, output):
             stable = stable + 1 if not waiting(game) and current == previous else 0
             previous = current
         warm_seconds = time.monotonic() - warm_start
+        # Streaming completion takes a variable number of frames. Never use the
+        # solver state reached by that variable warmup as a reference input.
+        walls = around(game.walls.near(x, z, y, wait=True), x, z, WALL_REACH + 16 * DT)
+        game.driven = Driven(game.driven.spec, CarState(x, z, 0.0, 0.0, y=y), game.surface)
+        for _ in range(120):
+            game.driven.step(controls, DT, walls, game.strengths())
+        game.car = game.driven.state
         contact = args.scene == SCENES[1]
         f = game.driven.fleet
         second_handles = None
@@ -404,7 +412,6 @@ def worker(args, output):
         visual = work(game)
         visual_hash = fingerprint(visual)
         samples = []
-        walls = around(game.walls.near(x, z, y, wait=True), x, z, WALL_REACH + 2 * abs(game.car.speed) * DT)
         with probe.installed():
             # A real capture of this scenario, outside the measured region.
             restore(game.driven, initial)
