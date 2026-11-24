@@ -58,6 +58,7 @@ def test_two_vehicle_contact_is_real_and_the_complete_state_replays():
             s = d.step(Controls(0, 0, 0, False), 1 / 60, NONE, others=np.zeros((1, 4)))
             assert s.telemetry["bodies"] == 2 and s.telemetry["substeps"] == probe.steps == 2
             assert probe.contacts > 0 and probe.impulse > 100
+            assert probe.pair_contacts > 0 and probe.pair_impulse > 100
             results.append(perf.solver_state(d))
     assert results[0] == results[1] != initial
 
@@ -97,6 +98,7 @@ def valid_run(contact=False):
                 "data_fingerprint": "fixture", "camera": [[0, 5, 10], [0, 0, 0]], "controls": vars(IDLE), "quality": "alto",
                 "samples": [{"substeps": 2, "observed_steps": probe.steps, "bodies": 1 + int(contact),
                 "contacts": probe.contacts, "impulse_ns": probe.impulse,
+                "pair_contacts": probe.pair_contacts, "pair_impulse_ns": probe.pair_impulse,
                 "displacement_m": float(np.linalg.norm(d.fleet.position[0] - np.array(initial["position"])[0])), "waiting": 0,
                 "tune": False, "size": [1920, 1080], "preset": "alto",
                 "input_fingerprint": state, "result_fingerprint": perf.fingerprint(perf.solver_state(d)),
@@ -149,7 +151,7 @@ def test_reject_mutated_measurements(mutation):
 def test_false_contact_and_motion_claims_fail_after_valid_contact_fixture_passes():
     r = valid_run(contact=True)
     perf.validate(r, r["contract"])
-    for field in ("contacts", "impulse_ns", "displacement_m"):
+    for field in ("contacts", "impulse_ns", "displacement_m", "pair_contacts", "pair_impulse_ns"):
         bad = deepcopy(r)
         bad["samples"][0][field] = 0
         with pytest.raises(ValueError, match="no solver contact"):

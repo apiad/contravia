@@ -115,7 +115,8 @@ def validate(run, expected):
             raise ValueError("fixed physics did not execute two substeps")
         if not math.isfinite(s["displacement_m"]):
             raise ValueError("non-finite vehicle state")
-    if contact and not any(s["contacts"] > 0 and s["impulse_ns"] > 0 and s["displacement_m"] > 0 for s in samples):
+    if contact and not any(s["contacts"] > 0 and s["impulse_ns"] > 0 and s["displacement_m"] > 0
+                           and s["pair_contacts"] > 0 and s["pair_impulse_ns"] > 0 for s in samples):
         raise ValueError("contact scene has no solver contact/impulse/movement")
     summarize(samples)
 
@@ -145,6 +146,8 @@ class SolverProbe:
 
     def reset(self):
         self.steps = self.contacts = 0
+        self.pair_contacts = 0
+        self.pair_impulse = 0.0
         self.impulse = self.wall_ms = 0.0
 
     @contextmanager
@@ -165,7 +168,11 @@ class SolverProbe:
 
         def pair(*args, **kwargs):
             self.contacts += 1  # _bodies calls _pair only after a positive box overlap
-            return old_pair(*args, **kwargs)
+            self.pair_contacts += 1
+            before = float(f.impulse.sum())
+            result = old_pair(*args, **kwargs)
+            self.pair_impulse += float(f.impulse.sum()) - before
+            return result
 
         def scalar(body, lever, normal, depth):
             self.contacts += int(depth > 0)
@@ -445,6 +452,7 @@ def worker(args, output):
                                 "substeps": telemetry["substeps"], "bodies": telemetry["bodies"],
                                 "observed_steps": probe.steps, "contacts": probe.contacts,
                                 "impulse_ns": probe.impulse, "input_fingerprint": input_hash,
+                                "pair_contacts": probe.pair_contacts, "pair_impulse_ns": probe.pair_impulse,
                                 "result_fingerprint": fingerprint(solver_state(game.driven)),
                                 "work_fingerprint": fingerprint(work(game)), "waiting": waiting(game),
                                 "tune": game.tune, "size": [engine.w, engine.h], "preset": game.quality_name,
