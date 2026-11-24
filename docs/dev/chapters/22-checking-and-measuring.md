@@ -116,6 +116,74 @@ contravia bench --compare
 
 To make something faster, measure only the part being optimised, before and after the change, with a profile of a few minutes at most. The whole bench answers whether the game as a whole is still fast; a profile answers which system to change, and it is the only one cheap enough to run per iteration. `bench/pipelined.py` is the project's own example: it drives the bench route's first leg offscreen twice, once with the systems and the render one after the other and once with the next frame's systems running on a worker while this frame draws, and reports the mean frame, its update and render shares, how much overlapped, and the five slowest systems. `--check` drives the same leg under `MANIFOLDX_PIPELINE=check` with a teleport and a weather change halfway, and raises on the first frame where a system writes a structure the render is reading.
 
+## Controlled core references
+
+`make perf-reference` runs `bench/perf_reference.py` without appending to benchmark history. Use an existing
+environment; it does not install or synchronize dependencies. Both `ENGINE_PATH` (the installed `manifoldx`
+package directory) and `ENGINE_REVISION` (the full Git SHA recorded in its wheel's `direct_url.json`) are
+mandatory. The game imports from the checkout containing the runner. Provenance includes imported paths,
+interpreter, game SHA and dirty status, engine wheel metadata, and source hashes for both packages.
+
+```bash
+# Use the existing environment and built island; choose a fresh output directory.
+PYTHON=/path/to/existing/.venv/bin/python
+make perf-reference PYTHON="$PYTHON" DATA=/path/to/data/cuba \
+  OUT=/var/tmp/reference-free CORE=python SIZE=1920x1080 PRESET=alto \
+  ENGINE_PATH=/path/to/existing/.venv/lib/python3.14t/site-packages/manifoldx \
+  ENGINE_REVISION=b03be6e2c0279ea7100ce27143cf2436e9c10a54 \
+  SCENE=controlled-parked-free SEED=7 REPEATS=3 FRAMES=120 TIMESTEP=fixed-physics
+```
+
+Run the same command with a new `OUT` and `SCENE=controlled-vehicle-contact` for the two-car impact.
+`CORE=rust` fails before starting a renderer until an actual native runtime is integrated. A different installed
+engine requires its own explicit SHA; it is not the pinned reference above.
+
+These are controlled real-game scenes with traffic disabled, zero walkers, muted audio, a paused clock at
+2026-11-24 10:00, clear weather, a fixed camera, explicit controls and `tune=False`. The location is a fixed
+Malecón coordinate snapped by the real game's road lookup; the resulting pose is recorded. Each sample
+restores every solver array, both interpolation endpoints and the accumulator. The contact scene replays an
+8 m/s two-vehicle impact with the same two drawn models, rather than claiming to drive a route. Contact-free
+means no rigid-body wall/body/ground contact resolution; tyre suspension support is still active.
+
+`TIMESTEP=fixed-physics` times only `Driven.step` at 1/60 s after loading and warming the real game. Every call
+must execute two actual 120 Hz solver steps. `TIMESTEP=realtime-frame` instead measures serial offscreen frames
+without vsync, including canvas drawing/readback, with wall-clock dt and smoothing disabled. These are separate
+measurements, not display FPS. Both modes capture a real image outside the measured interval. Engine visual
+time is pinned; full normal traffic, pedestrians, sound, and moving-route measurements remain separate work.
+
+Load and warmup times are separate. The runner requires stable drawn work and all selected nodes/decorations
+ready for 30 frames, rejects timeout, and bounds each isolated repetition (including spawned builders) to
+240 seconds. `PERF_ARGS="--timeout 300 --warmup-timeout 150"` changes those limits. Inputs are hashed, never
+copied or regenerated: a stale island index is an error; baked caches go to the output directory. Spawned
+builders inherit the same write guard. Use `perf-reference-out/` inside the checkout, or an external directory;
+generated results do not belong in Git.
+
+Each repeat writes `raw.json`, `scene.png`, and its own cache/config directory. The root contains logs,
+`summary.json`, and a self-contained `report.html` with captured pixels. Failures write `failure.json` and
+never produce a valid summary. Summaries report sample count, p50/p95/p99 wall/CPU frame cost where measured,
+physics wall cost, RSS and available GPU total time; raw samples retain GPU passes, engine splits and streamer
+work. Missing GPU metrics are `null`. GPU queries are asynchronous and represent the newest completed GPU
+frame, not necessarily the current CPU sample. Splits overlap and are never added.
+
+The probe observes active solver contact resolutions (including the single-body optimized path), sums genuine
+impulses after every executed substep, and checks the substep count against telemetry. Probe overhead is included
+and must be held constant for comparisons. Zero-step calls retain their measured call cost separately; they
+cannot report stale contacts and never contribute invented substep work. A claimed contact must have a real
+solver resolution, impulse and displacement; parked free rejects any rigid-body contact.
+
+Repetitions must have identical initial/result state fingerprints, drawn geometry and decoration counts, data,
+camera, controls, quality and substep/body distributions. To validate against a previous repeat, add
+`PERF_ARGS="--compare /path/to/previous/0/raw.json"`. Real-time runs may fail this strict equivalence gate because
+dt varies; that is a rejected comparison, not permission to compare unlike workloads. No numerical tolerance
+for a future native solver is implied by this exact replay gate. Route GPS validation and final full-screen
+1080p performance decisions require separate runs on the target display machine.
+
+The CPU checks exercise real solver free/contact paths and mutate valid recorded facts to verify rejection:
+
+```bash
+PYTHONPATH="$PWD" "$PYTHON" -m pytest tests/test_perf_reference.py tests/test_physics_metrics.py -n 2
+```
+
 ## The modules behind this
 
 | Piece | Module | What it owns |
