@@ -138,6 +138,13 @@ Run the same command with a new `OUT` and `SCENE=controlled-vehicle-contact` for
 `CORE=rust` fails before starting a renderer until an actual native runtime is integrated. A different installed
 engine requires its own explicit SHA; it is not the pinned reference above.
 
+For an isolated source export without Git metadata, pass `PERF_ARGS="--source-manifest /path/to/manifest.json"`.
+The manifest carries `game: {sha, files}` and `engine: {revision, files}`, with relative path → SHA-256 maps.
+It must cover every game Python module, the runner and every engine runtime file (exclude `__pycache__`).
+Include the game's required runtime assets too. All bytes are verified before rendering. Provenance labels
+this as a verified source archive and separately records the environment's installed distribution metadata;
+source imported through `--engine-path` is never described as that installed wheel.
+
 These are controlled real-game scenes with traffic disabled, zero walkers, muted audio, a paused clock at
 2026-11-24 10:00, clear weather, a fixed camera, explicit controls and `tune=False`. The location is a fixed
 Malecón coordinate snapped by the real game's road lookup; the resulting pose is recorded. Each sample

@@ -210,21 +210,40 @@ def provenance(args):
         raise ValueError("game import did not resolve to this worktree")
     dist = importlib.metadata.distribution("manifold-gfx")
     direct = json.loads(dist.read_text("direct_url.json") or "{}")
-    revision = direct.get("vcs_info", {}).get("commit_id")
+    archive = json.loads(Path(args.source_manifest).read_text()) if getattr(args, "source_manifest", None) else None
+    revision = archive["engine"]["revision"] if archive else direct.get("vcs_info", {}).get("commit_id")
     if revision != args.engine_revision or len(args.engine_revision) != 40:
         raise ValueError("engine revision differs from pinned --engine-revision (full Git SHA required)")
     sources = {str(p.relative_to(ROOT)): file_hash(p) for p in sorted((ROOT / "contravia").rglob("*.py"))}
     sources["bench/perf_reference.py"] = file_hash(__file__)
     def git(*cmd):
         return subprocess.check_output(["git", "-C", str(ROOT), *cmd], text=True).strip()
+    if archive:
+        verify_files(ROOT, archive["game"]["files"])
+        verify_files(engine_path, archive["engine"]["files"])
+        actual_engine = {str(p.relative_to(engine_path)) for p in engine_path.rglob("*")
+                         if p.is_file() and "__pycache__" not in p.parts}
+        if actual_engine != set(archive["engine"]["files"]) or not set(sources) <= set(archive["game"]["files"]):
+            raise ValueError("source archive manifest does not cover the loaded runtime")
     return {"python": sys.version, "executable": sys.executable, "engine_path": str(engine_path),
-            "engine_version": dist.version, "engine_direct_url": direct,
+            "engine_origin": "verified-source-archive" if archive else "installed-distribution",
+            "engine_revision": revision, "environment_distribution_version": dist.version,
+            "environment_distribution_direct_url": direct,
+            "source_manifest": archive,
             "engine_record_sha256": fingerprint(dist.read_text("RECORD")),
             "engine_sources": {str(p.relative_to(engine_path)): file_hash(p)
                                for p in sorted(engine_path.rglob("*.py"))},
-            "game_path": str(ROOT), "game_sha": git("rev-parse", "HEAD"),
-            "game_status": git("status", "--porcelain"), "game_sources": sources,
+            "game_path": str(ROOT), "game_sha": archive["game"]["sha"] if archive else git("rev-parse", "HEAD"),
+            "game_status": "verified archive" if archive else git("status", "--porcelain"), "game_sources": sources,
             "argv": sys.argv}
+
+
+def verify_files(root, files):
+    """Check actual source archive bytes, refusing missing or modified runtime files."""
+    for name, expected in files.items():
+        path = (root / name).resolve()
+        if root not in path.parents or file_hash(path) != expected:
+            raise ValueError(f"source archive differs: {name}")
 
 
 def protect_data(data, output):
@@ -473,6 +492,7 @@ def main(argv=None):
     parser.add_argument("--core", choices=("python", "rust"), required=True)
     parser.add_argument("--engine-path", required=True, help="installed manifoldx package directory")
     parser.add_argument("--engine-revision", required=True, help="installed engine's full direct_url Git SHA")
+    parser.add_argument("--source-manifest", type=Path, help="hash manifest for explicit game/engine source archives")
     parser.add_argument("--size", required=True)
     parser.add_argument("--preset", choices=("bajo", "medio", "alto", "ultra", "cine"), required=True)
     parser.add_argument("--scene", choices=SCENES, required=True)

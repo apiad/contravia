@@ -221,3 +221,13 @@ else:
     assert original.read_bytes() == b"unchanged island"
     assert not (data / "new.pkl").exists()
     assert len(list((out / "cache").glob("*.pkl"))) == 1
+
+
+def test_source_archive_hashes_accept_real_bytes_and_reject_a_same_size_mutation(tmp_path):
+    path = tmp_path / "engine.py"
+    path.write_bytes(b"version=1")
+    manifest = {"engine.py": perf.file_hash(path)}
+    perf.verify_files(tmp_path, manifest)
+    path.write_bytes(b"version=2")
+    with pytest.raises(ValueError, match="source archive differs"):
+        perf.verify_files(tmp_path, manifest)
