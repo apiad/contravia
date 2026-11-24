@@ -68,6 +68,7 @@ class Driven:
         self.spec = spec
         self.ground = ground if hasattr(ground, "grip") else SurfaceGround(ground)
         self.fleet = Vehicles([spec])
+        self.substeps = 0  # solver steps the last step() ran, at 120 Hz; 0 before the first
         self.place(at.x, at.z, at.yaw, at.y)
 
     def place(self, x: float, z: float, yaw: float, y: float | None = None) -> CarState:
@@ -109,7 +110,8 @@ class Driven:
         controls = np.array([[c.steer, c.throttle, c.brake, float(c.handbrake)]])
         if others is not None and len(others):
             controls = np.vstack([controls, others])
-        self.fleet.advance(controls, self.ground, np.asarray(walls, float).reshape(-1, 2, 2), dt, strengths)
+        self.substeps = self.fleet.advance(controls, self.ground, np.asarray(walls, float).reshape(-1, 2, 2), dt,
+                                           strengths)
         self.state = self._read()
         return self.state
 
@@ -148,11 +150,14 @@ class Driven:
         ahead, right = R[:, 0], R[:, 2]
         v = f.velocity[0]
         w = f.p.wheel_mask[0]
-        return CarState(x=float(f.position[0, 0]), z=float(f.position[0, 2]),
-                        yaw=math.atan2(ahead[2], ahead[0]), speed=float(v @ ahead),
-                        y=float(f.ground_y[0, w].mean()), pitch=math.asin(max(-1.0, min(1.0, ahead[1]))),
-                        roll=-math.asin(max(-1.0, min(1.0, right[1]))), vy=float(v @ right),
-                        gear=int(f.gear[0]), rpm=float(f.rpm[0]), telemetry=f.telemetry(0))
+        state = CarState(x=float(f.position[0, 0]), z=float(f.position[0, 2]),
+                         yaw=math.atan2(ahead[2], ahead[0]), speed=float(v @ ahead),
+                         y=float(f.ground_y[0, w].mean()), pitch=math.asin(max(-1.0, min(1.0, ahead[1]))),
+                         roll=-math.asin(max(-1.0, min(1.0, right[1]))), vy=float(v @ right),
+                         gear=int(f.gear[0]), rpm=float(f.rpm[0]), telemetry=f.telemetry(0))
+        state.telemetry["substeps"] = int(self.substeps)  # solver steps of the last step() call, at 120 Hz
+        state.telemetry["bodies"] = int(f.position.shape[0])  # the car plus the crashed traffic that joined
+        return state
 
 
 def settle(s: CarState, terrain) -> CarState:
