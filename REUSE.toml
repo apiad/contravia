@@ -2,7 +2,7 @@ version = 1
 
 [[annotations]]
 path = ["contravia/**", "havana/**", "tests/**", "bench/**", "packaging/**", "caiman/**", "site/**",
-        "pyproject.toml", "uv.lock", ".github/**", ".rift.yaml", ".gitignore", ".python-version", "REUSE.toml"]
+        "pyproject.toml", "uv.lock", ".github/**", ".rift.yaml", ".gitignore", ".python-version", "REUSE.toml", "Makefile"]
 SPDX-FileCopyrightText = "The Contravía authors"
 SPDX-License-Identifier = "GPL-3.0-or-later"
 
