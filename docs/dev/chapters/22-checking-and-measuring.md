@@ -175,6 +175,10 @@ physics wall cost, RSS and available GPU total time; raw samples retain GPU pass
 work. Missing GPU metrics are `null`. GPU queries are asynchronous and represent the newest completed GPU
 frame, not necessarily the current CPU sample. Splits overlap and are never added.
 
+The engine measures only one frame in eight. The runner counts each new completed GPU readback once, excludes
+warmup's last readback, and reports each metric's own sample count. Other frames have `null` GPU samples;
+identical values from distinct readbacks still count separately. The source frame index is unavailable.
+
 The probe observes active solver contact resolutions (including the single-body optimized path), sums genuine
 impulses after every executed substep, and checks the substep count against telemetry. Probe overhead is included
 and must be held constant for comparisons. Zero-step calls retain their measured call cost separately; they

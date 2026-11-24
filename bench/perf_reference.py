@@ -64,6 +64,8 @@ def summarize(samples):
     steps = sum(s["substeps"] for s in stepped)
     return {
         "samples": len(samples),
+        "metric_samples": {k: sum(s[k] is not None for s in samples)
+                           for k in ("frame_wall_ms", "frame_cpu_ms", "physics_wall_ms", "gpu_total_ms", "rss_bytes")},
         **{k: percentiles([s[k] for s in samples if s[k] is not None])
            for k in ("frame_wall_ms", "frame_cpu_ms", "physics_wall_ms", "gpu_total_ms", "rss_bytes")},
         "physics_ms_per_executed_substep": sum(s["physics_wall_ms"] for s in stepped) / steps if steps else None,
@@ -306,6 +308,12 @@ def rss_bytes():
     return int(Path("/proc/self/statm").read_text().split()[1]) * os.sysconf("SC_PAGE_SIZE")
 
 
+def fresh_gpu_sample(engine, previous):
+    """Count a completed GPU readback once; the API otherwise repeats its last result."""
+    current = getattr(getattr(engine, "_gpu_timer_obj", None), "last", None)
+    return current, engine.gpu_timings() if current is not None and current is not previous else None
+
+
 def worker(args, output):
     """Load, warm, capture and measure one isolated repetition of the real game."""
     import random
@@ -426,6 +434,7 @@ def worker(args, output):
             engine._draw_frame()
             image = np.asarray(engine._render_canvas.draw())
             Image.fromarray(image).convert("RGB").save(output / "scene.png")
+            last_gpu = getattr(getattr(engine, "_gpu_timer_obj", None), "last", None)
             if args.timestep == "realtime-frame":
                 engine.use_wall_clock()
                 engine._last_time = engine._start_time = time.perf_counter_ns()
@@ -442,7 +451,9 @@ def worker(args, output):
                     engine._render_canvas.draw()
                 wall_ms, cpu_ms = (time.perf_counter() - t) * 1000, (time.process_time() - cpu) * 1000
                 telemetry = game.driven.state.telemetry
-                gpu = engine.gpu_timings() if args.timestep == "realtime-frame" else None
+                gpu = None
+                if args.timestep == "realtime-frame":
+                    last_gpu, gpu = fresh_gpu_sample(engine, last_gpu)
                 samples.append({"frame_wall_ms": wall_ms if args.timestep == "realtime-frame" else None,
                                 "frame_cpu_ms": cpu_ms if args.timestep == "realtime-frame" else None,
                                 "physics_wall_ms": probe.wall_ms,

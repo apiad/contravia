@@ -233,3 +233,17 @@ def test_source_archive_hashes_accept_real_bytes_and_reject_a_same_size_mutation
     path.write_bytes(b"version=2")
     with pytest.raises(ValueError, match="source archive differs"):
         perf.verify_files(tmp_path, manifest)
+
+
+def test_gpu_percentiles_count_new_readbacks_once_even_when_the_values_are_identical():
+    timer = SimpleNamespace(last={"total": 2.0})
+    engine = SimpleNamespace(_gpu_timer_obj=timer, gpu_timings=lambda: dict(timer.last))
+    previous, sample = perf.fresh_gpu_sample(engine, timer.last)
+    assert sample is None  # the warmup's completed query is not a measured GPU sample
+    timer.last = {"total": 2.0}  # a genuinely new readback can have identical values
+    previous, sample = perf.fresh_gpu_sample(engine, previous)
+    assert sample == {"total": 2.0}
+    previous, sample = perf.fresh_gpu_sample(engine, previous)
+    assert sample is None  # repeat of the same readback must not inflate sample count
+    engine._gpu_timer_obj = None
+    assert perf.fresh_gpu_sample(engine, previous) == (None, None)
